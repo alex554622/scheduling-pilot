@@ -1,4 +1,4 @@
-// Served straight out of public/ — no import, so SSR and the Cloudflare build
+// Served straight out of public/ — no import, so SSR and the production build
 // both resolve it to the same static path.
 const logoUrl = "/scheduling-pilot-logo.png";
 
