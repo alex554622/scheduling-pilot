@@ -1,0 +1,28 @@
+project_id = "tvczcedllrxasmwnqehw"
+
+# Branded auth emails. These replace Supabase's stock templates so what lands in
+# an employee's inbox carries the Scheduling Pilot name and logo.
+#
+# The CLI reads these for `supabase start` and can push them to the hosted
+# project with `supabase config push`. See supabase/templates/README.md — the
+# sender address is a separate setting and needs custom SMTP.
+
+[auth.email.template.confirmation]
+subject = "Confirm your email — Scheduling Pilot"
+content_path = "./supabase/templates/confirm-signup.html"
+
+[auth.email.template.recovery]
+subject = "Reset your Scheduling Pilot password"
+content_path = "./supabase/templates/reset-password.html"
+
+[auth.email.template.magic_link]
+subject = "Your Scheduling Pilot sign-in link"
+content_path = "./supabase/templates/magic-link.html"
+
+[auth.email.template.invite]
+subject = "You've been invited to Scheduling Pilot"
+content_path = "./supabase/templates/invite.html"
+
+[auth.email.template.email_change]
+subject = "Confirm your new email — Scheduling Pilot"
+content_path = "./supabase/templates/change-email.html"

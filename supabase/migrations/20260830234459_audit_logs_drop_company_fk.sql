@@ -1,0 +1,15 @@
+-- Deleting a company raised:
+--   23503 insert or update on table "audit_logs" violates foreign key constraint
+--   "audit_logs_company_id_fkey"
+-- Cascade-deleting a company removes its shifts/schedules/user_roles, whose
+-- DELETE triggers write audit rows referencing a company row that is already
+-- gone within the same statement. That made "Super Admin can delete company
+-- accounts" impossible.
+--
+-- An append-only audit trail should not hold a foreign key to the mutable entity
+-- it describes -- the whole point is to outlive it. Keep company_id (and its
+-- index) as a plain uuid for scoping.
+--
+-- RLS already requires company_id IS NOT NULL for manager reads, so rows left
+-- behind by a deleted tenant are visible to super admins only.
+alter table public.audit_logs drop constraint audit_logs_company_id_fkey;

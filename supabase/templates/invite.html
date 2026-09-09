@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <meta name="supported-color-schemes" content="light" />
+    <title>You have been invited — Scheduling Pilot</title>
+  </head>
+  <body style="margin:0; padding:0; width:100%; background-color:#ecf3f8; -webkit-font-smoothing:antialiased;">
+    <!-- Inbox preview line. Hidden in the body, shown next to the subject. -->
+    <div style="display:none; font-size:1px; line-height:1px; max-height:0; max-width:0; opacity:0; overflow:hidden; color:#ecf3f8;">
+      You have been invited to join a team on Scheduling Pilot.
+    </div>
+
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#ecf3f8;">
+      <tr>
+        <td align="center" style="padding:32px 12px;">
+          <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px; max-width:100%; background-color:#ffffff; border:1px solid #e0e5eb; border-radius:16px;">
+            <tr>
+              <td align="center" style="padding:36px 32px 4px;">
+                <!-- Served from the app's own origin, so it follows the deploy.
+                     The styled alt text stands in when images are blocked. -->
+                <img
+                  src="{{ .SiteURL }}/scheduling-pilot-logo.png"
+                  alt="Scheduling Pilot"
+                  width="210"
+                  style="display:block; width:210px; max-width:65%; height:auto; border:0; font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:22px; font-weight:700; color:#0066cd; text-decoration:none;"
+                />
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding:24px 40px 0; font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+                <h1 style="margin:0 0 12px; font-size:24px; line-height:1.25; font-weight:600; color:#0b1c2c;">
+                  You have been invited
+                </h1>
+                <p style="margin:0 0 8px; font-size:16px; line-height:1.6; color:#0b1c2c;">
+                  {{ if .Data.first_name }}Hi {{ .Data.first_name }},{{ else }}Hi there,{{ end }}
+                </p>
+                <p style="margin:0 0 24px; font-size:16px; line-height:1.6; color:#5b646f;">You have been invited to join a team on Scheduling Pilot at <strong style="color:#0b1c2c;">{{ .Email }}</strong>. Accept the invitation to set your password and get started.</p>
+              </td>
+            </tr>
+
+            <tr>
+              <td align="center" style="padding:4px 40px 8px;">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    <td align="center" bgcolor="#0066cd" style="border-radius:10px;">
+                      <a
+                        href="{{ .ConfirmationURL }}"
+                        style="display:inline-block; padding:15px 36px; font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:16px; font-weight:600; line-height:1; color:#ffffff; text-decoration:none; border-radius:10px;"
+                      >
+                        Accept invitation
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding:20px 40px 32px; font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+                <p style="margin:0 0 6px; font-size:13px; line-height:1.6; color:#5b646f;">
+                  If the button doesn't work, paste this address into your browser:
+                </p>
+                <p style="margin:0; font-size:13px; line-height:1.6; word-break:break-all;">
+                  <a href="{{ .ConfirmationURL }}" style="color:#0066cd; text-decoration:underline;">{{ .ConfirmationURL }}</a>
+                </p>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding:0 40px;">
+                <div style="height:1px; background-color:#e0e5eb; line-height:1px; font-size:0;">&nbsp;</div>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding:20px 40px 32px; font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+                <p style="margin:0; font-size:13px; line-height:1.6; color:#5b646f;">
+                  Not expecting an invitation? You can safely ignore this email — no account will be created.
+                </p>
+              </td>
+            </tr>
+          </table>
+
+          <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px; max-width:100%;">
+            <tr>
+              <td align="center" style="padding:20px 24px 8px; font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+                <p style="margin:0 0 4px; font-size:13px; font-weight:600; color:#0b1c2c;">Scheduling Pilot</p>
+                <p style="margin:0 0 10px; font-size:12px; color:#5b646f;">Let the pilot do the work — enjoy the ride</p>
+                <p style="margin:0; font-size:11px; color:#8b939d;">Powered by Valladolid NovaTech</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

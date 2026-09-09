@@ -1,0 +1,12 @@
+-- Superseded by 20260831010235_fix_generate_schedule_uuid_aggregate.sql.
+--
+-- This step taught generate_schedule to enforce supervisor scoping itself (it is
+-- SECURITY DEFINER, so it writes past RLS), and to stamp the schedule it creates
+-- with the department/location its templates agree on -- otherwise a scoped
+-- supervisor would generate a schedule and then be unable to publish it, because
+-- schedules_manager_manage checks can_manage_scope(..., null, null) = false.
+--
+-- The body shipped here used min(department_id) on a uuid column, which
+-- PostgreSQL has no aggregate for, so it failed at runtime for every caller and
+-- was replaced immediately. The corrected body lives in the next migration; this
+-- file is kept only so local files match the recorded remote history.

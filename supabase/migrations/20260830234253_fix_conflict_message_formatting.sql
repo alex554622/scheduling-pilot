@@ -1,0 +1,10 @@
+-- Applied against the live database to replace a check_shift_conflicts() body
+-- that used format('%.1f', ...). PostgreSQL's format() supports only
+-- %s / %I / %L / %%, so the weekly-hours and overtime branches raised
+--   ERROR 22023: unrecognized format() type specifier "."
+-- instead of returning their warning.
+--
+-- The corrected round()+concatenation version is folded into
+-- 20260830233924_scheduling_conflict_engine.sql, so a replay from scratch never
+-- creates the broken version. This file is kept only to preserve the recorded
+-- migration version and keep local files in step with the remote history.
