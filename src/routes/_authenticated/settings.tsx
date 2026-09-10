@@ -58,6 +58,45 @@ function SettingsPage() {
   const canSeeCode = primaryRole === "company_admin" || primaryRole === "super_admin";
   const [copied, setCopied] = useState(false);
 
+  // Company name. The existing company_admin_update policy already lets an admin
+  // update their own company row (the same route timezone and worksite settings
+  // take), so this needs no new database work.
+  const [companyName, setCompanyName] = useState("");
+  const [companyErr, setCompanyErr] = useState<string | null>(null);
+  const [companySaved, setCompanySaved] = useState(false);
+
+  useEffect(() => {
+    if (company) setCompanyName(company.name ?? "");
+  }, [company]);
+
+  const saveCompanyName = useMutation({
+    mutationFn: async () => {
+      const next = companyName.trim();
+      // `name` is NOT NULL but an empty string would satisfy that, leaving the
+      // company nameless everywhere it is displayed.
+      if (!next) throw new Error("Company name can't be empty");
+      if (next.length > 120) throw new Error("Company name must be 120 characters or fewer");
+      if (next === company?.name) return;
+
+      const { error } = await supabase
+        .from("companies")
+        .update({ name: next })
+        .eq("id", company!.id);
+      if (error) throw error;
+      // Refresh so the sidebar, header and every "Company: …" label pick up the
+      // new name without a reload.
+      await refresh();
+    },
+    onSuccess: () => {
+      setCompanyErr(null);
+      setCompanySaved(true);
+      setTimeout(() => setCompanySaved(false), 1500);
+    },
+    onError: (e: unknown) => setCompanyErr(e instanceof Error ? e.message : String(e)),
+  });
+
+  const companyNameDirty = !!company && companyName.trim() !== company.name;
+
   if (loading) return <div className="text-sm text-muted-foreground">Loading…</div>;
 
   return (
@@ -66,6 +105,45 @@ function SettingsPage() {
         <h2 className="text-2xl font-semibold text-foreground">Settings</h2>
         <p className="text-sm text-muted-foreground">Manage your profile and password.</p>
       </div>
+
+      {canSeeCode && company && (
+        <div className="rounded-xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
+          <div className="mb-4 flex items-center gap-2">
+            <Building2 className="h-5 w-5 text-primary" />
+            <h3 className="font-semibold text-foreground">Company name</h3>
+          </div>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="company-name">Business name</Label>
+              <Input
+                id="company-name"
+                value={companyName}
+                maxLength={120}
+                onChange={(e) => setCompanyName(e.target.value)}
+                placeholder="e.g. Calexico Public Works"
+              />
+              <p className="text-xs text-muted-foreground">
+                Shown to your team across the app and on schedules you publish.
+              </p>
+            </div>
+            {companyErr && (
+              <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {companyErr}
+              </p>
+            )}
+            <div className="flex justify-end">
+              <Button
+                onClick={() => saveCompanyName.mutate()}
+                disabled={saveCompanyName.isPending || !companyNameDirty || !companyName.trim()}
+              >
+                {saveCompanyName.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                {companySaved && <Check className="h-4 w-4" />}
+                {companySaved ? "Saved" : "Save name"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {canSeeCode && company && (
         <div className="rounded-xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
