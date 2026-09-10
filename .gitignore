@@ -39,7 +39,7 @@ dist-ssr
 .env.production
 .env.development
 !.env.example
-.env.old-lovable-project.bak
+.env.old-project.bak
 
 # Credential material
 *.pem
