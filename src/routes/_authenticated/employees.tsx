@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Users, ShieldCheck, Search, Copy, Check, Loader2, UserCog, Trash2, Pencil, Mail, Send, X, Link2, RefreshCw, CalendarClock, Inbox } from "lucide-react";
+import { Users, ShieldCheck, Search, Copy, Check, Loader2, UserCog, Trash2, Pencil, Mail, Send, X, Link2, RefreshCw, CalendarClock, Inbox, History, RotateCcw } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/employees")({
   component: EmployeesPage,
@@ -20,6 +20,40 @@ interface MemberRow {
   id: string;
   full_name: string;
   position: string | null;
+}
+
+type SeparationReason = "rehire" | "laid_off" | "other";
+
+const SEPARATION_REASONS: { value: SeparationReason; label: string; hint: string }[] = [
+  {
+    value: "rehire",
+    label: "Eligible for rehire",
+    hint: "Left in good standing — can be brought back.",
+  },
+  { value: "laid_off", label: "Laid off", hint: "Position ended. Still eligible to return." },
+  { value: "other", label: "Other", hint: "Record the reason in the note below." },
+];
+
+const REASON_LABEL: Record<SeparationReason, string> = {
+  rehire: "Eligible for rehire",
+  laid_off: "Laid off",
+  other: "Other",
+};
+
+interface RemoveArgs {
+  userId: string;
+  reason: SeparationReason;
+  note: string;
+}
+
+interface SeparationRow {
+  id: string;
+  user_id: string;
+  reason: SeparationReason;
+  note: string | null;
+  separated_at: string;
+  prior_full_name: string;
+  prior_position: string | null;
 }
 
 function EmployeesPage() {
@@ -61,6 +95,7 @@ function Roster({
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState<MemberRow | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [removing, setRemoving] = useState<MemberRow | null>(null);
 
   const membersQ = useQuery({
     queryKey: ["company-members", companyId],
@@ -84,6 +119,23 @@ function Roster({
         .eq("company_id", companyId);
       if (error) throw error;
       return (data ?? []) as { user_id: string; role: AppRole }[];
+    },
+  });
+
+  // Former employees. The profile rows are unreadable once company_id is null
+  // (profile_view is company-scoped), so the display fields come from the
+  // snapshot taken at separation rather than from a join.
+  const separationsQ = useQuery({
+    queryKey: ["company-separations", companyId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("employment_separations")
+        .select("id, user_id, reason, note, separated_at, prior_full_name, prior_position")
+        .eq("company_id", companyId)
+        .is("rehired_at", null)
+        .order("separated_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as SeparationRow[];
     },
   });
 
@@ -124,23 +176,36 @@ function Roster({
   });
 
   const removeMut = useMutation({
-    mutationFn: async (userId: string) => {
-      // Remove from company: clear roles in this company, then unset profile.company_id.
-      const { error: rErr } = await supabase
-        .from("user_roles")
-        .delete()
-        .eq("user_id", userId)
-        .eq("company_id", companyId);
-      if (rErr) throw rErr;
-      const { error: pErr } = await supabase
-        .from("profiles")
-        .update({ company_id: null })
-        .eq("id", userId);
-      if (pErr) throw pErr;
+    mutationFn: async ({ userId, reason, note }: RemoveArgs) => {
+      // Clearing roles and profile.company_id from here needs two statements, and
+      // RLS rejects the second: profile_admin_update's WITH CHECK sees the new row
+      // with a null company_id and fails it. The definer RPC authorizes the caller
+      // itself and does every write in one transaction, including the separation
+      // record that makes the person rehirable.
+      const { error } = await supabase.rpc("remove_company_member", {
+        _user: userId,
+        _reason: reason,
+        _note: note.trim() || undefined,
+      });
+      if (error) throw error;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["company-members", companyId] });
       qc.invalidateQueries({ queryKey: ["company-roles", companyId] });
+      qc.invalidateQueries({ queryKey: ["company-separations", companyId] });
+      setRemoving(null);
+    },
+  });
+
+  const rehireMut = useMutation({
+    mutationFn: async (userId: string) => {
+      const { error } = await supabase.rpc("rehire_company_member", { _user: userId });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["company-members", companyId] });
+      qc.invalidateQueries({ queryKey: ["company-roles", companyId] });
+      qc.invalidateQueries({ queryKey: ["company-separations", companyId] });
     },
   });
 
@@ -361,7 +426,7 @@ function Roster({
                 m.full_name.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase() || "?";
               const busy =
                 (setRoleMut.isPending && setRoleMut.variables?.userId === m.id) ||
-                (removeMut.isPending && removeMut.variables === m.id);
+                (removeMut.isPending && removeMut.variables?.userId === m.id);
               return (
                 <div key={m.id} className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
                   <div className="flex min-w-0 items-center gap-3">
@@ -396,11 +461,7 @@ function Roster({
                       size="sm"
                       className="text-destructive hover:text-destructive"
                       disabled={busy}
-                      onClick={() => {
-                        if (confirm(`Remove ${m.full_name || "this member"} from ${companyName}?`)) {
-                          removeMut.mutate(m.id);
-                        }
-                      }}
+                      onClick={() => setRemoving(m)}
                     >
                       {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                     </Button>
@@ -412,11 +473,33 @@ function Roster({
         )}
       </div>
 
-      {(setRoleMut.error || removeMut.error) && (
+      {(setRoleMut.error || removeMut.error || rehireMut.error) && (
         <p className="text-sm text-destructive">
-          {(setRoleMut.error as Error)?.message || (removeMut.error as Error)?.message}
+          {(setRoleMut.error as Error)?.message ||
+            (removeMut.error as Error)?.message ||
+            (rehireMut.error as Error)?.message}
         </p>
       )}
+
+      <FormerEmployeesCard
+        rows={separationsQ.data ?? []}
+        loading={separationsQ.isLoading}
+        companyName={companyName}
+        onRehire={(userId) => rehireMut.mutate(userId)}
+        pendingId={rehireMut.isPending ? (rehireMut.variables as string) : null}
+      />
+
+      <RemoveMemberDialog
+        member={removing}
+        companyName={companyName}
+        busy={removeMut.isPending}
+        error={(removeMut.error as Error)?.message ?? null}
+        onClose={() => {
+          removeMut.reset();
+          setRemoving(null);
+        }}
+        onConfirm={(reason, note) => removeMut.mutate({ userId: removing!.id, reason, note })}
+      />
 
       <EditMemberDialog
         member={editing}
@@ -435,6 +518,178 @@ function Roster({
         companyName={companyName}
         createInvite={createInviteMut.mutateAsync}
       />
+    </div>
+  );
+}
+
+function RemoveMemberDialog({
+  member,
+  companyName,
+  busy,
+  error,
+  onClose,
+  onConfirm,
+}: {
+  member: MemberRow | null;
+  companyName: string;
+  busy: boolean;
+  error: string | null;
+  onClose: () => void;
+  onConfirm: (reason: SeparationReason, note: string) => void;
+}) {
+  const [reason, setReason] = useState<SeparationReason>("rehire");
+  const [note, setNote] = useState("");
+
+  // Reset per member, so a reason picked for one person is never carried into
+  // the next removal.
+  useEffect(() => {
+    if (member) {
+      setReason("rehire");
+      setNote("");
+    }
+  }, [member]);
+
+  return (
+    <Dialog open={!!member} onOpenChange={(o) => !o && !busy && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Remove {member?.full_name || "member"}</DialogTitle>
+          <DialogDescription>
+            This removes them from {companyName} and frees their seat. Their account is kept, so you
+            can rehire them later, and they can join another company with that company's join code.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>Reason</Label>
+            <div className="space-y-2">
+              {SEPARATION_REASONS.map((r) => (
+                <label
+                  key={r.value}
+                  className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm transition-colors ${
+                    reason === r.value
+                      ? "border-primary bg-primary-soft"
+                      : "border-border hover:bg-muted/50"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="separation-reason"
+                    className="mt-0.5"
+                    checked={reason === r.value}
+                    onChange={() => setReason(r.value)}
+                    disabled={busy}
+                  />
+                  <span className="min-w-0">
+                    <span className="block font-medium text-foreground">{r.label}</span>
+                    <span className="block text-xs text-muted-foreground">{r.hint}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="separation-note">
+              Note {reason === "other" && <span className="text-destructive">*</span>}
+            </Label>
+            <Input
+              id="separation-note"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Optional context for the record"
+              disabled={busy}
+            />
+          </div>
+
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={() => onConfirm(reason, note)}
+            disabled={busy || (reason === "other" && !note.trim())}
+          >
+            {busy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+            Remove from company
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function FormerEmployeesCard({
+  rows,
+  loading,
+  companyName,
+  onRehire,
+  pendingId,
+}: {
+  rows: SeparationRow[];
+  loading: boolean;
+  companyName: string;
+  onRehire: (userId: string) => void;
+  pendingId: string | null;
+}) {
+  if (loading || rows.length === 0) return null;
+
+  return (
+    <div className="rounded-xl border border-border bg-card">
+      <div className="flex items-center gap-2 border-b border-border p-4">
+        <History className="h-4 w-4 text-muted-foreground" />
+        <h2 className="font-semibold text-foreground">Former employees</h2>
+        <span className="text-xs text-muted-foreground">({rows.length})</span>
+      </div>
+      <div className="divide-y divide-border">
+        {rows.map((s) => {
+          const busy = pendingId === s.user_id;
+          return (
+            <div
+              key={s.id}
+              className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between"
+            >
+              <div className="min-w-0">
+                <p className="truncate font-medium text-foreground">
+                  {s.prior_full_name || "Unnamed"}
+                </p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {REASON_LABEL[s.reason]}
+                  {s.prior_position ? ` · ${s.prior_position}` : ""} · left{" "}
+                  {new Date(s.separated_at).toLocaleDateString()}
+                </p>
+                {s.note && (
+                  <p className="mt-1 truncate text-xs text-muted-foreground italic">{s.note}</p>
+                )}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                onClick={() => {
+                  if (
+                    confirm(`Rehire ${s.prior_full_name || "this person"} into ${companyName}?`)
+                  ) {
+                    onRehire(s.user_id);
+                  }
+                }}
+              >
+                {busy ? (
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+                )}
+                Rehire
+              </Button>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

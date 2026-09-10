@@ -327,6 +327,71 @@ export type Database = {
           },
         ]
       }
+      employment_separations: {
+        Row: {
+          company_id: string
+          id: string
+          note: string | null
+          prior_department_id: string | null
+          prior_employee_code: string | null
+          prior_full_name: string
+          prior_max_weekly_hours: number | null
+          prior_position: string | null
+          prior_position_id: string | null
+          prior_roles: Database["public"]["Enums"]["app_role"][]
+          reason: Database["public"]["Enums"]["separation_reason"]
+          rehired_at: string | null
+          rehired_by: string | null
+          separated_at: string
+          separated_by: string | null
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          id?: string
+          note?: string | null
+          prior_department_id?: string | null
+          prior_employee_code?: string | null
+          prior_full_name?: string
+          prior_max_weekly_hours?: number | null
+          prior_position?: string | null
+          prior_position_id?: string | null
+          prior_roles?: Database["public"]["Enums"]["app_role"][]
+          reason: Database["public"]["Enums"]["separation_reason"]
+          rehired_at?: string | null
+          rehired_by?: string | null
+          separated_at?: string
+          separated_by?: string | null
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          id?: string
+          note?: string | null
+          prior_department_id?: string | null
+          prior_employee_code?: string | null
+          prior_full_name?: string
+          prior_max_weekly_hours?: number | null
+          prior_position?: string | null
+          prior_position_id?: string | null
+          prior_roles?: Database["public"]["Enums"]["app_role"][]
+          reason?: Database["public"]["Enums"]["separation_reason"]
+          rehired_at?: string | null
+          rehired_by?: string | null
+          separated_at?: string
+          separated_by?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "employment_separations_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       invitations: {
         Row: {
           accepted_at: string | null
@@ -1069,6 +1134,15 @@ export type Database = {
       accept_invitation: { Args: { _token: string }; Returns: string }
       approve_membership: { Args: { _user: string }; Returns: undefined }
       bootstrap_company: { Args: { _name: string }; Returns: string }
+      remove_company_member: {
+        Args: {
+          _user: string
+          _reason?: Database["public"]["Enums"]["separation_reason"]
+          _note?: string
+        }
+        Returns: undefined
+      }
+      rehire_company_member: { Args: { _user: string }; Returns: undefined }
       break_punch: {
         Args: {
           _accuracy?: number
@@ -1283,6 +1357,7 @@ export type Database = {
     }
     Enums: {
       app_role: "super_admin" | "company_admin" | "supervisor" | "employee"
+      separation_reason: "rehire" | "laid_off" | "other"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1411,6 +1486,7 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["super_admin", "company_admin", "supervisor", "employee"],
+      separation_reason: ["rehire", "laid_off", "other"],
     },
   },
 } as const
