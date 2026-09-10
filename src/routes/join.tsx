@@ -6,6 +6,7 @@ import { useAuth, roleLabel } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { BrandLogo } from "@/components/brand";
+import { noindexSeo } from "@/lib/seo";
 
 const searchSchema = z.object({
   token: z.string().uuid().optional(),
@@ -13,6 +14,7 @@ const searchSchema = z.object({
 
 export const Route = createFileRoute("/join")({
   validateSearch: (s) => searchSchema.parse(s),
+  head: () => noindexSeo("Join a company | Scheduling Pilot", { follow: true }),
   component: JoinPage,
 });
 

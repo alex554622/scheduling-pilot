@@ -11,6 +11,16 @@ import {
 import appCss from "../styles.css?url";
 import { AuthProvider } from "@/lib/auth";
 
+const DEFAULT_TITLE = "Scheduling Pilot | Employee Scheduling & Workforce Management Software";
+const DEFAULT_DESCRIPTION =
+  "Scheduling Pilot helps businesses create employee schedules, manage shifts, track time, handle time-off requests, and simplify workforce management from one easy platform.";
+
+// Set VITE_GOOGLE_SITE_VERIFICATION in the build environment to have the
+// verification tag rendered; leave it unset and nothing is emitted.
+const GOOGLE_SITE_VERIFICATION = import.meta.env.VITE_GOOGLE_SITE_VERIFICATION as
+  | string
+  | undefined;
+
 function NotFoundComponent() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -68,11 +78,21 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   head: () => ({
+    // Sitewide fallbacks. Every public page overrides title/description/robots
+    // from src/lib/seo.ts; TanStack de-duplicates on name/property and the
+    // deepest matched route wins, so these only apply where a route says nothing.
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Scheduling Pilot — Employee scheduling for modern teams" },
-      { name: "description", content: "Scheduling Pilot is the all-in-one scheduling platform for shift-based teams: build schedules, approve trades, manage time-off." },
+      { title: DEFAULT_TITLE },
+      { name: "description", content: DEFAULT_DESCRIPTION },
+      { name: "robots", content: "index, follow" },
+      { name: "theme-color", content: "#ffffff" },
+      // Verification code comes from the environment so no placeholder ships in
+      // the repo. Unset means the tag is simply absent, which is a valid state.
+      ...(GOOGLE_SITE_VERIFICATION
+        ? [{ name: "google-site-verification", content: GOOGLE_SITE_VERIFICATION }]
+        : []),
     ],
     links: [
       { rel: "stylesheet", href: appCss },

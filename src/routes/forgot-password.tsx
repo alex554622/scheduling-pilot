@@ -6,8 +6,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { noindexSeo } from "@/lib/seo";
 
 export const Route = createFileRoute("/forgot-password")({
+  head: () => noindexSeo("Reset your password | Scheduling Pilot", { follow: true }),
   component: ForgotPasswordPage,
 });
 

@@ -17,8 +17,17 @@ import {
 import { MarketingHeader } from "@/components/marketing-header";
 import { APP_NAME, APP_TAGLINE } from "@/components/brand";
 import { Decorations } from "@/components/showcase";
+import { MarketingFooter } from "@/components/marketing-footer";
+import { seo } from "@/lib/seo";
 
 export const Route = createFileRoute("/about")({
+  head: () =>
+    seo({
+      title: "About Scheduling Pilot | Employee Scheduling Software",
+      description:
+        "What Scheduling Pilot does: build and publish shift schedules, track availability and time off, run a geofenced time clock, approve shift trades, and report on hours.",
+      path: "/about",
+    }),
   component: About,
 });
 
@@ -118,6 +127,7 @@ function About() {
     <div className="min-h-screen bg-background">
       <MarketingHeader />
 
+      <main>
       <section className="relative isolate overflow-hidden">
         <Decorations />
         <div className="relative z-10 mx-auto max-w-3xl px-6 pb-16 pt-8 text-center">
@@ -237,6 +247,9 @@ function About() {
           </p>
         </div>
       </section>
+      </main>
+
+      <MarketingFooter />
     </div>
   );
 }

@@ -11,7 +11,11 @@ const NAV: NavItem[] = [
   {
     label: "Product",
     items: [
-      { label: "Features", href: "/#features" },
+      { label: "Employee scheduling", to: "/employee-scheduling" },
+      { label: "Time clock", to: "/time-clock" },
+      { label: "Time-off management", to: "/time-off-management" },
+      { label: "Shift trading", to: "/shift-trading" },
+      { label: "Workforce management", to: "/workforce-management" },
       { label: "Pricing", href: "/#pricing" },
     ],
   },

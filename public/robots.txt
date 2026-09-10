@@ -1,0 +1,43 @@
+# https://schedulingpilot.com/robots.txt
+#
+# Public marketing pages are open to crawlers. The signed-in application is not.
+#
+# Note on the "$" anchors below: robots.txt rules match by prefix, so a bare
+# "Disallow: /time-off" would also block the public /time-off-management page.
+# Anchoring each private path to its exact URL keeps that from happening.
+#
+# This file is a crawling hint and nothing more. Private data is protected by
+# authentication and row-level security in the database, not by this file.
+
+User-agent: *
+Allow: /
+
+# Signed-in application areas. No useful content for search, and every one of
+# them redirects an anonymous visitor to the login page anyway.
+Disallow: /dashboard$
+Disallow: /schedule$
+Disallow: /employees$
+Disallow: /employees/join-requests$
+Disallow: /companies$
+Disallow: /organization$
+Disallow: /billing$
+Disallow: /timecards$
+Disallow: /timeclock$
+Disallow: /punch-corrections$
+Disallow: /reports$
+Disallow: /settings$
+Disallow: /platform$
+Disallow: /app-rules$
+Disallow: /audit-log$
+Disallow: /availability$
+Disallow: /time-off$
+Disallow: /trades$
+Disallow: /whos-in$
+Disallow: /worksite$
+
+# /login, /join, /forgot-password and /reset-password are intentionally NOT
+# disallowed. They each carry a "noindex" meta tag, and a crawler has to be able
+# to fetch a page in order to read that tag. Blocking them here would leave the
+# noindex unseen and the URLs eligible to appear as bare links.
+
+Sitemap: https://schedulingpilot.com/sitemap.xml

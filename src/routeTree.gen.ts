@@ -9,10 +9,15 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as WorkforceManagementRouteImport } from './routes/workforce-management'
+import { Route as TimeOffManagementRouteImport } from './routes/time-off-management'
+import { Route as TimeClockRouteImport } from './routes/time-clock'
+import { Route as ShiftTradingRouteImport } from './routes/shift-trading'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as JoinRouteImport } from './routes/join'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
+import { Route as EmployeeSchedulingRouteImport } from './routes/employee-scheduling'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
@@ -37,6 +42,26 @@ import { Route as AuthenticatedAuditLogRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedAppRulesRouteImport } from './routes/_authenticated/app-rules'
 import { Route as AuthenticatedEmployeesJoinRequestsRouteImport } from './routes/_authenticated/employees.join-requests'
 
+const WorkforceManagementRoute = WorkforceManagementRouteImport.update({
+  id: '/workforce-management',
+  path: '/workforce-management',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TimeOffManagementRoute = TimeOffManagementRouteImport.update({
+  id: '/time-off-management',
+  path: '/time-off-management',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TimeClockRoute = TimeClockRouteImport.update({
+  id: '/time-clock',
+  path: '/time-clock',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ShiftTradingRoute = ShiftTradingRouteImport.update({
+  id: '/shift-trading',
+  path: '/shift-trading',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
   path: '/reset-password',
@@ -55,6 +80,11 @@ const JoinRoute = JoinRouteImport.update({
 const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
   id: '/forgot-password',
   path: '/forgot-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EmployeeSchedulingRoute = EmployeeSchedulingRouteImport.update({
+  id: '/employee-scheduling',
+  path: '/employee-scheduling',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AboutRoute = AboutRouteImport.update({
@@ -179,10 +209,15 @@ const AuthenticatedEmployeesJoinRequestsRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/employee-scheduling': typeof EmployeeSchedulingRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/join': typeof JoinRoute
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/shift-trading': typeof ShiftTradingRoute
+  '/time-clock': typeof TimeClockRoute
+  '/time-off-management': typeof TimeOffManagementRoute
+  '/workforce-management': typeof WorkforceManagementRoute
   '/app-rules': typeof AuthenticatedAppRulesRoute
   '/audit-log': typeof AuthenticatedAuditLogRoute
   '/availability': typeof AuthenticatedAvailabilityRoute
@@ -207,10 +242,15 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/employee-scheduling': typeof EmployeeSchedulingRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/join': typeof JoinRoute
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/shift-trading': typeof ShiftTradingRoute
+  '/time-clock': typeof TimeClockRoute
+  '/time-off-management': typeof TimeOffManagementRoute
+  '/workforce-management': typeof WorkforceManagementRoute
   '/app-rules': typeof AuthenticatedAppRulesRoute
   '/audit-log': typeof AuthenticatedAuditLogRoute
   '/availability': typeof AuthenticatedAvailabilityRoute
@@ -237,10 +277,15 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/about': typeof AboutRoute
+  '/employee-scheduling': typeof EmployeeSchedulingRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/join': typeof JoinRoute
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/shift-trading': typeof ShiftTradingRoute
+  '/time-clock': typeof TimeClockRoute
+  '/time-off-management': typeof TimeOffManagementRoute
+  '/workforce-management': typeof WorkforceManagementRoute
   '/_authenticated/app-rules': typeof AuthenticatedAppRulesRoute
   '/_authenticated/audit-log': typeof AuthenticatedAuditLogRoute
   '/_authenticated/availability': typeof AuthenticatedAvailabilityRoute
@@ -267,10 +312,15 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/about'
+    | '/employee-scheduling'
     | '/forgot-password'
     | '/join'
     | '/login'
     | '/reset-password'
+    | '/shift-trading'
+    | '/time-clock'
+    | '/time-off-management'
+    | '/workforce-management'
     | '/app-rules'
     | '/audit-log'
     | '/availability'
@@ -295,10 +345,15 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/about'
+    | '/employee-scheduling'
     | '/forgot-password'
     | '/join'
     | '/login'
     | '/reset-password'
+    | '/shift-trading'
+    | '/time-clock'
+    | '/time-off-management'
+    | '/workforce-management'
     | '/app-rules'
     | '/audit-log'
     | '/availability'
@@ -324,10 +379,15 @@ export interface FileRouteTypes {
     | '/'
     | '/_authenticated'
     | '/about'
+    | '/employee-scheduling'
     | '/forgot-password'
     | '/join'
     | '/login'
     | '/reset-password'
+    | '/shift-trading'
+    | '/time-clock'
+    | '/time-off-management'
+    | '/workforce-management'
     | '/_authenticated/app-rules'
     | '/_authenticated/audit-log'
     | '/_authenticated/availability'
@@ -354,14 +414,47 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   AboutRoute: typeof AboutRoute
+  EmployeeSchedulingRoute: typeof EmployeeSchedulingRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   JoinRoute: typeof JoinRoute
   LoginRoute: typeof LoginRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
+  ShiftTradingRoute: typeof ShiftTradingRoute
+  TimeClockRoute: typeof TimeClockRoute
+  TimeOffManagementRoute: typeof TimeOffManagementRoute
+  WorkforceManagementRoute: typeof WorkforceManagementRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/workforce-management': {
+      id: '/workforce-management'
+      path: '/workforce-management'
+      fullPath: '/workforce-management'
+      preLoaderRoute: typeof WorkforceManagementRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/time-off-management': {
+      id: '/time-off-management'
+      path: '/time-off-management'
+      fullPath: '/time-off-management'
+      preLoaderRoute: typeof TimeOffManagementRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/time-clock': {
+      id: '/time-clock'
+      path: '/time-clock'
+      fullPath: '/time-clock'
+      preLoaderRoute: typeof TimeClockRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/shift-trading': {
+      id: '/shift-trading'
+      path: '/shift-trading'
+      fullPath: '/shift-trading'
+      preLoaderRoute: typeof ShiftTradingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/reset-password': {
       id: '/reset-password'
       path: '/reset-password'
@@ -388,6 +481,13 @@ declare module '@tanstack/react-router' {
       path: '/forgot-password'
       fullPath: '/forgot-password'
       preLoaderRoute: typeof ForgotPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/employee-scheduling': {
+      id: '/employee-scheduling'
+      path: '/employee-scheduling'
+      fullPath: '/employee-scheduling'
+      preLoaderRoute: typeof EmployeeSchedulingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/about': {
@@ -621,10 +721,15 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   AboutRoute: AboutRoute,
+  EmployeeSchedulingRoute: EmployeeSchedulingRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
   JoinRoute: JoinRoute,
   LoginRoute: LoginRoute,
   ResetPasswordRoute: ResetPasswordRoute,
+  ShiftTradingRoute: ShiftTradingRoute,
+  TimeClockRoute: TimeClockRoute,
+  TimeOffManagementRoute: TimeOffManagementRoute,
+  WorkforceManagementRoute: WorkforceManagementRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

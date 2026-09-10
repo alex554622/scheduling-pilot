@@ -6,8 +6,52 @@ import { planBullets, seatLine } from "@/lib/capabilities";
 import { APP_NAME } from "@/components/brand";
 import { DashboardPreview, Decorations } from "@/components/showcase";
 import { MarketingHeader } from "@/components/marketing-header";
+import { MarketingFooter } from "@/components/marketing-footer";
+import { seo, SITE_URL } from "@/lib/seo";
+
+const HOME_TITLE = "Scheduling Pilot | Employee Scheduling & Workforce Management Software";
+const HOME_DESCRIPTION =
+  "Scheduling Pilot helps businesses create employee schedules, manage shifts, track time, handle time-off requests, and simplify workforce management from one easy platform.";
+
+// Structured data. Deliberately limited to facts that are true and verifiable
+// from the site itself — no ratings, review counts, customer numbers or prices,
+// all of which would be fabricated and are exactly what Google penalises.
+const SOFTWARE_SCHEMA = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: APP_NAME,
+  applicationCategory: "BusinessApplication",
+  operatingSystem: "Web",
+  url: `${SITE_URL}/`,
+  description: HOME_DESCRIPTION,
+  featureList: [
+    "Employee scheduling",
+    "Shift management",
+    "Employee time clock",
+    "Time-off management",
+    "Shift trading",
+    "Workforce reporting",
+  ],
+};
+
+const ORGANIZATION_SCHEMA = {
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  name: APP_NAME,
+  url: `${SITE_URL}/`,
+  logo: `${SITE_URL}/scheduling-pilot-logo.png`,
+};
 
 export const Route = createFileRoute("/")({
+  head: () => ({
+    ...seo({ title: HOME_TITLE, description: HOME_DESCRIPTION, path: "/" }),
+    // Rendered, not executed: TanStack treats any script whose type is neither
+    // text/javascript nor module as inert data, which is what JSON-LD needs.
+    scripts: [
+      { type: "application/ld+json", children: JSON.stringify(SOFTWARE_SCHEMA) },
+      { type: "application/ld+json", children: JSON.stringify(ORGANIZATION_SCHEMA) },
+    ],
+  }),
   component: Landing,
 });
 
@@ -81,18 +125,19 @@ function Landing() {
     <div className="min-h-screen bg-background">
       <MarketingHeader />
 
+      <main>
       <section className="relative isolate overflow-hidden">
         <Decorations />
         <div className="relative z-10 mx-auto grid max-w-7xl items-center gap-14 px-6 pb-16 pt-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-16">
           <div className="min-w-0">
             <h1 className="text-balance text-5xl font-semibold leading-[1.1] tracking-tight text-foreground sm:text-6xl">
-              Workforce scheduling
+              Employee scheduling
               <br />
               made <span className="text-primary">simple</span>
             </h1>
             <p className="mt-6 max-w-md text-pretty text-lg leading-relaxed text-muted-foreground">
-              Automate scheduling, optimize coverage, and empower your team to focus on what matters
-              most.
+              Create schedules, manage shifts, track employee time, approve time-off requests, and
+              keep your team organized with {APP_NAME}.
             </p>
 
             <ul className="mt-10 space-y-7">
@@ -122,7 +167,15 @@ function Landing() {
       </section>
 
       <section id="features" className="mx-auto max-w-6xl px-6 py-20">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="text-center">
+          <h2 className="text-3xl font-semibold text-foreground">
+            Everything a shift-based team needs
+          </h2>
+          <p className="mt-2 text-muted-foreground">
+            Scheduling, time tracking, trades and time off in one place.
+          </p>
+        </div>
+        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[
             { icon: Calendar, title: "Schedule builder", desc: "Drag-and-drop weekly grids, copy to month, full-year planning." },
             { icon: RefreshCw, title: "Shift trades", desc: "Employees swap with one tap. Admins approve with full context." },
@@ -214,12 +267,9 @@ function Landing() {
         </div>
       </section>
 
-      <footer className="border-t border-border">
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 py-8 text-sm text-muted-foreground sm:flex-row">
-          <span>© 2026 {APP_NAME}</span>
-          <span>Powered by Valladolid NovaTech</span>
-        </div>
-      </footer>
+      </main>
+
+      <MarketingFooter />
     </div>
   );
 }

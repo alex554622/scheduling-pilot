@@ -8,9 +8,13 @@ import { useTrialStatus, trialCountdown } from "@/lib/trial";
 import { NotificationsBell } from "@/components/notifications-bell";
 import { BrandLogo, BrandMark } from "@/components/brand";
 import { JoinCompanyGate } from "@/components/join-company-gate";
+import { noindexSeo } from "@/lib/seo";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
+  // The signed-in application must never appear in search results. This is a
+  // crawler directive only — access is still enforced by auth and RLS.
+  head: () => noindexSeo("Scheduling Pilot"),
   component: AuthLayout,
 });
 

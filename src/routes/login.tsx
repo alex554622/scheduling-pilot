@@ -10,6 +10,7 @@ import { clearSignupIntent, saveSignupIntent } from "@/lib/signup-intent";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { noindexSeo } from "@/lib/seo";
 
 type Mode = "signin" | "signup";
 type SignupKind = "create" | "join" | "solo";
@@ -28,6 +29,9 @@ const searchSchema = z.object({
 
 export const Route = createFileRoute("/login")({
   validateSearch: (s) => searchSchema.parse(s),
+  // Public but not a search result worth having; follow keeps link equity
+  // flowing back to the marketing pages it links to.
+  head: () => noindexSeo("Log in | Scheduling Pilot", { follow: true }),
   component: LoginPage,
 });
 
