@@ -209,6 +209,18 @@ function Roster({
     },
   });
 
+  // Permanent delete: drops the separation record, which takes the person out
+  // of Former employees and removes the one-click rehire with them. Their
+  // account is untouched — it is theirs, not the company's — so they can still
+  // be taken on again later with the company code.
+  const forgetMut = useMutation({
+    mutationFn: async (userId: string) => {
+      const { error } = await supabase.rpc("forget_former_member", { _user: userId });
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["company-separations", companyId] }),
+  });
+
   // ---------- Pending join requests ----------
   const joinRequestsQ = useQuery({
     queryKey: ["company-join-requests", companyId],
@@ -487,6 +499,8 @@ function Roster({
         companyName={companyName}
         onRehire={(userId) => rehireMut.mutate(userId)}
         pendingId={rehireMut.isPending ? (rehireMut.variables as string) : null}
+        onForget={(userId) => forgetMut.mutate(userId)}
+        forgettingId={forgetMut.isPending ? (forgetMut.variables as string) : null}
       />
 
       <RemoveMemberDialog
@@ -630,12 +644,16 @@ function FormerEmployeesCard({
   companyName,
   onRehire,
   pendingId,
+  onForget,
+  forgettingId,
 }: {
   rows: SeparationRow[];
   loading: boolean;
   companyName: string;
   onRehire: (userId: string) => void;
   pendingId: string | null;
+  onForget: (userId: string) => void;
+  forgettingId: string | null;
 }) {
   if (loading || rows.length === 0) return null;
 
@@ -649,6 +667,7 @@ function FormerEmployeesCard({
       <div className="divide-y divide-border">
         {rows.map((s) => {
           const busy = pendingId === s.user_id;
+          const forgetting = forgettingId === s.user_id;
           return (
             <div
               key={s.id}
@@ -667,25 +686,49 @@ function FormerEmployeesCard({
                   <p className="mt-1 truncate text-xs text-muted-foreground italic">{s.note}</p>
                 )}
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={busy}
-                onClick={() => {
-                  if (
-                    confirm(`Rehire ${s.prior_full_name || "this person"} into ${companyName}?`)
-                  ) {
-                    onRehire(s.user_id);
-                  }
-                }}
-              >
-                {busy ? (
-                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
-                )}
-                Rehire
-              </Button>
+              <div className="flex shrink-0 items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={busy || forgetting}
+                  onClick={() => {
+                    if (
+                      confirm(`Rehire ${s.prior_full_name || "this person"} into ${companyName}?`)
+                    ) {
+                      onRehire(s.user_id);
+                    }
+                  }}
+                >
+                  {busy ? (
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+                  )}
+                  Rehire
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  disabled={busy || forgetting}
+                  onClick={() => {
+                    if (
+                      confirm(
+                        `Delete ${s.prior_full_name || "this person"} from ${companyName} for good?\n\nThey leave this list and can no longer be rehired with one click. Their own account stays, and they can join again with the company code. This cannot be undone.`,
+                      )
+                    ) {
+                      onForget(s.user_id);
+                    }
+                  }}
+                >
+                  {forgetting ? (
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                  )}
+                  Delete permanently
+                </Button>
+              </div>
             </div>
           );
         })}

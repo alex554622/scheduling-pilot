@@ -1216,6 +1216,7 @@ export type Database = {
         Returns: undefined
       }
       rehire_company_member: { Args: { _user: string }; Returns: undefined }
+      forget_former_member: { Args: { _user: string }; Returns: undefined }
       break_punch: {
         Args: {
           _accuracy?: number
