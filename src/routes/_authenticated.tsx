@@ -157,10 +157,12 @@ function AuthLayout() {
     );
   }
 
-  // Signed in with a profile but no company and nothing pending — an "employee
-  // only" signup, or a signup whose join code was rejected. Every nav item needs
-  // a company, so offer the join code instead of an empty shell.
-  if (profile && !profile.company_id && !profile.pending_company_id && primaryRole !== "super_admin") {
+  // No company and nothing pending — an "employee only" signup, a signup whose
+  // join code was rejected, or an account whose profile row was never created.
+  // Every nav item needs a company, so offer the join code instead of an empty
+  // shell. `profile` is optional on purpose: requiring it hid this screen from
+  // exactly the accounts stuck without one.
+  if (!profile?.company_id && !profile?.pending_company_id && primaryRole !== "super_admin") {
     return <JoinCompanyGate onSignOut={async () => { await signOut(); navigate({ to: "/login" }); }} />;
   }
 
