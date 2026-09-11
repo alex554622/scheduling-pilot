@@ -262,9 +262,11 @@ function DashboardPage() {
             {today.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button asChild variant="outline" size="sm">
-            <Link to="/whos-in"><Users className="mr-2 h-4 w-4" />Who's clocked in</Link>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* The button people reach for all day, so it gets the solid treatment
+              and a taller hit area while the rest stay quiet outlines. */}
+          <Button asChild className="shadow">
+            <Link to="/timeclock"><Clock className="mr-2 h-4 w-4" />Time clock</Link>
           </Button>
           <Button asChild variant="outline" size="sm">
             <Link to="/timecards"><FileClock className="mr-2 h-4 w-4" />Timecards</Link>
