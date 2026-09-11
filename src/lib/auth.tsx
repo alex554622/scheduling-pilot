@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { captureAuthLinkError, takeAuthLinkError } from "@/lib/auth-link-error";
 import { clearSignupIntent, readSignupIntent, saveSignupIntentError } from "@/lib/signup-intent";
 
 export type AppRole = "super_admin" | "company_admin" | "employee";
@@ -99,6 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [company, setCompany] = useState<CompanyLite | null>(null);
   const [roles, setRoles] = useState<AppRole[]>([]);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
   // Pull profile, role memberships, and the company row that the user belongs to.
   // Keep this resilient — a brand-new signup may not have a company yet.
@@ -148,6 +151,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // Take a failed email link's reason out of the URL first — the redirect to
+    // /login that follows would drop the fragment it arrived in.
+    const linkFailed = captureAuthLinkError();
+
     // CRITICAL: subscribe BEFORE getSession so we never miss the initial event.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s);
@@ -162,10 +169,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(data.session);
       setUser(data.session?.user ?? null);
       void loadContext(data.session?.user ?? null).finally(() => setLoading(false));
+      if (linkFailed) {
+        // Already signed in (a confirmation link clicked twice, say): the stale
+        // link is moot. Otherwise the sign-in form is where the reason is shown —
+        // including when Auth fell back to the site root instead of /dashboard.
+        if (data.session) takeAuthLinkError();
+        else if (window.location.pathname !== "/login") void navigate({ to: "/login" });
+      }
     });
 
     return () => subscription.unsubscribe();
-  }, [loadContext]);
+  }, [loadContext, navigate]);
 
   // Live-update the gating state when a super admin suspends/reactivates the
   // current user's company. The UI re-renders instantly with the new status.

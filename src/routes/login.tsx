@@ -7,6 +7,7 @@ import { Decorations } from "@/components/showcase";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { clearSignupIntent, saveSignupIntent } from "@/lib/signup-intent";
+import { takeAuthLinkError } from "@/lib/auth-link-error";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -92,6 +93,13 @@ function LoginPage() {
     try {
       if (localStorage.getItem(REMEMBER_PREF_KEY) === "0") setRemember(false);
     } catch { /* ignore */ }
+  }, []);
+
+  // An expired or already-used confirmation link ends up here with no session.
+  // Say why, instead of showing a bare sign-in form.
+  useEffect(() => {
+    const linkError = takeAuthLinkError();
+    if (linkError) setError(linkError);
   }, []);
 
   // Once authenticated, leave the login screen. A super admin belongs to no
