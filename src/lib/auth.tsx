@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { captureAuthLinkError, takeAuthLinkError } from "@/lib/auth-link-error";
+import { keepStorageOnDevice } from "@/lib/installed-app";
 import { clearSignupIntent, readSignupIntent, saveSignupIntentError } from "@/lib/signup-intent";
 
 export type AppRole = "super_admin" | "company_admin" | "employee";
@@ -154,6 +155,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Take a failed email link's reason out of the URL first — the redirect to
     // /login that follows would drop the fragment it arrived in.
     const linkFailed = captureAuthLinkError();
+    // On a phone's home screen, ask the browser to keep the stored session.
+    keepStorageOnDevice();
 
     // CRITICAL: subscribe BEFORE getSession so we never miss the initial event.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
@@ -205,7 +208,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(() => loadContext(user ?? null), [loadContext, user]);
 
   const signOut = useCallback(async () => {
-    await supabase.auth.signOut();
+    // "local" ends only this device's session. The default, "global", revokes
+    // every refresh token the user has, so signing out on a laptop also threw
+    // them out of the app on their phone.
+    await supabase.auth.signOut({ scope: "local" });
     setSession(null);
     setUser(null);
     setProfile(null);

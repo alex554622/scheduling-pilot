@@ -88,6 +88,12 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "description", content: DEFAULT_DESCRIPTION },
       { name: "robots", content: "index, follow" },
       { name: "theme-color", content: "#ffffff" },
+      // Home-screen install. The manifest covers Android and current iOS; the
+      // apple-* tags are what older iOS reads to open full screen, not in Safari.
+      { name: "mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-title", content: "Sched Pilot" },
+      { name: "apple-mobile-web-app-status-bar-style", content: "default" },
       // Verification code comes from the environment so no placeholder ships in
       // the repo. Unset means the tag is simply absent, which is a valid state.
       ...(GOOGLE_SITE_VERIFICATION
@@ -97,7 +103,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     links: [
       { rel: "stylesheet", href: appCss },
       { rel: "icon", type: "image/png", href: "/favicon.png" },
-      { rel: "apple-touch-icon", href: "/favicon.png" },
+      { rel: "apple-touch-icon", href: "/icons/apple-touch-icon.png" },
+      { rel: "manifest", href: "/manifest.webmanifest" },
     ],
   }),
   shellComponent: RootShell,
