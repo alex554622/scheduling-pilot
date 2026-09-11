@@ -21,12 +21,14 @@ import { Route as EmployeeSchedulingRouteImport } from './routes/employee-schedu
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ClockTokenRouteImport } from './routes/clock.$token'
 import { Route as AuthenticatedWorksiteRouteImport } from './routes/_authenticated/worksite'
 import { Route as AuthenticatedWhosInRouteImport } from './routes/_authenticated/whos-in'
 import { Route as AuthenticatedTradesRouteImport } from './routes/_authenticated/trades'
 import { Route as AuthenticatedTimeclockRouteImport } from './routes/_authenticated/timeclock'
 import { Route as AuthenticatedTimecardsRouteImport } from './routes/_authenticated/timecards'
 import { Route as AuthenticatedTimeOffRouteImport } from './routes/_authenticated/time-off'
+import { Route as AuthenticatedSharedClockInRouteImport } from './routes/_authenticated/shared-clock-in'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedScheduleRouteImport } from './routes/_authenticated/schedule'
 import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
@@ -101,6 +103,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ClockTokenRoute = ClockTokenRouteImport.update({
+  id: '/clock/$token',
+  path: '/clock/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedWorksiteRoute = AuthenticatedWorksiteRouteImport.update({
   id: '/worksite',
   path: '/worksite',
@@ -131,6 +138,12 @@ const AuthenticatedTimeOffRoute = AuthenticatedTimeOffRouteImport.update({
   path: '/time-off',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedSharedClockInRoute =
+  AuthenticatedSharedClockInRouteImport.update({
+    id: '/shared-clock-in',
+    path: '/shared-clock-in',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -231,12 +244,14 @@ export interface FileRoutesByFullPath {
   '/reports': typeof AuthenticatedReportsRoute
   '/schedule': typeof AuthenticatedScheduleRoute
   '/settings': typeof AuthenticatedSettingsRoute
+  '/shared-clock-in': typeof AuthenticatedSharedClockInRoute
   '/time-off': typeof AuthenticatedTimeOffRoute
   '/timecards': typeof AuthenticatedTimecardsRoute
   '/timeclock': typeof AuthenticatedTimeclockRoute
   '/trades': typeof AuthenticatedTradesRoute
   '/whos-in': typeof AuthenticatedWhosInRoute
   '/worksite': typeof AuthenticatedWorksiteRoute
+  '/clock/$token': typeof ClockTokenRoute
   '/employees/join-requests': typeof AuthenticatedEmployeesJoinRequestsRoute
 }
 export interface FileRoutesByTo {
@@ -264,12 +279,14 @@ export interface FileRoutesByTo {
   '/reports': typeof AuthenticatedReportsRoute
   '/schedule': typeof AuthenticatedScheduleRoute
   '/settings': typeof AuthenticatedSettingsRoute
+  '/shared-clock-in': typeof AuthenticatedSharedClockInRoute
   '/time-off': typeof AuthenticatedTimeOffRoute
   '/timecards': typeof AuthenticatedTimecardsRoute
   '/timeclock': typeof AuthenticatedTimeclockRoute
   '/trades': typeof AuthenticatedTradesRoute
   '/whos-in': typeof AuthenticatedWhosInRoute
   '/worksite': typeof AuthenticatedWorksiteRoute
+  '/clock/$token': typeof ClockTokenRoute
   '/employees/join-requests': typeof AuthenticatedEmployeesJoinRequestsRoute
 }
 export interface FileRoutesById {
@@ -299,12 +316,14 @@ export interface FileRoutesById {
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
   '/_authenticated/schedule': typeof AuthenticatedScheduleRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
+  '/_authenticated/shared-clock-in': typeof AuthenticatedSharedClockInRoute
   '/_authenticated/time-off': typeof AuthenticatedTimeOffRoute
   '/_authenticated/timecards': typeof AuthenticatedTimecardsRoute
   '/_authenticated/timeclock': typeof AuthenticatedTimeclockRoute
   '/_authenticated/trades': typeof AuthenticatedTradesRoute
   '/_authenticated/whos-in': typeof AuthenticatedWhosInRoute
   '/_authenticated/worksite': typeof AuthenticatedWorksiteRoute
+  '/clock/$token': typeof ClockTokenRoute
   '/_authenticated/employees/join-requests': typeof AuthenticatedEmployeesJoinRequestsRoute
 }
 export interface FileRouteTypes {
@@ -334,12 +353,14 @@ export interface FileRouteTypes {
     | '/reports'
     | '/schedule'
     | '/settings'
+    | '/shared-clock-in'
     | '/time-off'
     | '/timecards'
     | '/timeclock'
     | '/trades'
     | '/whos-in'
     | '/worksite'
+    | '/clock/$token'
     | '/employees/join-requests'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -367,12 +388,14 @@ export interface FileRouteTypes {
     | '/reports'
     | '/schedule'
     | '/settings'
+    | '/shared-clock-in'
     | '/time-off'
     | '/timecards'
     | '/timeclock'
     | '/trades'
     | '/whos-in'
     | '/worksite'
+    | '/clock/$token'
     | '/employees/join-requests'
   id:
     | '__root__'
@@ -401,12 +424,14 @@ export interface FileRouteTypes {
     | '/_authenticated/reports'
     | '/_authenticated/schedule'
     | '/_authenticated/settings'
+    | '/_authenticated/shared-clock-in'
     | '/_authenticated/time-off'
     | '/_authenticated/timecards'
     | '/_authenticated/timeclock'
     | '/_authenticated/trades'
     | '/_authenticated/whos-in'
     | '/_authenticated/worksite'
+    | '/clock/$token'
     | '/_authenticated/employees/join-requests'
   fileRoutesById: FileRoutesById
 }
@@ -423,6 +448,7 @@ export interface RootRouteChildren {
   TimeClockRoute: typeof TimeClockRoute
   TimeOffManagementRoute: typeof TimeOffManagementRoute
   WorkforceManagementRoute: typeof WorkforceManagementRoute
+  ClockTokenRoute: typeof ClockTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -511,6 +537,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/clock/$token': {
+      id: '/clock/$token'
+      path: '/clock/$token'
+      fullPath: '/clock/$token'
+      preLoaderRoute: typeof ClockTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/worksite': {
       id: '/_authenticated/worksite'
       path: '/worksite'
@@ -551,6 +584,13 @@ declare module '@tanstack/react-router' {
       path: '/time-off'
       fullPath: '/time-off'
       preLoaderRoute: typeof AuthenticatedTimeOffRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/shared-clock-in': {
+      id: '/_authenticated/shared-clock-in'
+      path: '/shared-clock-in'
+      fullPath: '/shared-clock-in'
+      preLoaderRoute: typeof AuthenticatedSharedClockInRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/settings': {
@@ -683,6 +723,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
   AuthenticatedScheduleRoute: typeof AuthenticatedScheduleRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
+  AuthenticatedSharedClockInRoute: typeof AuthenticatedSharedClockInRoute
   AuthenticatedTimeOffRoute: typeof AuthenticatedTimeOffRoute
   AuthenticatedTimecardsRoute: typeof AuthenticatedTimecardsRoute
   AuthenticatedTimeclockRoute: typeof AuthenticatedTimeclockRoute
@@ -705,6 +746,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedReportsRoute: AuthenticatedReportsRoute,
   AuthenticatedScheduleRoute: AuthenticatedScheduleRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
+  AuthenticatedSharedClockInRoute: AuthenticatedSharedClockInRoute,
   AuthenticatedTimeOffRoute: AuthenticatedTimeOffRoute,
   AuthenticatedTimecardsRoute: AuthenticatedTimecardsRoute,
   AuthenticatedTimeclockRoute: AuthenticatedTimeclockRoute,
@@ -730,6 +772,7 @@ const rootRouteChildren: RootRouteChildren = {
   TimeClockRoute: TimeClockRoute,
   TimeOffManagementRoute: TimeOffManagementRoute,
   WorkforceManagementRoute: WorkforceManagementRoute,
+  ClockTokenRoute: ClockTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

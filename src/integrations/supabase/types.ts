@@ -98,6 +98,66 @@ export type Database = {
         }
         Relationships: []
       }
+      kiosk_devices: {
+        Row: {
+          company_id: string
+          created_at: string
+          created_by: string | null
+          failed_attempts: number
+          id: string
+          label: string
+          last_used_at: string | null
+          locked_until: string | null
+          revoked_at: string | null
+          token: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          failed_attempts?: number
+          id?: string
+          label?: string
+          last_used_at?: string | null
+          locked_until?: string | null
+          revoked_at?: string | null
+          token: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          failed_attempts?: number
+          id?: string
+          label?: string
+          last_used_at?: string | null
+          locked_until?: string | null
+          revoked_at?: string | null
+          token?: string
+        }
+        Relationships: []
+      }
+      employee_clock_codes: {
+        Row: {
+          code: string
+          company_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          code: string
+          company_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          code?: string
+          company_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       companies: {
         Row: {
           billing_mode: string
@@ -1132,6 +1192,19 @@ export type Database = {
     }
     Functions: {
       accept_invitation: { Args: { _token: string }; Returns: string }
+      create_kiosk_device: {
+        Args: { _label?: string }
+        Returns: Database["public"]["Tables"]["kiosk_devices"]["Row"]
+      }
+      revoke_kiosk_device: { Args: { _id: string }; Returns: undefined }
+      set_employee_clock_code: { Args: { _user: string }; Returns: string }
+      clear_employee_clock_code: { Args: { _user: string }; Returns: undefined }
+      kiosk_device_info: { Args: { _token: string }; Returns: Json }
+      kiosk_state: { Args: { _token: string; _code: string }; Returns: Json }
+      kiosk_punch: {
+        Args: { _token: string; _code: string; _action: string; _minutes?: number | null }
+        Returns: Json
+      }
       approve_membership: { Args: { _user: string }; Returns: undefined }
       bootstrap_company: { Args: { _name: string }; Returns: string }
       remove_company_member: {

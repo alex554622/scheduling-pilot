@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Calendar, LayoutDashboard, Users, RefreshCw, CalendarOff, Building2, Settings, LogOut, Menu, BarChart3, PanelLeftClose, PanelLeftOpen, Clock, FileClock, UserCheck, ShieldCheck, SlidersHorizontal, Network, CalendarCheck, ScrollText, CreditCard, Gauge, Lock, Gift } from "lucide-react";
+import { Calendar, LayoutDashboard, Users, RefreshCw, CalendarOff, Building2, Settings, LogOut, Menu, BarChart3, PanelLeftClose, PanelLeftOpen, Clock, FileClock, UserCheck, ShieldCheck, SlidersHorizontal, Network, CalendarCheck, ScrollText, CreditCard, Gauge, Lock, Gift, Tablet } from "lucide-react";
 import { useAuth, ROLE_LABEL, type AppRole } from "@/lib/auth";
 import { useAppRules } from "@/lib/app-rules";
 import { useCapabilities, CAPABILITY_LABELS, type CapabilityKey } from "@/lib/capabilities";
@@ -32,6 +32,7 @@ const NAV: NavItem[] = [
   { to: "/timeclock", label: "Time clock", icon: Clock, roles: ["company_admin", "employee"], needs: "time_clock" },
   { to: "/timecards", label: "Timecards", icon: FileClock, roles: ["company_admin", "employee"], needs: "timecards" },
   { to: "/whos-in", label: "Who's in", icon: UserCheck, roles: ["company_admin", "super_admin"], needs: "time_clock" },
+  { to: "/shared-clock-in", label: "Shared clock-in", icon: Tablet, roles: ["company_admin"], needs: "time_clock" },
   { to: "/punch-corrections", label: "Punch corrections", icon: ShieldCheck, roles: ["company_admin", "super_admin"], needs: "time_clock" },
   { to: "/trades", label: "Shift trades", icon: RefreshCw, roles: ["company_admin", "employee"], needs: "shift_trades" },
   { to: "/time-off", label: "Time off", icon: CalendarOff, roles: ["company_admin", "employee"], needs: "time_off" },
