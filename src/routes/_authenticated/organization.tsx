@@ -149,6 +149,9 @@ function GeneralTab({ companyId }: { companyId: string }) {
   const zones = Array.from(new Set([detected, ...COMMON_ZONES]));
 
   return (
+    <div className="space-y-6">
+    <OrgNamePanel companyId={companyId} />
+
     <Panel title="Scheduling timezone" subtitle="Used to match shifts against stated availability and weekly hour totals.">
       <div className="max-w-md space-y-4">
         <div className="space-y-1.5">
@@ -172,6 +175,78 @@ function GeneralTab({ companyId }: { companyId: string }) {
         <div className="flex items-center gap-3">
           <Button disabled={save.isPending || value === q.data} onClick={() => save.mutate()}>
             {save.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save timezone
+          </Button>
+          {saved && <span className="text-xs text-success">Saved.</span>}
+        </div>
+        <ErrorNote error={err} />
+      </div>
+    </Panel>
+    </div>
+  );
+}
+
+/**
+ * Renaming the organization. This is the first thing anyone looks for on this
+ * page, and it is the name that turns up in the sidebar, on schedules and on
+ * printed timecards - so it is worth a panel of its own above the timezone.
+ *
+ * No new database work: the company_admin_update policy already lets an admin
+ * update their own company row, the same way the timezone above does.
+ */
+function OrgNamePanel({ companyId }: { companyId: string }) {
+  const { company, refresh } = useAuth();
+  const [name, setName] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    if (company) setName(company.name ?? "");
+  }, [company]);
+
+  const save = useMutation({
+    mutationFn: async () => {
+      const next = name.trim();
+      // `name` is NOT NULL, but an empty string satisfies that and would leave
+      // the organization nameless everywhere it is displayed.
+      if (!next) throw new Error("Organization name can't be empty");
+      if (next.length > 120) throw new Error("Organization name must be 120 characters or fewer");
+      const { error } = await supabase.from("companies").update({ name: next }).eq("id", companyId);
+      if (error) throw error;
+      // So the sidebar and every heading pick the new name up without a reload.
+      await refresh();
+    },
+    onSuccess: () => {
+      setErr(null);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    },
+    onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
+  });
+
+  const dirty = !!company && name.trim() !== company.name;
+
+  return (
+    <Panel
+      title="Organization name"
+      subtitle="Shown to your team across the app, on schedules you publish, and on printed timecards."
+    >
+      <div className="max-w-md space-y-4">
+        <div className="space-y-1.5">
+          <Label htmlFor="org-name">Name</Label>
+          <Input
+            id="org-name"
+            value={name}
+            maxLength={120}
+            placeholder="e.g. City of Calexico"
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && dirty) save.mutate();
+            }}
+          />
+        </div>
+        <div className="flex items-center gap-3">
+          <Button disabled={save.isPending || !dirty} onClick={() => save.mutate()}>
+            {save.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save name
           </Button>
           {saved && <span className="text-xs text-success">Saved.</span>}
         </div>
