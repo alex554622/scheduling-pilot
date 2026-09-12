@@ -8,7 +8,19 @@ import { Button } from "@/components/ui/button";
 import { LeafletMap } from "@/components/leaflet-map";
 import { PaySettingsCard } from "@/components/pay-settings-card";
 import { readPaySettings, type PaySettings } from "@/lib/pay-settings";
-import { Clock, MapPin, Loader2, LogIn, LogOut, AlertTriangle, FileClock, Settings as SettingsIcon, Coffee, Play, Users } from "lucide-react";
+import {
+  Clock,
+  MapPin,
+  Loader2,
+  LogIn,
+  LogOut,
+  AlertTriangle,
+  FileClock,
+  Settings as SettingsIcon,
+  Coffee,
+  Play,
+  Users,
+} from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/timeclock")({
   component: TimeclockPage,
@@ -113,9 +125,11 @@ function TimeclockPage() {
   const lastPunch = recentQ.data?.[0];
   // Derived status: off | working | on_break
   const status: "off" | "working" | "on_break" =
-    !lastPunch || lastPunch.kind === "out" ? "off"
-    : lastPunch.kind === "break_start" ? "on_break"
-    : "working";
+    !lastPunch || lastPunch.kind === "out"
+      ? "off"
+      : lastPunch.kind === "break_start"
+        ? "on_break"
+        : "working";
   const nextKind: "in" | "out" = status === "off" ? "in" : "out";
 
   // Second-by-second clock driving the break countdown, worked time and
@@ -130,9 +144,11 @@ function TimeclockPage() {
 
   // A break_start carries the length the employee picked; without one (an older
   // row, or a break opened before lengths existed) all we can show is elapsed time.
-  const breakStartedAt = status === "on_break" && lastPunch ? new Date(lastPunch.at).getTime() : null;
-  const breakMinutes = status === "on_break" ? lastPunch?.break_minutes ?? null : null;
-  const breakEndsAt = breakStartedAt != null && breakMinutes != null ? breakStartedAt + breakMinutes * 60_000 : null;
+  const breakStartedAt =
+    status === "on_break" && lastPunch ? new Date(lastPunch.at).getTime() : null;
+  const breakMinutes = status === "on_break" ? (lastPunch?.break_minutes ?? null) : null;
+  const breakEndsAt =
+    breakStartedAt != null && breakMinutes != null ? breakStartedAt + breakMinutes * 60_000 : null;
   const breakRemainingMs = breakEndsAt != null ? breakEndsAt - now : null;
 
   // Replay the punch history oldest-first to find where the open shift began and
@@ -173,7 +189,13 @@ function TimeclockPage() {
       ? Math.max(0, now - shift.openBreakAt)
       : 0;
   const workedMs =
-    shift.startedAt == null ? 0 : Math.max(0, now - shift.startedAt - shift.closedUnpaidMs - liveUnpaidMs);
+    shift.startedAt == null
+      ? 0
+      : Math.max(0, now - shift.startedAt - shift.closedUnpaidMs - liveUnpaidMs);
+
+  // Only a manager sees the worksite map; everyone still gets the same
+  // distance check when they punch.
+  const showMap = primaryRole === "company_admin" || primaryRole === "super_admin";
 
   // Pay is read from this device only — see `@/lib/pay-settings` for why.
   const [pay, setPay] = useState<PaySettings | null>(null);
@@ -196,7 +218,11 @@ function TimeclockPage() {
     }
     const id = navigator.geolocation.watchPosition(
       (pos) => {
-        setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy });
+        setCoords({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          acc: pos.coords.accuracy,
+        });
         setGeoErr(null);
       },
       (err) => setGeoErr(err.message || "Unable to read location"),
@@ -205,9 +231,10 @@ function TimeclockPage() {
     return () => navigator.geolocation.clearWatch(id);
   }, []);
 
-  const company_loc = companyQ.data?.latitude != null && companyQ.data?.longitude != null
-    ? { lat: companyQ.data.latitude!, lng: companyQ.data.longitude! }
-    : null;
+  const company_loc =
+    companyQ.data?.latitude != null && companyQ.data?.longitude != null
+      ? { lat: companyQ.data.latitude!, lng: companyQ.data.longitude! }
+      : null;
 
   const distance = useMemo(() => {
     if (!coords || !company_loc) return null;
@@ -218,7 +245,10 @@ function TimeclockPage() {
   const withinFence = distance == null ? null : distance <= radius;
   const fenceBlocks = rules.require_geofence && withinFence === false;
   const allowedBreaks = ([10, 30, 60] as const).filter(
-    (m) => (m === 10 && rules.allow_break_10) || (m === 30 && rules.allow_break_30) || (m === 60 && rules.allow_break_60),
+    (m) =>
+      (m === 10 && rules.allow_break_10) ||
+      (m === 30 && rules.allow_break_30) ||
+      (m === 60 && rules.allow_break_60),
   );
 
   const center: [number, number] = company_loc
@@ -274,7 +304,10 @@ function TimeclockPage() {
   });
 
   if (loading) return <div className="text-sm text-muted-foreground">Loading…</div>;
-  if (!company) return <div className="text-sm text-muted-foreground">Join a company to use the time clock.</div>;
+  if (!company)
+    return (
+      <div className="text-sm text-muted-foreground">Join a company to use the time clock.</div>
+    );
 
   const locationMissing = !company_loc;
 
@@ -283,20 +316,31 @@ function TimeclockPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-foreground">Time clock</h1>
-          <p className="text-sm text-muted-foreground">Clock in and out — your location is recorded with each punch.</p>
+          <p className="text-sm text-muted-foreground">
+            Clock in and out — your location is recorded with each punch.
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline" size="sm">
-            <Link to="/timecards"><FileClock className="mr-2 h-4 w-4" />My timecard</Link>
+            <Link to="/timecards">
+              <FileClock className="mr-2 h-4 w-4" />
+              My timecard
+            </Link>
           </Button>
           {(primaryRole === "company_admin" || primaryRole === "super_admin") && (
             <Button asChild variant="outline" size="sm">
-              <Link to="/whos-in"><Users className="mr-2 h-4 w-4" />Who's clocked in</Link>
+              <Link to="/whos-in">
+                <Users className="mr-2 h-4 w-4" />
+                Who's clocked in
+              </Link>
             </Button>
           )}
           {(primaryRole === "company_admin" || primaryRole === "super_admin") && (
             <Button asChild variant="outline" size="sm">
-              <Link to="/worksite"><SettingsIcon className="mr-2 h-4 w-4" />Worksite settings</Link>
+              <Link to="/worksite">
+                <SettingsIcon className="mr-2 h-4 w-4" />
+                Worksite settings
+              </Link>
             </Button>
           )}
         </div>
@@ -307,7 +351,12 @@ function TimeclockPage() {
           <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
           <div>
             <p className="font-medium">No worksite location set</p>
-            <p>Set your company's worksite location and geofence radius so employees can clock in. <Link to="/worksite" className="underline">Open worksite settings →</Link></p>
+            <p>
+              Set your company's worksite location and geofence radius so employees can clock in.{" "}
+              <Link to="/worksite" className="underline">
+                Open worksite settings →
+              </Link>
+            </p>
           </div>
         </div>
       )}
@@ -318,25 +367,37 @@ function TimeclockPage() {
         </div>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
-        <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-          {center[0] === 0 && center[1] === 0 ? (
-            <div className="grid h-[320px] place-items-center text-sm text-muted-foreground">
-              <div className="flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />Waiting for GPS…</div>
+      {/* The map is for managers checking where punches came from. An employee
+          clocking in does not need to watch themselves on a map, and their own
+          position is not something to put on screen for whoever walks past. */}
+      <div className={`grid gap-6 ${showMap ? "lg:grid-cols-[1.2fr_1fr]" : ""}`}>
+        {showMap && (
+          <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+            {center[0] === 0 && center[1] === 0 ? (
+              <div className="grid h-[320px] place-items-center text-sm text-muted-foreground">
+                <div className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Waiting for GPS…
+                </div>
+              </div>
+            ) : (
+              <LeafletMap
+                center={center}
+                zoom={16}
+                pins={pins}
+                circle={
+                  company_loc
+                    ? { lat: company_loc.lat, lng: company_loc.lng, radiusM: radius }
+                    : undefined
+                }
+                height={360}
+              />
+            )}
+            <div className="border-t border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+              Map data © OpenStreetMap contributors
             </div>
-          ) : (
-            <LeafletMap
-              center={center}
-              zoom={16}
-              pins={pins}
-              circle={company_loc ? { lat: company_loc.lat, lng: company_loc.lng, radiusM: radius } : undefined}
-              height={360}
-            />
-          )}
-          <div className="border-t border-border bg-muted/30 p-3 text-xs text-muted-foreground">
-            Map data © OpenStreetMap contributors
           </div>
-        </div>
+        )}
 
         <div className="space-y-4">
           <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
@@ -363,26 +424,41 @@ function TimeclockPage() {
                   </span>
                 </div>
                 <p className="mt-0.5 text-right text-xs text-muted-foreground">
-                  since {new Date(shift.startedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
-                  {shift.closedUnpaidMs + liveUnpaidMs > 0 && ` · ${fmtWorked(shift.closedUnpaidMs + liveUnpaidMs)} unpaid break deducted`}
+                  since{" "}
+                  {new Date(shift.startedAt).toLocaleTimeString([], {
+                    hour: "numeric",
+                    minute: "2-digit",
+                  })}
+                  {shift.closedUnpaidMs + liveUnpaidMs > 0 &&
+                    ` · ${fmtWorked(shift.closedUnpaidMs + liveUnpaidMs)} unpaid break deducted`}
                 </p>
 
                 {earnings ? (
                   <div className="mt-3 space-y-1 border-t border-border pt-3 text-sm">
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground">Gross</span>
-                      <span className="font-mono tabular-nums text-foreground">{fmtAmount(earnings.gross)}</span>
+                      <span className="font-mono tabular-nums text-foreground">
+                        {fmtAmount(earnings.gross)}
+                      </span>
                     </div>
                     {pay!.taxPercent > 0 && (
                       <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground">Federal tax ({pay!.taxPercent}%)</span>
-                        <span className="font-mono tabular-nums text-destructive">−{fmtAmount(earnings.federalTax)}</span>
+                        <span className="text-muted-foreground">
+                          Federal tax ({pay!.taxPercent}%)
+                        </span>
+                        <span className="font-mono tabular-nums text-destructive">
+                          −{fmtAmount(earnings.federalTax)}
+                        </span>
                       </div>
                     )}
                     {pay!.statePercent > 0 && (
                       <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground">State tax ({pay!.statePercent}%)</span>
-                        <span className="font-mono tabular-nums text-destructive">−{fmtAmount(earnings.stateTax)}</span>
+                        <span className="text-muted-foreground">
+                          State tax ({pay!.statePercent}%)
+                        </span>
+                        <span className="font-mono tabular-nums text-destructive">
+                          −{fmtAmount(earnings.stateTax)}
+                        </span>
                       </div>
                     )}
                     <div className="flex items-baseline justify-between pt-1">
@@ -420,7 +496,9 @@ function TimeclockPage() {
                 </p>
                 <p
                   className={`mt-0.5 font-mono text-3xl font-semibold tabular-nums ${
-                    breakRemainingMs != null && breakRemainingMs <= 0 ? "text-destructive" : "text-amber-900"
+                    breakRemainingMs != null && breakRemainingMs <= 0
+                      ? "text-destructive"
+                      : "text-amber-900"
                   }`}
                 >
                   {fmtCountdown(
@@ -432,7 +510,11 @@ function TimeclockPage() {
                 {breakStartedAt != null && (
                   <p className="mt-1 text-xs text-muted-foreground">
                     {breakMinutes != null ? `${breakMinutes}-minute break · ` : ""}
-                    started {new Date(breakStartedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                    started{" "}
+                    {new Date(breakStartedAt).toLocaleTimeString([], {
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}
                   </p>
                 )}
               </div>
@@ -447,22 +529,44 @@ function TimeclockPage() {
             <Button
               size="lg"
               className="w-full"
-              disabled={!coords || locationMissing || submitting || punchMut.isPending || fenceBlocks || status === "on_break"}
-              onClick={() => { setSubmitting(true); setFlash(null); punchMut.mutate(); }}
+              disabled={
+                !coords ||
+                locationMissing ||
+                submitting ||
+                punchMut.isPending ||
+                fenceBlocks ||
+                status === "on_break"
+              }
+              onClick={() => {
+                setSubmitting(true);
+                setFlash(null);
+                punchMut.mutate();
+              }}
               variant={nextKind === "in" ? "default" : "secondary"}
             >
               {punchMut.isPending ? (
-                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Recording…</>
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Recording…
+                </>
               ) : nextKind === "in" ? (
-                <><LogIn className="mr-2 h-4 w-4" />Clock IN</>
+                <>
+                  <LogIn className="mr-2 h-4 w-4" />
+                  Clock IN
+                </>
               ) : (
-                <><LogOut className="mr-2 h-4 w-4" />Clock OUT</>
+                <>
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Clock OUT
+                </>
               )}
             </Button>
 
             {status !== "off" && status !== "on_break" && allowedBreaks.length > 0 && (
               <div className="mt-2 space-y-2">
-                <p className="text-xs text-muted-foreground">Start a break — choose length (10-min is paid; 30 & 60-min are unpaid):</p>
+                <p className="text-xs text-muted-foreground">
+                  Start a break — choose length (10-min is paid; 30 & 60-min are unpaid):
+                </p>
                 <div className="grid grid-cols-3 gap-2">
                   {allowedBreaks.map((m) => (
                     <Button
@@ -470,7 +574,10 @@ function TimeclockPage() {
                       size="sm"
                       variant="outline"
                       disabled={!coords || locationMissing || breakMut.isPending || fenceBlocks}
-                      onClick={() => { setFlash(null); breakMut.mutate(m); }}
+                      onClick={() => {
+                        setFlash(null);
+                        breakMut.mutate(m);
+                      }}
                     >
                       <Coffee className="mr-1 h-3.5 w-3.5" />
                       {m}m{m === 10 ? " · paid" : ""}
@@ -480,7 +587,9 @@ function TimeclockPage() {
               </div>
             )}
             {status !== "off" && status !== "on_break" && allowedBreaks.length === 0 && (
-              <p className="mt-3 text-center text-xs text-muted-foreground">Breaks are disabled by your company's App rules.</p>
+              <p className="mt-3 text-center text-xs text-muted-foreground">
+                Breaks are disabled by your company's App rules.
+              </p>
             )}
             {status === "on_break" && (
               <Button
@@ -488,12 +597,21 @@ function TimeclockPage() {
                 variant="outline"
                 className="mt-2 w-full"
                 disabled={!coords || locationMissing || breakMut.isPending || fenceBlocks}
-                onClick={() => { setFlash(null); breakMut.mutate(null); }}
+                onClick={() => {
+                  setFlash(null);
+                  breakMut.mutate(null);
+                }}
               >
                 {breakMut.isPending ? (
-                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Recording…</>
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Recording…
+                  </>
                 ) : (
-                  <><Play className="mr-2 h-4 w-4" />End break</>
+                  <>
+                    <Play className="mr-2 h-4 w-4" />
+                    End break
+                  </>
                 )}
               </Button>
             )}
@@ -514,7 +632,9 @@ function TimeclockPage() {
               </p>
             )}
             {flash && (
-              <p className={`mt-3 text-center text-xs ${flash.kind === "ok" ? "text-emerald-600" : "text-destructive"}`}>
+              <p
+                className={`mt-3 text-center text-xs ${flash.kind === "ok" ? "text-emerald-600" : "text-destructive"}`}
+              >
                 {flash.msg}
               </p>
             )}
@@ -540,10 +660,14 @@ function TimeclockPage() {
                 return (
                   <li key={p.id} className="flex items-center justify-between py-2">
                     <div>
-                      <span className={`inline-block rounded px-1.5 py-0.5 text-xs font-medium ${styles[p.kind]}`}>
+                      <span
+                        className={`inline-block rounded px-1.5 py-0.5 text-xs font-medium ${styles[p.kind]}`}
+                      >
                         {PUNCH_LABEL[p.kind]}
                       </span>
-                      <span className="ml-2 text-foreground">{new Date(p.at).toLocaleString()}</span>
+                      <span className="ml-2 text-foreground">
+                        {new Date(p.at).toLocaleString()}
+                      </span>
                     </div>
                     <span className="text-xs text-muted-foreground">
                       {p.distance_m != null ? `${Math.round(p.distance_m)} m` : "—"}
@@ -564,6 +688,8 @@ function haversineM(lat1: number, lon1: number, lat2: number, lon2: number) {
   const toRad = (d: number) => (d * Math.PI) / 180;
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(a));
 }
