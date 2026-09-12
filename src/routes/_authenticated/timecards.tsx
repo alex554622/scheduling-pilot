@@ -11,16 +11,15 @@ import {
   ChevronRight,
   Clock,
   Download,
+  ExternalLink,
   Loader2,
+  MapPin,
   Pencil,
   Printer,
   Users,
 } from "lucide-react";
 import { PrintableTimecard } from "@/components/printable-timecard";
-import {
-  TimecardDayEditor,
-  type EditablePunch,
-} from "@/components/timecard-day-editor";
+import { TimecardDayEditor, type EditablePunch } from "@/components/timecard-day-editor";
 import { splitPeriod, overtimeNote } from "@/lib/overtime";
 
 export const Route = createFileRoute("/_authenticated/timecards")({
@@ -35,6 +34,16 @@ type Punch = {
   distance_m: number | null;
   within_geofence: boolean;
   break_minutes: number | null;
+  latitude: number | null;
+  longitude: number | null;
+};
+
+/** Punch kinds as a manager reads them in the location log. */
+const KIND_LABEL: Record<Punch["kind"], string> = {
+  in: "Clocked in",
+  out: "Clocked out",
+  break_start: "Break started",
+  break_end: "Break ended",
 };
 
 type Period = "week" | "biweek";
@@ -52,11 +61,7 @@ function addDays(d: Date, n: number) {
   return x;
 }
 function fmtDate(d: Date) {
-  return d.toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
+  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 }
 function fmtTime(s: string, roundMin = 0) {
   return roundToMinutes(new Date(s), roundMin).toLocaleTimeString([], {
@@ -77,9 +82,7 @@ function TimecardsPage() {
   const isSuperAdmin = primaryRole === "super_admin";
   const isManager = primaryRole === "company_admin" || isSuperAdmin;
   const [period, setPeriod] = useState<Period>("week");
-  const [anchor, setAnchor] = useState<Date>(() =>
-    startOfWeek(new Date(), rules.week_start_day),
-  );
+  const [anchor, setAnchor] = useState<Date>(() => startOfWeek(new Date(), rules.week_start_day));
   const [selectedUser, setSelectedUser] = useState<string | "me">("me");
   const [editingDay, setEditingDay] = useState<Date | null>(null);
   const [savingPdf, setSavingPdf] = useState(false);
@@ -123,12 +126,8 @@ function TimecardsPage() {
     queryKey: ["timecard-roster", isSuperAdmin ? "all" : company?.id],
     enabled: isManager && (isSuperAdmin || !!company?.id),
     queryFn: async () => {
-      let q = supabase
-        .from("profiles")
-        .select("id, full_name, position, company_id");
-      q = isSuperAdmin
-        ? q.not("company_id", "is", null)
-        : q.eq("company_id", company!.id);
+      let q = supabase.from("profiles").select("id, full_name, position, company_id");
+      q = isSuperAdmin ? q.not("company_id", "is", null) : q.eq("company_id", company!.id);
       const { data, error } = await q.order("full_name");
       if (error) throw error;
       return data ?? [];
@@ -141,10 +140,7 @@ function TimecardsPage() {
     queryKey: ["timecard-companies"],
     enabled: isSuperAdmin,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("companies")
-        .select("id, name")
-        .order("name");
+      const { data, error } = await supabase.from("companies").select("id, name").order("name");
       if (error) throw error;
       return data ?? [];
     },
@@ -160,18 +156,13 @@ function TimecardsPage() {
         : selectedUser;
 
   const punchesQ = useQuery<Punch[]>({
-    queryKey: [
-      "timecards",
-      targetUserId,
-      rangeStart.toISOString(),
-      rangeEnd.toISOString(),
-    ],
+    queryKey: ["timecards", targetUserId, rangeStart.toISOString(), rangeEnd.toISOString()],
     enabled: !!targetUserId,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("time_punches")
         .select(
-          "id, user_id, kind, at, distance_m, within_geofence, break_minutes",
+          "id, user_id, kind, at, distance_m, within_geofence, break_minutes, latitude, longitude",
         )
         .eq("user_id", targetUserId!)
         .gte("at", rangeStart.toISOString())
@@ -189,12 +180,7 @@ function TimecardsPage() {
       if (!byDay.has(k)) byDay.set(k, []);
       byDay.get(k)!.push(p);
     }
-    type Pair = {
-      in: Punch;
-      out?: Punch;
-      unpaidBreakMs: number;
-      paidBreakMs: number;
-    };
+    type Pair = { in: Punch; out?: Punch; unpaidBreakMs: number; paidBreakMs: number };
     const rows: {
       date: Date;
       punches: Punch[];
@@ -220,19 +206,14 @@ function TimecardsPage() {
       for (const p of list) {
         if (p.kind === "in") {
           if (openIn)
-            pairs.push({
-              in: openIn,
-              unpaidBreakMs: currentUnpaid,
-              paidBreakMs: currentPaid,
-            });
+            pairs.push({ in: openIn, unpaidBreakMs: currentUnpaid, paidBreakMs: currentPaid });
           openIn = p;
           currentUnpaid = 0;
           currentPaid = 0;
           openBreak = null;
         } else if (p.kind === "out") {
           if (openIn) {
-            const gross =
-              new Date(p.at).getTime() - new Date(openIn.at).getTime();
+            const gross = new Date(p.at).getTime() - new Date(openIn.at).getTime();
             const net = Math.max(0, gross - currentUnpaid);
             pairs.push({
               in: openIn,
@@ -252,8 +233,7 @@ function TimecardsPage() {
           if (openIn && !openBreak) openBreak = p;
         } else if (p.kind === "break_end") {
           if (openBreak) {
-            const elapsed =
-              new Date(p.at).getTime() - new Date(openBreak.at).getTime();
+            const elapsed = new Date(p.at).getTime() - new Date(openBreak.at).getTime();
             const isPaid = openBreak.break_minutes === 10;
             if (isPaid) currentPaid += elapsed;
             else currentUnpaid += elapsed;
@@ -262,11 +242,7 @@ function TimecardsPage() {
         }
       }
       if (openIn)
-        pairs.push({
-          in: openIn,
-          unpaidBreakMs: currentUnpaid,
-          paidBreakMs: currentPaid,
-        });
+        pairs.push({ in: openIn, unpaidBreakMs: currentUnpaid, paidBreakMs: currentPaid });
       rows.push({
         date: d,
         punches: list,
@@ -281,6 +257,16 @@ function TimecardsPage() {
     }
     return { rows, weekTotal, weekUnpaid, weekPaid };
   }, [punchesQ.data, rangeStart, days]);
+
+  // Managers only: every punch in view that carries coordinates, newest first.
+  const locationRows = useMemo(
+    () =>
+      (punchesQ.data ?? [])
+        .filter((p) => p.latitude != null && p.longitude != null)
+        .slice()
+        .reverse(),
+    [punchesQ.data],
+  );
 
   function nav(dir: -1 | 1) {
     setAnchor((a) => addDays(a, dir * days));
@@ -317,7 +303,9 @@ function TimecardsPage() {
         hours: i === 0 ? fmtHours(r.totalMs) : "",
         notes: [
           !p.out ? "Still clocked in" : null,
-          !p.in.within_geofence || (p.out && !p.out.within_geofence)
+          // Where someone punched from is a manager's business; an employee's
+          // own timecard is about their hours.
+          isManager && (!p.in.within_geofence || (p.out && !p.out.within_geofence))
             ? "Off-site punch"
             : null,
         ]
@@ -369,15 +357,10 @@ function TimecardsPage() {
     }
   }
 
-  if (loading)
-    return <div className="text-sm text-muted-foreground">Loading…</div>;
+  if (loading) return <div className="text-sm text-muted-foreground">Loading…</div>;
   // A super admin has no company of their own but can read every timecard.
   if (!company && !isSuperAdmin)
-    return (
-      <div className="text-sm text-muted-foreground">
-        Join a company to view timecards.
-      </div>
-    );
+    return <div className="text-sm text-muted-foreground">Join a company to view timecards.</div>;
 
   // Whose card is on screen — the roster row when a manager has picked someone,
   // otherwise the signed-in user's own profile.
@@ -394,8 +377,7 @@ function TimecardsPage() {
   const employeeCompanyName =
     (isSelf
       ? company?.name
-      : (companiesQ.data ?? []).find((c) => c.id === viewing?.company_id)
-          ?.name) ??
+      : (companiesQ.data ?? []).find((c) => c.id === viewing?.company_id)?.name) ??
     company?.name ??
     "Scheduling Pilot";
 
@@ -416,8 +398,7 @@ function TimecardsPage() {
             outAt: p.out?.at ?? null,
             unpaidBreakMs: p.unpaidBreakMs,
             paidBreakMs: p.paidBreakMs,
-            offSite:
-              !p.in.within_geofence || (!!p.out && !p.out.within_geofence),
+            offSite: isManager && (!p.in.within_geofence || (!!p.out && !p.out.within_geofence)),
           })),
         }))}
         totals={{
@@ -439,12 +420,10 @@ function TimecardsPage() {
       <div data-print-hide className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold text-foreground">
-              Timecards
-            </h1>
+            <h1 className="text-2xl font-semibold text-foreground">Timecards</h1>
             <p className="text-sm text-muted-foreground">
-              {period === "week" ? "Weekly" : "Bi-weekly"} totals ·{" "}
-              {fmtDate(rangeStart)} – {fmtDate(addDays(rangeEnd, -1))}
+              {period === "week" ? "Weekly" : "Bi-weekly"} totals · {fmtDate(rangeStart)} –{" "}
+              {fmtDate(addDays(rangeEnd, -1))}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -498,29 +477,17 @@ function TimecardsPage() {
             </button>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => nav(-1)}
-              aria-label="Previous"
-            >
+            <Button variant="outline" size="icon" onClick={() => nav(-1)} aria-label="Previous">
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <Button
               variant="outline"
               size="sm"
-              onClick={() =>
-                setAnchor(startOfWeek(new Date(), rules.week_start_day))
-              }
+              onClick={() => setAnchor(startOfWeek(new Date(), rules.week_start_day))}
             >
               This {period === "week" ? "week" : "2-week"}
             </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => nav(1)}
-              aria-label="Next"
-            >
+            <Button variant="outline" size="icon" onClick={() => nav(1)} aria-label="Next">
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
@@ -540,9 +507,7 @@ function TimecardsPage() {
                 onChange={(e) => setSelectedUser(e.target.value)}
               >
                 {!isSuperAdmin && (
-                  <option value="me">
-                    Me ({profile?.full_name || user?.email})
-                  </option>
+                  <option value="me">Me ({profile?.full_name || user?.email})</option>
                 )}
                 {(rosterQ.data ?? [])
                   .filter((m) => m.id !== user?.id)
@@ -563,29 +528,24 @@ function TimecardsPage() {
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
             <div>
               <p className="font-medium">Couldn't load this timecard</p>
-              <p className="mt-0.5">
-                {((rosterQ.error ?? punchesQ.error) as Error).message}
-              </p>
+              <p className="mt-0.5">{((rosterQ.error ?? punchesQ.error) as Error).message}</p>
             </div>
           </div>
         )}
 
-        {isManager &&
-          !rosterQ.isLoading &&
-          !rosterQ.error &&
-          (rosterQ.data ?? []).length <= 1 && (
-            <div className="flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
-              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
-              <p>
-                You're the only person on this company's roster, so there are no
-                other timecards to open. Add employees from the{" "}
-                <Link to="/employees" className="underline">
-                  Employees
-                </Link>{" "}
-                page.
-              </p>
-            </div>
-          )}
+        {isManager && !rosterQ.isLoading && !rosterQ.error && (rosterQ.data ?? []).length <= 1 && (
+          <div className="flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+            <p>
+              You're the only person on this company's roster, so there are no other timecards to
+              open. Add employees from the{" "}
+              <Link to="/employees" className="underline">
+                Employees
+              </Link>{" "}
+              page.
+            </p>
+          </div>
+        )}
 
         <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
           <div
@@ -596,31 +556,21 @@ function TimecardsPage() {
             <div className="text-right">Hours</div>
             {isManager && <div className="w-16 text-right">Edit</div>}
           </div>
-          {!punchesQ.isLoading &&
-            !punchesQ.error &&
-            (punchesQ.data ?? []).length === 0 && (
-              <div className="border-b border-border px-4 py-6 text-center text-sm text-muted-foreground">
-                No punches for{" "}
-                <span className="font-medium text-foreground">
-                  {employeeName}
-                </span>{" "}
-                between {fmtDate(rangeStart)} and{" "}
-                {fmtDate(addDays(rangeEnd, -1))}.
-                {isManager && " Use Edit on a day to add one."}
-              </div>
-            )}
+          {!punchesQ.isLoading && !punchesQ.error && (punchesQ.data ?? []).length === 0 && (
+            <div className="border-b border-border px-4 py-6 text-center text-sm text-muted-foreground">
+              No punches for <span className="font-medium text-foreground">{employeeName}</span>{" "}
+              between {fmtDate(rangeStart)} and {fmtDate(addDays(rangeEnd, -1))}.
+              {isManager && " Use Edit on a day to add one."}
+            </div>
+          )}
           {grouped.rows.map((r) => (
             <div
               key={r.date.toISOString()}
               className={`grid ${isManager ? "grid-cols-[1fr_2fr_1fr_auto]" : "grid-cols-[1fr_2fr_1fr]"} items-start gap-2 border-b border-border px-4 py-3 text-sm last:border-0`}
             >
-              <div className="font-medium text-foreground">
-                {fmtDate(r.date)}
-              </div>
+              <div className="font-medium text-foreground">{fmtDate(r.date)}</div>
               <div className="space-y-1">
-                {r.pairs.length === 0 && (
-                  <span className="text-muted-foreground">—</span>
-                )}
+                {r.pairs.length === 0 && <span className="text-muted-foreground">—</span>}
                 {r.pairs.map((p, i) => (
                   <div key={i} className="flex items-center gap-2">
                     <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-700">
@@ -635,11 +585,8 @@ function TimecardsPage() {
                         Still clocked in
                       </span>
                     )}
-                    {(!p.in.within_geofence ||
-                      (p.out && !p.out.within_geofence)) && (
-                      <span className="text-xs text-destructive">
-                        ⚠ off-site
-                      </span>
+                    {(!p.in.within_geofence || (p.out && !p.out.within_geofence)) && (
+                      <span className="text-xs text-destructive">⚠ off-site</span>
                     )}
                   </div>
                 ))}
@@ -648,9 +595,7 @@ function TimecardsPage() {
                 {fmtHours(r.totalMs)}
                 {(r.unpaidBreakMs > 0 || r.paidBreakMs > 0) && (
                   <div className="text-[10px] font-normal text-muted-foreground">
-                    {r.unpaidBreakMs > 0 && (
-                      <>unpaid {fmtHours(r.unpaidBreakMs)}</>
-                    )}
+                    {r.unpaidBreakMs > 0 && <>unpaid {fmtHours(r.unpaidBreakMs)}</>}
                     {r.unpaidBreakMs > 0 && r.paidBreakMs > 0 && " · "}
                     {r.paidBreakMs > 0 && <>paid {fmtHours(r.paidBreakMs)}</>}
                   </div>
@@ -705,6 +650,67 @@ function TimecardsPage() {
           })()}
         </div>
 
+        {/* Where each punch was made. Managers only: an employee's own timecard
+          is about their hours, not a map of their movements. */}
+        {isManager && (
+          <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+            <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
+              <MapPin className="h-4 w-4 text-muted-foreground" />
+              <h2 className="font-semibold text-foreground">Clock-in locations</h2>
+              <span className="text-xs text-muted-foreground">
+                {employeeName} · this {period === "week" ? "week" : "fortnight"}
+              </span>
+            </div>
+            {locationRows.length === 0 ? (
+              <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+                No locations recorded for this period.
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {locationRows.map((p) => (
+                  <div
+                    key={p.id}
+                    className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-sm"
+                  >
+                    <div className="min-w-0">
+                      <span className="font-medium text-foreground">{KIND_LABEL[p.kind]}</span>{" "}
+                      <span className="text-muted-foreground">
+                        {new Date(p.at).toLocaleString(undefined, {
+                          month: "short",
+                          day: "numeric",
+                          hour: "numeric",
+                          minute: "2-digit",
+                        })}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {p.distance_m != null && (
+                        <span
+                          className={`rounded px-2 py-0.5 text-xs font-medium ${
+                            p.within_geofence
+                              ? "bg-secondary text-muted-foreground"
+                              : "bg-destructive/10 text-destructive"
+                          }`}
+                        >
+                          {Math.round(p.distance_m)} m from worksite
+                        </span>
+                      )}
+                      <a
+                        href={`https://www.openstreetmap.org/?mlat=${p.latitude}&mlon=${p.longitude}#map=17/${p.latitude}/${p.longitude}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                      >
+                        Map <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {isManager && editingDay && targetUserId && (
           <TimecardDayEditor
             open
@@ -713,9 +719,8 @@ function TimecardsPage() {
             employeeId={targetUserId}
             employeeName={employeeName}
             punches={
-              (grouped.rows.find(
-                (r) => r.date.toDateString() === editingDay.toDateString(),
-              )?.punches ?? []) as EditablePunch[]
+              (grouped.rows.find((r) => r.date.toDateString() === editingDay.toDateString())
+                ?.punches ?? []) as EditablePunch[]
             }
           />
         )}
