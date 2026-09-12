@@ -23,6 +23,8 @@ export type AppRules = {
   allow_shift_trades: boolean;
   allow_time_off_requests: boolean;
   schedule_advance_notice_hours: number;
+  /** Which schedule screen an admin gets in the menu: the builder, or the monthly sheet. */
+  schedule_menu: "builder" | "sheet";
 };
 
 export const DEFAULT_APP_RULES: AppRules = {
@@ -42,6 +44,7 @@ export const DEFAULT_APP_RULES: AppRules = {
   allow_shift_trades: true,
   allow_time_off_requests: true,
   schedule_advance_notice_hours: 24,
+  schedule_menu: "builder",
 };
 
 export function useAppRules() {

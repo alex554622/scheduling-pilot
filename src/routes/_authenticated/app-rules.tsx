@@ -37,6 +37,7 @@ type AppRules = {
   allow_shift_trades: boolean;
   allow_time_off_requests: boolean;
   schedule_advance_notice_hours: number;
+  schedule_menu: "builder" | "sheet";
 };
 
 const DEFAULTS: AppRules = {
@@ -56,6 +57,7 @@ const DEFAULTS: AppRules = {
   allow_shift_trades: true,
   allow_time_off_requests: true,
   schedule_advance_notice_hours: 24,
+  schedule_menu: "builder",
 };
 
 function AppRulesPage() {
@@ -301,6 +303,29 @@ function AppRulesPage() {
               <h3 className="font-semibold text-foreground">Scheduling options</h3>
             </div>
             <div className="space-y-4">
+              {/* Two ways to run a schedule. Showing both in the menu only
+                  makes an admin choose the same thing twice. */}
+              <div className="rounded-md border border-border bg-secondary/30 px-3 py-2">
+                <div className="text-sm font-medium text-foreground">Schedule screen</div>
+                <div className="text-xs text-muted-foreground">
+                  Which one appears in your menu. Employees always keep their own schedule view.
+                </div>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  <ModeChoice
+                    active={rules.schedule_menu !== "sheet"}
+                    onClick={() => set("schedule_menu", "builder")}
+                    title="Schedule builder"
+                    detail="Day, week and month grids, with a shift editor behind every cell."
+                  />
+                  <ModeChoice
+                    active={rules.schedule_menu === "sheet"}
+                    onClick={() => set("schedule_menu", "sheet")}
+                    title="Monthly schedule sheet"
+                    detail="The posted roster: teams down the page, days across, an X on each working day."
+                  />
+                </div>
+              </div>
+
               <Field label="Week starts on">
                 <select
                   className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"

@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth, type AppRole } from "@/lib/auth";
@@ -30,8 +30,13 @@ import {
   Loader2,
   Download,
   CalendarRange,
+  CheckSquare,
 } from "lucide-react";
 import { SHIFT_COLORS, shiftColorClass, shiftColorHex } from "@/lib/shift-colors";
+import { ScheduleCopyPaste } from "@/components/schedule-copy-paste";
+import { EraseSelectionBar } from "@/components/erase-days";
+import { useScheduleSelection, type ScheduleSelection } from "@/lib/day-selection";
+import { toDayString } from "@/lib/schedule-pattern";
 
 export const Route = createFileRoute("/_authenticated/schedule")({
   component: SchedulePage,
@@ -517,6 +522,8 @@ function ScheduleBuilder(props: BuilderProps) {
   const [edit, setEdit] = useState<EditTarget | null>(null);
   const [copiedId, setCopiedId] = useState(false);
   const [savingPdf, setSavingPdf] = useState(false);
+  // Double-click a day heading or a shift to start picking things to clear.
+  const sel = useScheduleSelection();
 
   const draftCount = shifts.filter((s) => !s.published).length;
 
@@ -637,6 +644,27 @@ function ScheduleBuilder(props: BuilderProps) {
         </Button>
         <span className="ml-1 text-sm text-muted-foreground">{rangeLabel}</span>
         <div className="ml-auto flex items-center gap-2">
+          {canEdit && !sel.active && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={sel.enable}
+              title="Pick shifts or days to erase"
+            >
+              <CheckSquare className="mr-2 h-4 w-4" />
+              Select
+            </Button>
+          )}
+          {canEdit && (
+            <ScheduleCopyPaste
+              companyId={companyId}
+              rangeStart={toDayString(days[0])}
+              rangeLabel={rangeLabel}
+              scope={view === "day" ? "day" : view === "month" ? "month" : "week"}
+              shifts={shifts}
+              members={members}
+            />
+          )}
           {/* Templates are one way in; this builder is the other. */}
           {canEdit && (
             <Button asChild variant="outline" size="sm">
@@ -672,9 +700,21 @@ function ScheduleBuilder(props: BuilderProps) {
         </div>
       </div>
 
+      {canEdit && (
+        <EraseSelectionBar
+          selection={sel}
+          shifts={shifts}
+          scopeLabel={VIEW_LABEL[view].toLowerCase()}
+        />
+      )}
+
       {view === "day" && <DayView {...props} onEdit={setEdit} />}
-      {view === "week" && <GridView {...props} onEdit={setEdit} dayCount={7} />}
-      {view === "twoweek" && <GridView {...props} onEdit={setEdit} dayCount={14} />}
+      {view === "week" && (
+        <GridView {...props} onEdit={setEdit} dayCount={7} selection={canEdit ? sel : undefined} />
+      )}
+      {view === "twoweek" && (
+        <GridView {...props} onEdit={setEdit} dayCount={14} selection={canEdit ? sel : undefined} />
+      )}
       {view === "month" && <MonthView {...props} onEdit={setEdit} />}
 
       <ShiftEditor
@@ -697,7 +737,12 @@ function GridView({
   isLoading,
   onEdit,
   dayCount,
-}: BuilderProps & { onEdit: (t: EditTarget) => void; dayCount: 7 | 14 }) {
+  selection,
+}: BuilderProps & {
+  onEdit: (t: EditTarget) => void;
+  dayCount: 7 | 14;
+  selection?: ScheduleSelection;
+}) {
   const grid = useMemo(() => {
     const m = new Map<string, (ShiftRow | null)[]>();
     for (const member of members) m.set(member.id, new Array(dayCount).fill(null));
@@ -732,10 +777,16 @@ function GridView({
           {days.map((d, i) => {
             const today = new Date().toDateString() === d.toDateString();
             const weekDivider = dayCount === 14 && i === 7;
+            const dayKey = toDayString(d);
+            const picked = selection?.days.has(dayKey) ?? false;
             return (
-              <div
+              <button
+                type="button"
                 key={d.toISOString()}
-                className={`px-1 py-3 text-center text-[11px] font-semibold ${today ? "text-primary" : "text-foreground"} ${weekDivider ? "border-l-2 border-primary/30" : ""}`}
+                disabled={!selection}
+                onClick={() => selection?.toggleDay(dayKey)}
+                title="Click to pick this whole day"
+                className={`px-1 py-3 text-center text-[11px] font-semibold ${today ? "text-primary" : "text-foreground"} ${weekDivider ? "border-l-2 border-primary/30" : ""} ${picked ? "bg-primary/20 ring-1 ring-inset ring-primary" : ""}`}
               >
                 <div className="uppercase tracking-wide text-muted-foreground">
                   {d.toLocaleDateString([], { weekday: "short" })}
@@ -749,7 +800,7 @@ function GridView({
                 >
                   {d.getDate()}
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>
@@ -791,21 +842,48 @@ function GridView({
                 </div>
                 {row.map((s, i) => {
                   const weekDivider = dayCount === 14 && i === 7;
+                  const pickedShift = !!s && (selection?.shifts.has(s.id) ?? false);
+                  const pickedDay = selection?.days.has(toDayString(days[i])) ?? false;
+                  const marked = pickedShift || (pickedDay && !!s);
                   return (
                     <button
                       key={i}
                       type="button"
                       disabled={!canEdit}
-                      onClick={() =>
-                        canEdit &&
+                      onDoubleClick={() => {
+                        if (!canEdit) return;
+                        // The two clicks behind this double-click picked the
+                        // cell and put it back, so the selection is unchanged
+                        // and the editor can open cleanly.
                         onEdit({
                           memberId: m.id,
                           memberName: m.full_name || "(unnamed)",
                           day: days[i],
                           shift: s,
-                        })
+                        });
+                      }}
+                      onClick={() => {
+                        if (!canEdit) return;
+                        // A filled cell is picked by clicking it; an empty one
+                        // has nothing to pick, so it opens the editor to make
+                        // a shift there.
+                        if (s) {
+                          selection?.toggleShift(s.id);
+                          return;
+                        }
+                        onEdit({
+                          memberId: m.id,
+                          memberName: m.full_name || "(unnamed)",
+                          day: days[i],
+                          shift: s,
+                        });
+                      }}
+                      title={
+                        s
+                          ? "Click to pick this shift · double-click to edit it"
+                          : "Click to add a shift"
                       }
-                      className={`group relative border-l border-border p-1 text-left transition-colors enabled:hover:bg-primary-soft/40 disabled:cursor-default ${weekDivider ? "border-l-2 border-primary/30" : ""}`}
+                      className={`group relative border-l border-border p-1 text-left transition-colors enabled:hover:bg-primary-soft/40 disabled:cursor-default ${weekDivider ? "border-l-2 border-primary/30" : ""} ${marked ? "bg-primary/15 ring-1 ring-inset ring-primary" : ""}`}
                     >
                       {s ? (
                         <div

@@ -704,6 +704,159 @@ export async function downloadSchedulePdf(data: SchedulePdfData): Promise<void> 
   await createPdf(doc, `Schedule ${safeRange}.pdf`);
 }
 
+/* ---------------------------- schedule sheet ---------------------------- */
+
+export interface SheetDay {
+  day: number;
+  /** Two-letter weekday, as printed above the column: MO, TU, WE… */
+  weekday: string;
+}
+
+export interface SheetRow {
+  name: string;
+  /** One entry per day of the month: worked or not. */
+  marks: boolean[];
+}
+
+export interface SheetGroup {
+  name: string;
+  hours: string;
+  rows: SheetRow[];
+}
+
+export interface ScheduleSheetPdfData {
+  title: string;
+  subtitle: string;
+  revised: string;
+  monthLabel: string;
+  days: SheetDay[];
+  groups: SheetGroup[];
+}
+
+/**
+ * The month on one landscape page, laid out the way a posted duty roster is
+ * read: a column per day, teams as banded sections, an X on every day worked.
+ */
+export async function downloadScheduleSheetPdf(data: ScheduleSheetPdfData): Promise<void> {
+  const dayCount = data.days.length;
+  const nameWidth = 116;
+  // Content is a union that includes arrays, so the overrides are typed as a
+  // plain bag of properties rather than Partial<Content>, which cannot spread.
+  const cell = (text: string, opts: Record<string, unknown> = {}) => ({
+    text,
+    alignment: "center" as const,
+    fontSize: 7.5,
+    margin: [0, 3, 0, 3] as [number, number, number, number],
+    ...opts,
+  });
+
+  const body: Content[][] = [
+    [
+      {
+        text: data.monthLabel.toUpperCase(),
+        bold: true,
+        fontSize: 8,
+        fillColor: FILL,
+        margin: [4, 4, 4, 4],
+      },
+      ...data.days.map((d) =>
+        cell(String(d.day), { bold: true, fillColor: FILL, margin: [0, 4, 0, 4] }),
+      ),
+    ],
+    [
+      { text: "", fillColor: FILL, margin: [4, 2, 4, 2] },
+      ...data.days.map((d) =>
+        cell(d.weekday, { fontSize: 6.5, color: MUTED, fillColor: FILL, margin: [0, 2, 0, 2] }),
+      ),
+    ],
+  ];
+
+  for (const group of data.groups) {
+    body.push([
+      {
+        text: `${group.name}    ${group.hours}`,
+        bold: true,
+        fontSize: 7.5,
+        fillColor: "#e5e5e5",
+        margin: [4, 3, 4, 3],
+      },
+      ...data.days.map(() => ({ text: "", fillColor: "#e5e5e5" })),
+    ]);
+    for (const row of group.rows) {
+      body.push([
+        { text: row.name, fontSize: 7.5, margin: [4, 3, 4, 3] },
+        ...data.days.map((_, i) => cell(row.marks[i] ? "X" : "", { bold: row.marks[i] })),
+      ]);
+    }
+    if (group.rows.length === 0) {
+      body.push([
+        { text: "—", fontSize: 7.5, color: MUTED, margin: [4, 3, 4, 3] },
+        ...data.days.map(() => cell("")),
+      ]);
+    }
+  }
+
+  const doc: TDocumentDefinitions = {
+    pageSize: "LETTER",
+    pageOrientation: "landscape",
+    pageMargins: [28, 30, 28, 34],
+    defaultStyle: { fontSize: 8, color: INK, font: "Roboto" },
+    content: [
+      {
+        text: data.title.toUpperCase(),
+        fontSize: 13,
+        bold: true,
+        alignment: "center",
+        characterSpacing: 0.6,
+      },
+      {
+        columns: [
+          { text: data.subtitle, fontSize: 8, color: MUTED },
+          {
+            text: data.revised ? `revised ${data.revised}` : "",
+            fontSize: 8,
+            color: MUTED,
+            alignment: "right",
+          },
+        ],
+        margin: [0, 4, 0, 8],
+      },
+      {
+        table: {
+          headerRows: 2,
+          widths: [nameWidth, ...Array.from({ length: dayCount }, () => "*" as const)],
+          body,
+        },
+        layout: {
+          hLineWidth: () => 0.4,
+          vLineWidth: () => 0.4,
+          hLineColor: () => RULE,
+          vLineColor: () => RULE,
+          paddingLeft: () => 1,
+          paddingRight: () => 1,
+          paddingTop: () => 0,
+          paddingBottom: () => 0,
+        },
+      },
+    ],
+    footer: (current: number, total: number) => ({
+      columns: [
+        { text: data.title, fontSize: 7, color: MUTED, margin: [28, 0, 0, 0] },
+        {
+          text: `Page ${current} of ${total}`,
+          fontSize: 7,
+          color: MUTED,
+          alignment: "right",
+          margin: [0, 0, 28, 0],
+        },
+      ],
+      margin: [0, 10, 0, 0],
+    }),
+  };
+
+  await createPdf(doc, `${data.monthLabel.replace(/[^\w\s-]+/g, "").trim()} schedule.pdf`);
+}
+
 function signatureLine(role: string): Content {
   return {
     stack: [
