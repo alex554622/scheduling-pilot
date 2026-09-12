@@ -24,10 +24,7 @@ interface PdfMakeGlobal {
   addVirtualFileSystem?(vfs: unknown): void;
 }
 
-async function createPdf(
-  doc: TDocumentDefinitions,
-  filename: string,
-): Promise<void> {
+async function createPdf(doc: TDocumentDefinitions, filename: string): Promise<void> {
   // These builds are UMD: importing pdfmake registers `window.pdfMake` rather
   // than exporting anything, and vfs_fonts then registers its font table into
   // that global on load. So they have to be awaited in order — importing both
@@ -37,14 +34,11 @@ async function createPdf(
 
   const pdfMake = (window as unknown as { pdfMake?: PdfMakeGlobal }).pdfMake;
   if (!pdfMake?.createPdf)
-    throw new Error(
-      "The PDF engine failed to load. Reload the page and try again.",
-    );
+    throw new Error("The PDF engine failed to load. Reload the page and try again.");
 
   // Belt and braces: if the fonts didn't self-register, hand them over.
   const vfs = (fonts as unknown as { default?: unknown }).default;
-  if (vfs && typeof pdfMake.addVirtualFileSystem === "function")
-    pdfMake.addVirtualFileSystem(vfs);
+  if (vfs && typeof pdfMake.addVirtualFileSystem === "function") pdfMake.addVirtualFileSystem(vfs);
 
   pdfMake.createPdf(doc).download(filename);
 }
@@ -69,12 +63,7 @@ function longDate(value: string | Date | null | undefined): string {
 function field(label: string, value: string): Content {
   return {
     stack: [
-      {
-        text: label.toUpperCase(),
-        fontSize: 7,
-        color: MUTED,
-        characterSpacing: 0.6,
-      },
+      { text: label.toUpperCase(), fontSize: 7, color: MUTED, characterSpacing: 0.6 },
       { text: value, fontSize: 10, bold: true, margin: [0, 2, 0, 0] },
     ],
   };
@@ -111,12 +100,7 @@ export async function downloadInvoicePdf(data: InvoicePdfData): Promise<void> {
         columns: [
           {
             stack: [
-              {
-                text: issuer.toUpperCase(),
-                fontSize: 14,
-                bold: true,
-                characterSpacing: 0.8,
-              },
+              { text: issuer.toUpperCase(), fontSize: 14, bold: true, characterSpacing: 0.8 },
               {
                 text: data.issuerLine ?? "Powered by Valladolid NovaTech",
                 fontSize: 8,
@@ -135,12 +119,7 @@ export async function downloadInvoicePdf(data: InvoicePdfData): Promise<void> {
                 alignment: "right",
                 characterSpacing: 1,
               },
-              {
-                text: data.number,
-                fontSize: 11,
-                alignment: "right",
-                margin: [0, 2, 0, 0],
-              },
+              { text: data.number, fontSize: 11, alignment: "right", margin: [0, 2, 0, 0] },
               ...(paid
                 ? [
                     {
@@ -158,17 +137,7 @@ export async function downloadInvoicePdf(data: InvoicePdfData): Promise<void> {
         ],
       },
       {
-        canvas: [
-          {
-            type: "line",
-            x1: 0,
-            y1: 0,
-            x2: 515,
-            y2: 0,
-            lineWidth: 1.5,
-            lineColor: INK,
-          },
-        ],
+        canvas: [{ type: "line", x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 1.5, lineColor: INK }],
         margin: [0, 10, 0, 14],
       },
 
@@ -176,31 +145,15 @@ export async function downloadInvoicePdf(data: InvoicePdfData): Promise<void> {
         columns: [
           {
             stack: [
-              {
-                text: "BILLED TO",
-                fontSize: 7,
-                color: MUTED,
-                characterSpacing: 0.6,
-              },
-              {
-                text: data.companyName,
-                fontSize: 12,
-                bold: true,
-                margin: [0, 3, 0, 0],
-              },
-              ...(data.billedTo
-                ? [{ text: data.billedTo, fontSize: 9, color: MUTED }]
-                : []),
+              { text: "BILLED TO", fontSize: 7, color: MUTED, characterSpacing: 0.6 },
+              { text: data.companyName, fontSize: 12, bold: true, margin: [0, 3, 0, 0] },
+              ...(data.billedTo ? [{ text: data.billedTo, fontSize: 9, color: MUTED }] : []),
             ],
           },
           {
             width: "auto",
             stack: [
-              {
-                text: `Issued: ${longDate(data.issuedAt)}`,
-                fontSize: 9,
-                alignment: "right",
-              },
+              { text: `Issued: ${longDate(data.issuedAt)}`, fontSize: 9, alignment: "right" },
               ...(paid
                 ? [
                     {
@@ -261,25 +214,14 @@ export async function downloadInvoicePdf(data: InvoicePdfData): Promise<void> {
                 ],
                 margin: [4, 8, 4, 8],
               },
-              {
-                text: money(data.amountCents),
-                alignment: "right",
-                margin: [4, 8, 4, 8],
-              },
+              { text: money(data.amountCents), alignment: "right", margin: [4, 8, 4, 8] },
             ],
           ],
         },
         layout: {
           hLineWidth: (i: number, node) =>
-            i === 0
-              ? 0
-              : i === 1
-                ? 1
-                : i === node.table.body.length
-                  ? 1.5
-                  : 0.5,
-          hLineColor: (i: number, node) =>
-            i === node.table.body.length ? INK : RULE,
+            i === 0 ? 0 : i === 1 ? 1 : i === node.table.body.length ? 1.5 : 0.5,
+          hLineColor: (i: number, node) => (i === node.table.body.length ? INK : RULE),
           vLineWidth: () => 0,
           paddingLeft: () => 0,
           paddingRight: () => 0,
@@ -329,17 +271,7 @@ export async function downloadInvoicePdf(data: InvoicePdfData): Promise<void> {
       margin: [40, 0, 40, 0],
       stack: [
         {
-          canvas: [
-            {
-              type: "line",
-              x1: 0,
-              y1: 0,
-              x2: 515,
-              y2: 0,
-              lineWidth: 0.5,
-              lineColor: RULE,
-            },
-          ],
+          canvas: [{ type: "line", x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.5, lineColor: RULE }],
         },
         {
           text: paid
@@ -382,12 +314,7 @@ export interface TimecardPdfData {
   rangeLabel: string;
   daysWorked: number;
   rows: TimecardPdfRow[];
-  totals: {
-    unpaid: string;
-    paid: string;
-    worked: string;
-    workedDecimal: string;
-  };
+  totals: { unpaid: string; paid: string; worked: string; workedDecimal: string };
   regular: string;
   regularDecimal: string;
   overtime: string | null;
@@ -400,22 +327,14 @@ export interface TimecardPdfData {
   filename: string;
 }
 
-export async function downloadTimecardPdf(
-  data: TimecardPdfData,
-): Promise<void> {
-  const cell = (
-    text: string,
-    align: "left" | "center" | "right" = "center",
-  ) => ({
+export async function downloadTimecardPdf(data: TimecardPdfData): Promise<void> {
+  const cell = (text: string, align: "left" | "center" | "right" = "center") => ({
     text,
     alignment: align,
     fontSize: 8.5,
     margin: [3, 5, 3, 5] as [number, number, number, number],
   });
-  const head = (
-    text: string,
-    align: "left" | "center" | "right" = "center",
-  ) => ({
+  const head = (text: string, align: "left" | "center" | "right" = "center") => ({
     text: text.toUpperCase(),
     alignment: align,
     fontSize: 7,
@@ -471,17 +390,7 @@ export async function downloadTimecardPdf(
         ],
       },
       {
-        canvas: [
-          {
-            type: "line",
-            x1: 0,
-            y1: 0,
-            x2: 515,
-            y2: 0,
-            lineWidth: 1.5,
-            lineColor: INK,
-          },
-        ],
+        canvas: [{ type: "line", x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 1.5, lineColor: INK }],
         margin: [0, 8, 0, 12],
       },
 
@@ -495,17 +404,7 @@ export async function downloadTimecardPdf(
         columnGap: 16,
       },
       {
-        canvas: [
-          {
-            type: "line",
-            x1: 0,
-            y1: 0,
-            x2: 515,
-            y2: 0,
-            lineWidth: 0.5,
-            lineColor: RULE,
-          },
-        ],
+        canvas: [{ type: "line", x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.5, lineColor: RULE }],
         margin: [0, 12, 0, 12],
       },
 
@@ -538,27 +437,14 @@ export async function downloadTimecardPdf(
               { ...cell(""), fillColor: FILL },
               { ...cell(data.totals.unpaid), bold: true, fillColor: FILL },
               { ...cell(data.totals.paid), bold: true, fillColor: FILL },
-              {
-                ...cell(data.totals.worked, "right"),
-                bold: true,
-                fillColor: FILL,
-              },
-              {
-                ...cell(`${data.totals.workedDecimal} hrs`, "left"),
-                fillColor: FILL,
-              },
+              { ...cell(data.totals.worked, "right"), bold: true, fillColor: FILL },
+              { ...cell(`${data.totals.workedDecimal} hrs`, "left"), fillColor: FILL },
             ],
           ],
         },
         layout: {
           hLineWidth: (i: number, node) =>
-            i === 0
-              ? 0
-              : i === 1
-                ? 1
-                : i === node.table.body.length - 1
-                  ? 1.5
-                  : 0.5,
+            i === 0 ? 0 : i === 1 ? 1 : i === node.table.body.length - 1 ? 1.5 : 0.5,
           hLineColor: (i: number, node) =>
             i === 1 || i === node.table.body.length - 1 ? INK : RULE,
           vLineWidth: () => 0,
@@ -586,11 +472,7 @@ export async function downloadTimecardPdf(
                 ...(data.overtime
                   ? [
                       [
-                        {
-                          text: "Overtime",
-                          alignment: "right" as const,
-                          fontSize: 8.5,
-                        },
+                        { text: "Overtime", alignment: "right" as const, fontSize: 8.5 },
                         {
                           text: `${data.overtime}  (${data.overtimeDecimal})`,
                           alignment: "right" as const,
@@ -602,11 +484,7 @@ export async function downloadTimecardPdf(
                 ...(data.doubleTime
                   ? [
                       [
-                        {
-                          text: "Double time",
-                          alignment: "right" as const,
-                          fontSize: 8.5,
-                        },
+                        { text: "Double time", alignment: "right" as const, fontSize: 8.5 },
                         {
                           text: `${data.doubleTime}  (${data.doubleTimeDecimal})`,
                           alignment: "right" as const,
@@ -616,12 +494,7 @@ export async function downloadTimecardPdf(
                     ]
                   : []),
                 [
-                  {
-                    text: "Total worked",
-                    alignment: "right",
-                    bold: true,
-                    fontSize: 9,
-                  },
+                  { text: "Total worked", alignment: "right", bold: true, fontSize: 9 },
                   {
                     text: `${data.totals.worked}  (${data.totals.workedDecimal})`,
                     alignment: "right",
@@ -632,8 +505,7 @@ export async function downloadTimecardPdf(
               ],
             },
             layout: {
-              hLineWidth: (i: number, node) =>
-                i === node.table.body.length - 1 ? 0.8 : 0,
+              hLineWidth: (i: number, node) => (i === node.table.body.length - 1 ? 0.8 : 0),
               hLineColor: () => INK,
               vLineWidth: () => 0,
               paddingTop: () => 3,
@@ -646,10 +518,7 @@ export async function downloadTimecardPdf(
       },
 
       {
-        columns: [
-          signatureLine("Employee signature"),
-          signatureLine("Supervisor signature"),
-        ],
+        columns: [signatureLine("Employee signature"), signatureLine("Supervisor signature")],
         columnGap: 40,
         margin: [0, 46, 0, 0],
       },
@@ -658,17 +527,7 @@ export async function downloadTimecardPdf(
       margin: [40, 0, 40, 0],
       stack: [
         {
-          canvas: [
-            {
-              type: "line",
-              x1: 0,
-              y1: 0,
-              x2: 515,
-              y2: 0,
-              lineWidth: 0.5,
-              lineColor: RULE,
-            },
-          ],
+          canvas: [{ type: "line", x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.5, lineColor: RULE }],
         },
         {
           text: "I certify that the hours recorded above are a true and complete record of the time I worked during this pay period.",
@@ -676,18 +535,8 @@ export async function downloadTimecardPdf(
           color: MUTED,
           margin: [0, 5, 0, 0],
         },
-        {
-          text: data.roundNote,
-          fontSize: 6.5,
-          color: MUTED,
-          margin: [0, 2, 0, 0],
-        },
-        {
-          text: data.overtimeNote,
-          fontSize: 6.5,
-          color: MUTED,
-          margin: [0, 1, 0, 0],
-        },
+        { text: data.roundNote, fontSize: 6.5, color: MUTED, margin: [0, 2, 0, 0] },
+        { text: data.overtimeNote, fontSize: 6.5, color: MUTED, margin: [0, 1, 0, 0] },
       ],
     }),
   };
@@ -695,37 +544,176 @@ export async function downloadTimecardPdf(
   await createPdf(doc, data.filename);
 }
 
-function signatureLine(role: string): Content {
-  return {
-    stack: [
+/* ------------------------------- schedule ------------------------------- */
+
+export interface SchedulePdfShift {
+  employee: string;
+  time: string;
+  position: string;
+  /** Matches the colour of the shift on screen. */
+  colorHex: string;
+  draft: boolean;
+}
+
+export interface SchedulePdfDay {
+  date: string;
+  shifts: SchedulePdfShift[];
+}
+
+export interface SchedulePdfData {
+  companyName: string;
+  rangeLabel: string;
+  viewLabel: string;
+  days: SchedulePdfDay[];
+  totalShifts: number;
+  totalHours: string;
+}
+
+/**
+ * The schedule as a page to print and pin up: one row per shift, grouped by
+ * day, with the colour bar from the screen carried over so a team recognises
+ * its own shifts at a glance.
+ */
+export async function downloadSchedulePdf(data: SchedulePdfData): Promise<void> {
+  const cell = (text: string, align: "left" | "center" | "right" = "left") => ({
+    text,
+    alignment: align,
+    fontSize: 8.5,
+    margin: [3, 4, 3, 4] as [number, number, number, number],
+  });
+  const head = (text: string, align: "left" | "center" | "right" = "left") => ({
+    text: text.toUpperCase(),
+    alignment: align,
+    fontSize: 7,
+    bold: true,
+    color: MUTED,
+    characterSpacing: 0.6,
+    fillColor: FILL,
+    margin: [3, 5, 3, 5] as [number, number, number, number],
+  });
+
+  const body: Content[][] = [
+    [head(""), head("Day"), head("Employee"), head("Time"), head("Position")],
+  ];
+
+  for (const day of data.days) {
+    if (day.shifts.length === 0) {
+      body.push([
+        { text: "" },
+        { ...cell(day.date), bold: true },
+        { ...cell("No shifts"), color: MUTED },
+        { text: "" },
+        { text: "" },
+      ]);
+      continue;
+    }
+    day.shifts.forEach((s, i) => {
+      body.push([
+        { text: "", fillColor: s.colorHex },
+        { ...cell(i === 0 ? day.date : ""), bold: true },
+        cell(s.employee),
+        cell(s.time),
+        { ...cell(s.draft ? `${s.position} (draft)` : s.position), color: s.draft ? MUTED : INK },
+      ]);
+    });
+  }
+
+  const doc: TDocumentDefinitions = {
+    pageSize: "LETTER",
+    pageMargins: [40, 40, 40, 50],
+    defaultStyle: { fontSize: 9, color: INK, font: "Roboto" },
+    content: [
       {
-        canvas: [
+        columns: [
           {
-            type: "line",
-            x1: 0,
-            y1: 22,
-            x2: 237,
-            y2: 22,
-            lineWidth: 0.8,
-            lineColor: INK,
+            stack: [
+              {
+                text: data.companyName.toUpperCase(),
+                fontSize: 14,
+                bold: true,
+                characterSpacing: 0.8,
+              },
+              {
+                text: "SHIFT SCHEDULE",
+                fontSize: 7,
+                color: MUTED,
+                characterSpacing: 1.6,
+                margin: [0, 3, 0, 0],
+              },
+            ],
+          },
+          {
+            width: "auto",
+            stack: [
+              { text: data.viewLabel, fontSize: 8, alignment: "right", bold: true },
+              {
+                text: data.rangeLabel,
+                fontSize: 8,
+                alignment: "right",
+                color: MUTED,
+                margin: [0, 2, 0, 0],
+              },
+            ],
           },
         ],
       },
       {
+        canvas: [{ type: "line", x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 1.5, lineColor: INK }],
+        margin: [0, 8, 0, 12],
+      },
+      {
         columns: [
-          {
-            text: role.toUpperCase(),
-            fontSize: 7,
-            color: MUTED,
-            characterSpacing: 0.6,
-          },
-          {
-            text: "DATE",
-            fontSize: 7,
-            color: MUTED,
-            characterSpacing: 0.6,
-            alignment: "right",
-          },
+          field("Shifts", String(data.totalShifts)),
+          field("Scheduled hours", data.totalHours),
+          field("Prepared", longDate(new Date())),
+        ],
+        columnGap: 16,
+      },
+      {
+        canvas: [{ type: "line", x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.5, lineColor: RULE }],
+        margin: [0, 12, 0, 12],
+      },
+      {
+        table: { headerRows: 1, widths: [6, 80, 130, 96, "*"], body },
+        layout: {
+          hLineWidth: (i: number, node: { table: { body: unknown[] } }) =>
+            i === 0 || i === 1 || i === node.table.body.length ? 0.8 : 0.4,
+          vLineWidth: () => 0,
+          hLineColor: () => RULE,
+          paddingTop: () => 0,
+          paddingBottom: () => 0,
+        },
+      },
+    ],
+    footer: (current: number, total: number) => ({
+      columns: [
+        { text: data.companyName, fontSize: 7, color: MUTED, margin: [40, 0, 0, 0] },
+        {
+          text: `Page ${current} of ${total}`,
+          fontSize: 7,
+          color: MUTED,
+          alignment: "right",
+          margin: [0, 0, 40, 0],
+        },
+      ],
+      margin: [0, 16, 0, 0],
+    }),
+  };
+
+  const safeRange = data.rangeLabel.replace(/[^\w\s–-]+/g, "").trim();
+  await createPdf(doc, `Schedule ${safeRange}.pdf`);
+}
+
+function signatureLine(role: string): Content {
+  return {
+    stack: [
+      {
+        canvas: [{ type: "line", x1: 0, y1: 22, x2: 237, y2: 22, lineWidth: 0.8, lineColor: INK }],
+      },
+      {
+        columns: [
+          { text: role.toUpperCase(), fontSize: 7, color: MUTED, characterSpacing: 0.6 },
+          { text: "DATE", fontSize: 7, color: MUTED, characterSpacing: 0.6, alignment: "right" },
         ],
         margin: [0, 4, 0, 0],
       },

@@ -28,7 +28,9 @@ import {
   Copy,
   ShieldCheck,
   Loader2,
+  Download,
 } from "lucide-react";
+import { SHIFT_COLORS, shiftColorClass, shiftColorHex } from "@/lib/shift-colors";
 
 export const Route = createFileRoute("/_authenticated/schedule")({
   component: SchedulePage,
@@ -56,11 +58,7 @@ function fmtTime(d: Date): string {
   });
 }
 function fmtDayLabel(d: Date): string {
-  return d.toLocaleDateString([], {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
+  return d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
 }
 function toLocalInput(d: Date): string {
   // datetime-local needs YYYY-MM-DDTHH:MM in local time
@@ -103,8 +101,7 @@ function fmtHoursValue(hours: number): string {
 
 function SchedulePage() {
   const { primaryRole, loading } = useAuth();
-  if (loading)
-    return <div className="text-sm text-muted-foreground">Loading…</div>;
+  if (loading) return <div className="text-sm text-muted-foreground">Loading…</div>;
   if (!primaryRole) return <NoRoleState />;
   if (primaryRole === "super_admin") return <SuperAdminDashboard />;
   return <CompanyDashboard role={primaryRole} />;
@@ -115,13 +112,10 @@ function NoRoleState() {
   return (
     <div className="mx-auto max-w-lg rounded-xl border border-border bg-card p-8 text-center shadow-[var(--shadow-card)]">
       <ShieldCheck className="mx-auto h-10 w-10 text-primary" />
-      <h2 className="mt-4 text-xl font-semibold text-foreground">
-        Account not assigned
-      </h2>
+      <h2 className="mt-4 text-xl font-semibold text-foreground">Account not assigned</h2>
       <p className="mt-2 text-sm text-muted-foreground">
-        {user?.email} isn't part of a company yet. Ask your manager to share
-        their company join code, then sign up again with that code — or wait for
-        an invitation.
+        {user?.email} isn't part of a company yet. Ask your manager to share their company join
+        code, then sign up again with that code — or wait for an invitation.
       </p>
       <Button className="mt-6" variant="outline" onClick={() => void signOut()}>
         Sign out
@@ -159,9 +153,7 @@ function Stat({
           <p className="mt-2 text-2xl font-semibold text-foreground">{value}</p>
           {sub && <p className="mt-1 text-xs text-muted-foreground">{sub}</p>}
         </div>
-        <div
-          className={`grid h-10 w-10 place-items-center rounded-lg ${toneMap[tone]}`}
-        >
+        <div className={`grid h-10 w-10 place-items-center rounded-lg ${toneMap[tone]}`}>
           <Icon className="h-5 w-5" />
         </div>
       </div>
@@ -207,19 +199,13 @@ function SuperAdminDashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-semibold text-foreground">
-          Platform overview
-        </h2>
+        <h2 className="text-2xl font-semibold text-foreground">Platform overview</h2>
         <p className="text-sm text-muted-foreground">
           Real-time view of every company on Scheduling Pilot.
         </p>
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat
-          icon={Building2}
-          label="Companies"
-          value={String(companies.length)}
-        />
+        <Stat icon={Building2} label="Companies" value={String(companies.length)} />
         <Stat
           icon={Activity}
           label="Active"
@@ -229,19 +215,15 @@ function SuperAdminDashboard() {
         <Stat
           icon={AlertTriangle}
           label="Past due"
-          value={String(
-            companies.filter((c) => c.status === "past_due").length,
-          )}
+          value={String(companies.filter((c) => c.status === "past_due").length)}
           tone="warning"
         />
         <Stat
           icon={Calendar}
           label="New this week"
           value={String(
-            companies.filter(
-              (c) =>
-                Date.now() - new Date(c.created_at).getTime() < 7 * 86400000,
-            ).length,
+            companies.filter((c) => Date.now() - new Date(c.created_at).getTime() < 7 * 86400000)
+              .length,
           )}
           tone="muted"
         />
@@ -249,13 +231,9 @@ function SuperAdminDashboard() {
 
       <SectionCard title="Companies">
         {isLoading ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            Loading…
-          </p>
+          <p className="py-6 text-center text-sm text-muted-foreground">Loading…</p>
         ) : companies.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            No companies yet.
-          </p>
+          <p className="py-6 text-center text-sm text-muted-foreground">No companies yet.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -271,12 +249,8 @@ function SuperAdminDashboard() {
                 {companies.map((c) => (
                   <tr key={c.id} className="text-foreground">
                     <td className="px-3 py-3 font-medium">{c.name}</td>
-                    <td className="px-3 py-3 text-muted-foreground">
-                      {c.plan}
-                    </td>
-                    <td className="px-3 py-3 text-muted-foreground">
-                      {c.status}
-                    </td>
+                    <td className="px-3 py-3 text-muted-foreground">{c.plan}</td>
+                    <td className="px-3 py-3 text-muted-foreground">{c.status}</td>
                     <td className="px-3 py-3 text-muted-foreground">
                       {new Date(c.created_at).toLocaleDateString()}
                     </td>
@@ -324,9 +298,7 @@ function CompanyDashboard({ role }: { role: AppRole }) {
   const [view, setView] = useState<ScheduleView>(() => {
     if (typeof window === "undefined") return "week";
     const v = window.localStorage.getItem(VIEW_STORAGE_KEY);
-    return v === "day" || v === "week" || v === "twoweek" || v === "month"
-      ? v
-      : "week";
+    return v === "day" || v === "week" || v === "twoweek" || v === "month" ? v : "week";
   });
   const [anchor, setAnchor] = useState<Date>(() => new Date());
 
@@ -376,12 +348,7 @@ function CompanyDashboard({ role }: { role: AppRole }) {
   });
 
   const shiftsQ = useQuery({
-    queryKey: [
-      "shifts",
-      companyId,
-      rangeStart.toISOString(),
-      rangeEnd.toISOString(),
-    ],
+    queryKey: ["shifts", companyId, rangeStart.toISOString(), rangeEnd.toISOString()],
     enabled: !!companyId,
     queryFn: async () => {
       const { data, error } = await supabase
@@ -432,9 +399,7 @@ function CompanyDashboard({ role }: { role: AppRole }) {
 
       {/* Generating a schedule and then fixing it up is one job, so it lives
           under the builder rather than on a page of its own. */}
-      {canEdit && capabilities.auto_scheduling && (
-        <ScheduleRunsPanel companyId={companyId} />
-      )}
+      {canEdit && capabilities.auto_scheduling && <ScheduleRunsPanel companyId={companyId} />}
     </div>
   );
 }
@@ -452,10 +417,7 @@ function EmployeeView({
 }) {
   void userId;
   const totalMin = shifts.reduce(
-    (s, sh) =>
-      s +
-      (new Date(sh.ends_at).getTime() - new Date(sh.starts_at).getTime()) /
-        60000,
+    (s, sh) => s + (new Date(sh.ends_at).getTime() - new Date(sh.starts_at).getTime()) / 60000,
     0,
   );
   return (
@@ -468,12 +430,7 @@ function EmployeeView({
       </div>
       <div className="grid gap-4 sm:grid-cols-3">
         <Stat icon={Calendar} label="Shifts" value={String(shifts.length)} />
-        <Stat
-          icon={Clock}
-          label="Hours"
-          value={(totalMin / 60).toFixed(1)}
-          tone="success"
-        />
+        <Stat icon={Clock} label="Hours" value={(totalMin / 60).toFixed(1)} tone="success" />
         <Stat
           icon={Activity}
           label="Published"
@@ -492,17 +449,10 @@ function EmployeeView({
               const start = new Date(s.starts_at);
               const end = new Date(s.ends_at);
               return (
-                <li
-                  key={s.id}
-                  className="flex items-center justify-between gap-4 py-3"
-                >
+                <li key={s.id} className="flex items-center justify-between gap-4 py-3">
                   <div>
-                    <p className="text-sm font-medium text-foreground">
-                      {fmtDayLabel(start)}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {s.position || "—"}
-                    </p>
+                    <p className="text-sm font-medium text-foreground">{fmtDayLabel(start)}</p>
+                    <p className="text-xs text-muted-foreground">{s.position || "—"}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="rounded-md bg-primary-soft px-2.5 py-1 text-xs font-medium text-primary">
@@ -553,6 +503,7 @@ function ScheduleBuilder(props: BuilderProps) {
     role,
     companyId,
     companyName,
+    members,
     shifts,
     days,
     anchor,
@@ -564,6 +515,7 @@ function ScheduleBuilder(props: BuilderProps) {
   const qc = useQueryClient();
   const [edit, setEdit] = useState<EditTarget | null>(null);
   const [copiedId, setCopiedId] = useState(false);
+  const [savingPdf, setSavingPdf] = useState(false);
 
   const draftCount = shifts.filter((s) => !s.published).length;
 
@@ -571,14 +523,51 @@ function ScheduleBuilder(props: BuilderProps) {
     mutationFn: async () => {
       const ids = shifts.filter((s) => !s.published).map((s) => s.id);
       if (ids.length === 0) return;
-      const { error } = await supabase
-        .from("shifts")
-        .update({ published: true })
-        .in("id", ids);
+      const { error } = await supabase.from("shifts").update({ published: true }).in("id", ids);
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["shifts"] }),
   });
+
+  /**
+   * The schedule on paper: the range currently on screen, day by day, with the
+   * same colours. pdfmake is ~2 MB, so it is only fetched when someone asks.
+   */
+  async function downloadSchedule() {
+    setSavingPdf(true);
+    try {
+      const { downloadSchedulePdf } = await import("@/lib/pdf");
+      const nameOf = (id: string | null) =>
+        id ? (members.find((m) => m.id === id)?.full_name ?? "Unknown") : "Open shift";
+      const pdfDays = days.map((d) => ({
+        date: fmtDayLabel(d),
+        shifts: shifts
+          .filter((s) => new Date(s.starts_at).toDateString() === d.toDateString())
+          .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
+          .map((s) => ({
+            employee: nameOf(s.employee_id),
+            time: `${fmtTime(new Date(s.starts_at))} – ${fmtTime(new Date(s.ends_at))}`,
+            position: s.position || "—",
+            colorHex: shiftColorHex(s.color),
+            draft: !s.published,
+          })),
+      }));
+      const hours = shifts.reduce(
+        (sum, s) => sum + hoursBetween(new Date(s.starts_at), new Date(s.ends_at)),
+        0,
+      );
+      await downloadSchedulePdf({
+        companyName,
+        rangeLabel,
+        viewLabel: VIEW_LABEL[view],
+        days: pdfDays,
+        totalShifts: shifts.length,
+        totalHours: hours.toFixed(1),
+      });
+    } finally {
+      setSavingPdf(false);
+    }
+  }
 
   const nav = (dir: 1 | -1) => {
     if (view === "day") return setAnchor(addDays(anchor, dir));
@@ -591,8 +580,7 @@ function ScheduleBuilder(props: BuilderProps) {
 
   const rangeLabel = (() => {
     if (view === "day") return fmtDayLabel(days[0]);
-    if (view === "month")
-      return anchor.toLocaleDateString([], { month: "long", year: "numeric" });
+    if (view === "month") return anchor.toLocaleDateString([], { month: "long", year: "numeric" });
     return `${fmtDayLabel(days[0])} – ${fmtDayLabel(days[days.length - 1])}`;
   })();
 
@@ -600,13 +588,9 @@ function ScheduleBuilder(props: BuilderProps) {
     <div className="space-y-6">
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 sm:flex sm:flex-wrap sm:items-end sm:justify-between">
         <div className="min-w-0">
-          <h2 className="truncate text-2xl font-semibold text-foreground">
-            Schedule builder
-          </h2>
+          <h2 className="truncate text-2xl font-semibold text-foreground">Schedule builder</h2>
           <p className="text-sm text-muted-foreground">
-            {canEdit
-              ? "Click any cell to add or edit a shift. "
-              : "Read-only view. "}
+            {canEdit ? "Click any cell to add or edit a shift. " : "Read-only view. "}
             Changes are scoped to {companyName}.
           </p>
         </div>
@@ -641,11 +625,7 @@ function ScheduleBuilder(props: BuilderProps) {
           ))}
         </div>
         <div className="hidden h-6 w-px bg-border sm:block" />
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setAnchor(new Date())}
-        >
+        <Button variant="outline" size="sm" onClick={() => setAnchor(new Date())}>
           Today
         </Button>
         <Button variant="ghost" size="sm" onClick={() => nav(-1)}>
@@ -656,14 +636,26 @@ function ScheduleBuilder(props: BuilderProps) {
         </Button>
         <span className="ml-1 text-sm text-muted-foreground">{rangeLabel}</span>
         <div className="ml-auto flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void downloadSchedule()}
+            disabled={savingPdf || shifts.length === 0}
+            title="Saves a PDF of this view — print it or pin it up"
+          >
+            {savingPdf ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="mr-2 h-4 w-4" />
+            )}
+            Download PDF
+          </Button>
           {canEdit && (
             <Button
               onClick={() => publishMutation.mutate()}
               disabled={draftCount === 0 || publishMutation.isPending}
             >
-              {publishMutation.isPending && (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              )}
+              {publishMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
               Publish ({draftCount})
             </Button>
           )}
@@ -672,17 +664,13 @@ function ScheduleBuilder(props: BuilderProps) {
 
       {view === "day" && <DayView {...props} onEdit={setEdit} />}
       {view === "week" && <GridView {...props} onEdit={setEdit} dayCount={7} />}
-      {view === "twoweek" && (
-        <GridView {...props} onEdit={setEdit} dayCount={14} />
-      )}
+      {view === "twoweek" && <GridView {...props} onEdit={setEdit} dayCount={14} />}
       {view === "month" && <MonthView {...props} onEdit={setEdit} />}
 
       <ShiftEditor
         target={edit}
         companyId={companyId}
-        memberShifts={
-          (edit && shifts.filter((s) => s.employee_id === edit.memberId)) || []
-        }
+        memberShifts={(edit && shifts.filter((s) => s.employee_id === edit.memberId)) || []}
         onClose={() => setEdit(null)}
       />
     </div>
@@ -702,8 +690,7 @@ function GridView({
 }: BuilderProps & { onEdit: (t: EditTarget) => void; dayCount: 7 | 14 }) {
   const grid = useMemo(() => {
     const m = new Map<string, (ShiftRow | null)[]>();
-    for (const member of members)
-      m.set(member.id, new Array(dayCount).fill(null));
+    for (const member of members) m.set(member.id, new Array(dayCount).fill(null));
     for (const s of shifts) {
       const start = new Date(s.starts_at);
       const idx = Math.floor((start.getTime() - days[0].getTime()) / 86400000);
@@ -758,9 +745,7 @@ function GridView({
         </div>
 
         {isLoading ? (
-          <p className="px-4 py-8 text-center text-sm text-muted-foreground">
-            Loading schedule…
-          </p>
+          <p className="px-4 py-8 text-center text-sm text-muted-foreground">Loading schedule…</p>
         ) : members.length === 0 ? (
           <p className="px-4 py-8 text-center text-sm text-muted-foreground">
             No team members yet.
@@ -790,9 +775,7 @@ function GridView({
                       {m.full_name || "(unnamed)"}
                     </p>
                     {m.position && (
-                      <p className="truncate text-xs text-muted-foreground">
-                        {m.position}
-                      </p>
+                      <p className="truncate text-xs text-muted-foreground">{m.position}</p>
                     )}
                   </div>
                 </div>
@@ -816,15 +799,12 @@ function GridView({
                     >
                       {s ? (
                         <div
-                          className={`rounded-md px-1.5 py-1 text-[10px] leading-tight ${s.color === "success" ? "bg-success text-success-foreground" : "bg-primary text-primary-foreground"}`}
+                          className={`rounded-md px-1.5 py-1 text-[10px] leading-tight ${shiftColorClass(s.color)}`}
                         >
                           <p className="font-semibold">
-                            {fmtTime(new Date(s.starts_at))}–
-                            {fmtTime(new Date(s.ends_at))}
+                            {fmtTime(new Date(s.starts_at))}–{fmtTime(new Date(s.ends_at))}
                           </p>
-                          {s.position && (
-                            <p className="truncate opacity-90">{s.position}</p>
-                          )}
+                          {s.position && <p className="truncate opacity-90">{s.position}</p>}
                           {!s.published && <p className="opacity-90">draft</p>}
                         </div>
                       ) : canEdit ? (
@@ -870,9 +850,7 @@ function DayView({
   return (
     <div className="rounded-xl border border-border bg-card shadow-[var(--shadow-card)]">
       <div className="border-b border-border px-5 py-4">
-        <h3 className="text-base font-semibold text-foreground">
-          {fmtDayLabel(day)}
-        </h3>
+        <h3 className="text-base font-semibold text-foreground">{fmtDayLabel(day)}</h3>
         <p className="text-xs text-muted-foreground">
           {shifts.length} shift{shifts.length === 1 ? "" : "s"} scheduled
         </p>
@@ -899,9 +877,7 @@ function DayView({
                     {m.full_name || "(unnamed)"}
                   </p>
                   {m.position && (
-                    <p className="truncate text-xs text-muted-foreground">
-                      {m.position}
-                    </p>
+                    <p className="truncate text-xs text-muted-foreground">{m.position}</p>
                   )}
                 </div>
               </div>
@@ -940,10 +916,9 @@ function DayView({
                           shift: s,
                         })
                       }
-                      className={`rounded-md px-2.5 py-1.5 text-xs font-medium ${s.color === "success" ? "bg-success text-success-foreground" : "bg-primary text-primary-foreground"} ${!s.published ? "ring-1 ring-warning" : ""}`}
+                      className={`rounded-md px-2.5 py-1.5 text-xs font-medium ${shiftColorClass(s.color)} ${!s.published ? "ring-1 ring-warning" : ""}`}
                     >
-                      {fmtTime(new Date(s.starts_at))} –{" "}
-                      {fmtTime(new Date(s.ends_at))}
+                      {fmtTime(new Date(s.starts_at))} – {fmtTime(new Date(s.ends_at))}
                       {s.position ? ` · ${s.position}` : ""}
                       {!s.published ? " · draft" : ""}
                     </button>
@@ -973,9 +948,7 @@ function MonthView({
   const leading = (monthStart.getDay() + 6) % 7;
   const trailing = (7 - ((monthEnd.getDay() + 6) % 7)) % 7;
   const calStart = addDays(monthStart, -leading);
-  const monthLen = Math.round(
-    (monthEnd.getTime() - monthStart.getTime()) / 86400000,
-  );
+  const monthLen = Math.round((monthEnd.getTime() - monthStart.getTime()) / 86400000);
   const totalDays = leading + monthLen + trailing;
   const cells: Date[] = [];
   for (let i = 0; i < totalDays; i++) cells.push(addDays(calStart, i));
@@ -1115,8 +1088,7 @@ function ShiftEditorForm({
   function applyLength(nextStart: string, nextHours: string) {
     const from = new Date(nextStart);
     const length = Number(nextHours);
-    if (Number.isNaN(from.getTime()) || !Number.isFinite(length) || length <= 0)
-      return;
+    if (Number.isNaN(from.getTime()) || !Number.isFinite(length) || length <= 0) return;
     setEndStr(toLocalInput(new Date(from.getTime() + length * 3_600_000)));
   }
 
@@ -1134,21 +1106,13 @@ function ShiftEditorForm({
     setEndStr(value);
     const from = new Date(startStr);
     const to = new Date(value);
-    if (
-      !Number.isNaN(from.getTime()) &&
-      !Number.isNaN(to.getTime()) &&
-      to > from
-    ) {
+    if (!Number.isNaN(from.getTime()) && !Number.isNaN(to.getTime()) && to > from) {
       setHoursStr(fmtHoursValue(hoursBetween(from, to)));
     }
   }
   const [position, setPosition] = useState(target.shift?.position ?? "");
-  const [positionId, setPositionId] = useState<string>(
-    target.shift?.position_id ?? "",
-  );
-  const [color, setColor] = useState<"primary" | "success">(
-    (target.shift?.color as "primary" | "success") ?? "primary",
-  );
+  const [positionId, setPositionId] = useState<string>(target.shift?.position_id ?? "");
+  const [color, setColor] = useState<string>(target.shift?.color ?? SHIFT_COLORS[0].key);
   const [serverError, setServerError] = useState<string | null>(null);
 
   const positionsQ = useQuery({
@@ -1171,10 +1135,7 @@ function ShiftEditorForm({
   // database applies rather than a second copy that can drift.
   const start = new Date(startStr);
   const end = new Date(endStr);
-  const rangeValid =
-    !Number.isNaN(start.getTime()) &&
-    !Number.isNaN(end.getTime()) &&
-    end > start;
+  const rangeValid = !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && end > start;
 
   const conflictsQ = useQuery({
     queryKey: [
@@ -1195,23 +1156,13 @@ function ShiftEditorForm({
         ...(target.shift?.id ? { _shift_id: target.shift.id } : {}),
       });
       if (error) throw error;
-      return (data ?? []) as {
-        code: string;
-        severity: string;
-        message: string;
-      }[];
+      return (data ?? []) as { code: string; severity: string; message: string }[];
     },
   });
 
   const conflicts = rangeValid
     ? (conflictsQ.data ?? [])
-    : [
-        {
-          code: "range",
-          severity: "error",
-          message: "End time must be after start time.",
-        },
-      ];
+    : [{ code: "range", severity: "error", message: "End time must be after start time." }];
 
   // An admin may override any finding; only an unusable time range blocks saving.
   const blocking = !rangeValid;
@@ -1229,15 +1180,10 @@ function ShiftEditorForm({
         color,
       };
       if (target.shift) {
-        const { error } = await supabase
-          .from("shifts")
-          .update(payload)
-          .eq("id", target.shift.id);
+        const { error } = await supabase.from("shifts").update(payload).eq("id", target.shift.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase
-          .from("shifts")
-          .insert({ ...payload, published: false });
+        const { error } = await supabase.from("shifts").insert({ ...payload, published: false });
         if (error) throw error;
       }
     },
@@ -1245,25 +1191,20 @@ function ShiftEditorForm({
       qc.invalidateQueries({ queryKey: ["shifts"] });
       onClose();
     },
-    onError: (e: unknown) =>
-      setServerError(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setServerError(e instanceof Error ? e.message : String(e)),
   });
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
       if (!target.shift) return;
-      const { error } = await supabase
-        .from("shifts")
-        .delete()
-        .eq("id", target.shift.id);
+      const { error } = await supabase.from("shifts").delete().eq("id", target.shift.id);
       if (error) throw error;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["shifts"] });
       onClose();
     },
-    onError: (e: unknown) =>
-      setServerError(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setServerError(e instanceof Error ? e.message : String(e)),
   });
 
   return (
@@ -1307,8 +1248,7 @@ function ShiftEditorForm({
             onChange={(e) => onEndChange(e.target.value)}
           />
           <p className="text-xs text-muted-foreground">
-            Filled in from the start and length — change it directly and the
-            length updates instead.
+            Filled in from the start and length — change it directly and the length updates instead.
           </p>
         </div>
         <div className="space-y-1.5">
@@ -1323,9 +1263,7 @@ function ShiftEditorForm({
                 setPositionId(id);
                 // Keep the legacy free-text column in step so existing grid,
                 // report and trade views keep rendering a readable label.
-                setPosition(
-                  (positionsQ.data ?? []).find((p) => p.id === id)?.name ?? "",
-                );
+                setPosition((positionsQ.data ?? []).find((p) => p.id === id)?.name ?? "");
               }}
             >
               <option value="">— none —</option>
@@ -1346,15 +1284,17 @@ function ShiftEditorForm({
         </div>
         <div className="space-y-1.5">
           <Label>Color</Label>
-          <div className="flex gap-2">
-            {(["primary", "success"] as const).map((t) => (
+          <div className="grid grid-cols-4 gap-2">
+            {SHIFT_COLORS.map((c) => (
               <button
-                key={t}
+                key={c.key}
                 type="button"
-                onClick={() => setColor(t)}
-                className={`flex-1 rounded-md px-3 py-2 text-xs font-medium ${t === "primary" ? "bg-primary text-primary-foreground" : "bg-success text-success-foreground"} ${color === t ? "ring-2 ring-ring ring-offset-2" : "opacity-60"}`}
+                onClick={() => setColor(c.key)}
+                aria-pressed={color === c.key}
+                title={c.label}
+                className={`rounded-md px-2 py-2 text-xs font-medium ${c.chip} ${color === c.key ? "ring-2 ring-ring ring-offset-2" : "opacity-60 hover:opacity-100"}`}
               >
-                {t === "primary" ? "Blue" : "Green"}
+                {c.label}
               </button>
             ))}
           </div>
@@ -1376,12 +1316,8 @@ function ShiftEditorForm({
               className={`flex items-center gap-2 text-sm font-medium ${errorCount > 0 ? "text-destructive" : "text-warning-foreground"}`}
             >
               <AlertTriangle className="h-4 w-4" />
-              {conflicts.length === 1
-                ? "1 issue found"
-                : `${conflicts.length} issues found`}
-              {errorCount > 0 &&
-                conflicts.length > errorCount &&
-                ` (${errorCount} blocking)`}
+              {conflicts.length === 1 ? "1 issue found" : `${conflicts.length} issues found`}
+              {errorCount > 0 && conflicts.length > errorCount && ` (${errorCount} blocking)`}
             </div>
             <ul className="mt-1.5 space-y-1 text-xs">
               {conflicts.map((c) => (
@@ -1393,9 +1329,7 @@ function ShiftEditorForm({
                   </span>
                   <span
                     className={
-                      errorCount > 0
-                        ? "text-destructive/90"
-                        : "text-warning-foreground/90"
+                      errorCount > 0 ? "text-destructive/90" : "text-warning-foreground/90"
                     }
                   >
                     {c.message}
@@ -1434,9 +1368,7 @@ function ShiftEditorForm({
             disabled={blocking || saveMutation.isPending}
             onClick={() => saveMutation.mutate()}
           >
-            {saveMutation.isPending && (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            )}
+            {saveMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
             {conflicts.length > 0 && !blocking ? "Save anyway" : "Save"}
           </Button>
         </div>
