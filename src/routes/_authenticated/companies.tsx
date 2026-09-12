@@ -384,6 +384,11 @@ function CompanyDetail({
     },
   });
 
+  // A super admin has no company of their own, so the rename on Settings never
+  // reaches them. This is where they can rename any organization on the platform.
+  const [nameDraft, setNameDraft] = useState(company.name);
+  useEffect(() => setNameDraft(company.name), [company.id, company.name]);
+
   const updateCompany = useMutation({
     mutationFn: async (patch: Partial<Company>) => {
       const { error } = await supabase.from("companies").update(patch).eq("id", company.id);
@@ -469,6 +474,38 @@ function CompanyDetail({
             <KeyRound className="h-4 w-4 text-primary" />
             Account
           </h3>
+          <div className="space-y-1.5">
+            <Label className="text-xs" htmlFor="org-name">
+              Organization name
+            </Label>
+            <div className="flex gap-2">
+              <Input
+                id="org-name"
+                value={nameDraft}
+                maxLength={120}
+                placeholder="e.g. City of Calexico"
+                onChange={(e) => setNameDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && nameDraft.trim() && nameDraft.trim() !== company.name) {
+                    updateCompany.mutate({ name: nameDraft.trim() });
+                  }
+                }}
+              />
+              <Button
+                size="sm"
+                disabled={
+                  updateCompany.isPending || !nameDraft.trim() || nameDraft.trim() === company.name
+                }
+                onClick={() => updateCompany.mutate({ name: nameDraft.trim() })}
+              >
+                {updateCompany.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Save
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Shown to everyone in this organization and on anything they print.
+            </p>
+          </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Account status</Label>
             <select

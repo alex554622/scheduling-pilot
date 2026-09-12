@@ -35,7 +35,11 @@ function SettingsPage() {
       if (error) throw error;
       await refresh();
     },
-    onSuccess: () => { setSavedProfile(true); setProfileErr(null); setTimeout(() => setSavedProfile(false), 1500); },
+    onSuccess: () => {
+      setSavedProfile(true);
+      setProfileErr(null);
+      setTimeout(() => setSavedProfile(false), 1500);
+    },
     onError: (e: unknown) => setProfileErr(e instanceof Error ? e.message : String(e)),
   });
 
@@ -51,7 +55,13 @@ function SettingsPage() {
       const { error } = await supabase.auth.updateUser({ password: pw });
       if (error) throw error;
     },
-    onSuccess: () => { setPw(""); setPw2(""); setPwErr(null); setPwOk(true); setTimeout(() => setPwOk(false), 2000); },
+    onSuccess: () => {
+      setPw("");
+      setPw2("");
+      setPwErr(null);
+      setPwOk(true);
+      setTimeout(() => setPwOk(false), 2000);
+    },
     onError: (e: unknown) => setPwErr(e instanceof Error ? e.message : String(e)),
   });
 
@@ -74,8 +84,8 @@ function SettingsPage() {
       const next = companyName.trim();
       // `name` is NOT NULL but an empty string would satisfy that, leaving the
       // company nameless everywhere it is displayed.
-      if (!next) throw new Error("Company name can't be empty");
-      if (next.length > 120) throw new Error("Company name must be 120 characters or fewer");
+      if (!next) throw new Error("Organization name can't be empty");
+      if (next.length > 120) throw new Error("Organization name must be 120 characters or fewer");
       if (next === company?.name) return;
 
       const { error } = await supabase
@@ -110,20 +120,21 @@ function SettingsPage() {
         <div className="rounded-xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
           <div className="mb-4 flex items-center gap-2">
             <Building2 className="h-5 w-5 text-primary" />
-            <h3 className="font-semibold text-foreground">Company name</h3>
+            <h3 className="font-semibold text-foreground">Organization name</h3>
           </div>
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="company-name">Business name</Label>
+              <Label htmlFor="company-name">Organization name</Label>
               <Input
                 id="company-name"
                 value={companyName}
                 maxLength={120}
                 onChange={(e) => setCompanyName(e.target.value)}
-                placeholder="e.g. Calexico Public Works"
+                placeholder="e.g. City of Calexico"
               />
               <p className="text-xs text-muted-foreground">
-                Shown to your team across the app and on schedules you publish.
+                Shown to your team across the app, on schedules you publish, and on printed
+                timecards.
               </p>
             </div>
             {companyErr && (
@@ -153,12 +164,17 @@ function SettingsPage() {
           </div>
           {company.status !== "active" ? (
             <p className="text-sm text-muted-foreground">
-              Your company is <span className="font-medium text-foreground">{company.status.replace("_", " ")}</span>. A join code will be generated once a platform admin approves your company.
+              Your company is{" "}
+              <span className="font-medium text-foreground">
+                {company.status.replace("_", " ")}
+              </span>
+              . A join code will be generated once a platform admin approves your company.
             </p>
           ) : company.join_code ? (
             <>
               <p className="text-sm text-muted-foreground mb-3">
-                Share this code with employees. When they sign up with it, you'll get a join request to approve in the Employees page.
+                Share this code with employees. When they sign up with it, you'll get a join request
+                to approve in the Employees page.
               </p>
               <div className="flex items-center gap-2">
                 <div className="flex-1 rounded-md border border-border bg-secondary/40 px-4 py-3 text-center text-2xl font-mono font-semibold tracking-[0.3em] text-foreground">
@@ -183,7 +199,6 @@ function SettingsPage() {
         </div>
       )}
 
-
       <div className="rounded-xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
         <div className="mb-4 flex items-center gap-2">
           <UserCog className="h-5 w-5 text-primary" />
@@ -200,13 +215,31 @@ function SettingsPage() {
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="po">Position</Label>
-            <Input id="po" value={position} onChange={(e) => setPosition(e.target.value)} placeholder="e.g. Shift Lead" />
+            <Input
+              id="po"
+              value={position}
+              onChange={(e) => setPosition(e.target.value)}
+              placeholder="e.g. Shift Lead"
+            />
           </div>
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            <span>Role: <span className="font-medium text-foreground">{primaryRole ? ROLE_LABEL[primaryRole] : "None"}</span></span>
-            {company && <span>Company: <span className="font-medium text-foreground">{company.name}</span></span>}
+            <span>
+              Role:{" "}
+              <span className="font-medium text-foreground">
+                {primaryRole ? ROLE_LABEL[primaryRole] : "None"}
+              </span>
+            </span>
+            {company && (
+              <span>
+                Company: <span className="font-medium text-foreground">{company.name}</span>
+              </span>
+            )}
           </div>
-          {profileErr && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{profileErr}</p>}
+          {profileErr && (
+            <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {profileErr}
+            </p>
+          )}
           <div className="flex justify-end">
             <Button onClick={() => saveProfile.mutate()} disabled={saveProfile.isPending}>
               {saveProfile.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -225,13 +258,23 @@ function SettingsPage() {
         <div className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="np">New password</Label>
-            <Input id="np" type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="Min. 8 characters" />
+            <Input
+              id="np"
+              type="password"
+              value={pw}
+              onChange={(e) => setPw(e.target.value)}
+              placeholder="Min. 8 characters"
+            />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="np2">Confirm new password</Label>
             <Input id="np2" type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} />
           </div>
-          {pwErr && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{pwErr}</p>}
+          {pwErr && (
+            <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {pwErr}
+            </p>
+          )}
           <div className="flex justify-end">
             <Button onClick={() => changePw.mutate()} disabled={changePw.isPending || !pw || !pw2}>
               {changePw.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
