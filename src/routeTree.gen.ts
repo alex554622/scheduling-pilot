@@ -30,6 +30,7 @@ import { Route as AuthenticatedTimecardsRouteImport } from './routes/_authentica
 import { Route as AuthenticatedTimeOffRouteImport } from './routes/_authenticated/time-off'
 import { Route as AuthenticatedSharedClockInRouteImport } from './routes/_authenticated/shared-clock-in'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
+import { Route as AuthenticatedScheduleTemplatesRouteImport } from './routes/_authenticated/schedule-templates'
 import { Route as AuthenticatedScheduleRouteImport } from './routes/_authenticated/schedule'
 import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
 import { Route as AuthenticatedPunchCorrectionsRouteImport } from './routes/_authenticated/punch-corrections'
@@ -149,6 +150,12 @@ const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedScheduleTemplatesRoute =
+  AuthenticatedScheduleTemplatesRouteImport.update({
+    id: '/schedule-templates',
+    path: '/schedule-templates',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedScheduleRoute = AuthenticatedScheduleRouteImport.update({
   id: '/schedule',
   path: '/schedule',
@@ -243,6 +250,7 @@ export interface FileRoutesByFullPath {
   '/punch-corrections': typeof AuthenticatedPunchCorrectionsRoute
   '/reports': typeof AuthenticatedReportsRoute
   '/schedule': typeof AuthenticatedScheduleRoute
+  '/schedule-templates': typeof AuthenticatedScheduleTemplatesRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/shared-clock-in': typeof AuthenticatedSharedClockInRoute
   '/time-off': typeof AuthenticatedTimeOffRoute
@@ -278,6 +286,7 @@ export interface FileRoutesByTo {
   '/punch-corrections': typeof AuthenticatedPunchCorrectionsRoute
   '/reports': typeof AuthenticatedReportsRoute
   '/schedule': typeof AuthenticatedScheduleRoute
+  '/schedule-templates': typeof AuthenticatedScheduleTemplatesRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/shared-clock-in': typeof AuthenticatedSharedClockInRoute
   '/time-off': typeof AuthenticatedTimeOffRoute
@@ -315,6 +324,7 @@ export interface FileRoutesById {
   '/_authenticated/punch-corrections': typeof AuthenticatedPunchCorrectionsRoute
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
   '/_authenticated/schedule': typeof AuthenticatedScheduleRoute
+  '/_authenticated/schedule-templates': typeof AuthenticatedScheduleTemplatesRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/shared-clock-in': typeof AuthenticatedSharedClockInRoute
   '/_authenticated/time-off': typeof AuthenticatedTimeOffRoute
@@ -352,6 +362,7 @@ export interface FileRouteTypes {
     | '/punch-corrections'
     | '/reports'
     | '/schedule'
+    | '/schedule-templates'
     | '/settings'
     | '/shared-clock-in'
     | '/time-off'
@@ -387,6 +398,7 @@ export interface FileRouteTypes {
     | '/punch-corrections'
     | '/reports'
     | '/schedule'
+    | '/schedule-templates'
     | '/settings'
     | '/shared-clock-in'
     | '/time-off'
@@ -423,6 +435,7 @@ export interface FileRouteTypes {
     | '/_authenticated/punch-corrections'
     | '/_authenticated/reports'
     | '/_authenticated/schedule'
+    | '/_authenticated/schedule-templates'
     | '/_authenticated/settings'
     | '/_authenticated/shared-clock-in'
     | '/_authenticated/time-off'
@@ -600,6 +613,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/schedule-templates': {
+      id: '/_authenticated/schedule-templates'
+      path: '/schedule-templates'
+      fullPath: '/schedule-templates'
+      preLoaderRoute: typeof AuthenticatedScheduleTemplatesRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/schedule': {
       id: '/_authenticated/schedule'
       path: '/schedule'
@@ -722,6 +742,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedPunchCorrectionsRoute: typeof AuthenticatedPunchCorrectionsRoute
   AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
   AuthenticatedScheduleRoute: typeof AuthenticatedScheduleRoute
+  AuthenticatedScheduleTemplatesRoute: typeof AuthenticatedScheduleTemplatesRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedSharedClockInRoute: typeof AuthenticatedSharedClockInRoute
   AuthenticatedTimeOffRoute: typeof AuthenticatedTimeOffRoute
@@ -745,6 +766,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedPunchCorrectionsRoute: AuthenticatedPunchCorrectionsRoute,
   AuthenticatedReportsRoute: AuthenticatedReportsRoute,
   AuthenticatedScheduleRoute: AuthenticatedScheduleRoute,
+  AuthenticatedScheduleTemplatesRoute: AuthenticatedScheduleTemplatesRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedSharedClockInRoute: AuthenticatedSharedClockInRoute,
   AuthenticatedTimeOffRoute: AuthenticatedTimeOffRoute,

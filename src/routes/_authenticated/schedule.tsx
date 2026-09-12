@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -29,6 +29,7 @@ import {
   ShieldCheck,
   Loader2,
   Download,
+  CalendarRange,
 } from "lucide-react";
 import { SHIFT_COLORS, shiftColorClass, shiftColorHex } from "@/lib/shift-colors";
 
@@ -636,6 +637,15 @@ function ScheduleBuilder(props: BuilderProps) {
         </Button>
         <span className="ml-1 text-sm text-muted-foreground">{rangeLabel}</span>
         <div className="ml-auto flex items-center gap-2">
+          {/* Templates are one way in; this builder is the other. */}
+          {canEdit && (
+            <Button asChild variant="outline" size="sm">
+              <Link to="/schedule-templates">
+                <CalendarRange className="mr-2 h-4 w-4" />
+                From template
+              </Link>
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"

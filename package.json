@@ -11,6 +11,7 @@
     "start": "node .output/server/index.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
+    "test:pattern": "bun scripts/schedule-pattern.test.ts",
     "format": "prettier --write ."
   },
   "dependencies": {

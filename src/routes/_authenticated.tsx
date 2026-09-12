@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Calendar, LayoutDashboard, Users, RefreshCw, CalendarOff, Building2, Settings, LogOut, Menu, BarChart3, PanelLeftClose, PanelLeftOpen, Clock, FileClock, UserCheck, ShieldCheck, SlidersHorizontal, Network, CalendarCheck, ScrollText, CreditCard, Gauge, Lock, Gift, Tablet } from "lucide-react";
+import { Calendar, LayoutDashboard, Users, RefreshCw, CalendarOff, Building2, Settings, LogOut, Menu, BarChart3, PanelLeftClose, PanelLeftOpen, Clock, FileClock, UserCheck, ShieldCheck, SlidersHorizontal, Network, CalendarCheck, ScrollText, CreditCard, Gauge, Lock, Gift, Tablet, CalendarRange } from "lucide-react";
 import { useAuth, ROLE_LABEL, type AppRole } from "@/lib/auth";
 import { useAppRules } from "@/lib/app-rules";
 import { useCapabilities, CAPABILITY_LABELS, type CapabilityKey } from "@/lib/capabilities";
@@ -26,6 +26,7 @@ const NAV: NavItem[] = [
   { to: "/platform", label: "Platform", icon: Gauge, roles: ["super_admin"] },
   { to: "/companies", label: "Companies", icon: Building2, roles: ["super_admin"] },
   { to: "/schedule", label: "Schedule", icon: Calendar, roles: ["company_admin", "employee"], needs: "schedule_design" },
+  { to: "/schedule-templates", label: "Schedule templates", icon: CalendarRange, roles: ["company_admin"], needs: "schedule_design" },
   { to: "/employees", label: "Employees", icon: Users, roles: ["company_admin"] },
   { to: "/organization", label: "Organization", icon: Network, roles: ["company_admin"], needs: "org_structure" },
   { to: "/availability", label: "Availability", icon: CalendarCheck, roles: ["company_admin", "employee"], needs: "availability" },
