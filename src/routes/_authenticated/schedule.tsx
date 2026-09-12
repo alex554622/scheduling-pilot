@@ -44,6 +44,19 @@ export const Route = createFileRoute("/_authenticated/schedule")({
 
 /* ----------------------------- Helpers ----------------------------- */
 
+/** Mon-first, matching startOfWeek below and the grid header. */
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+/**
+ * Same wall-clock time, `days` calendar days away. setDate keeps the hour
+ * across a daylight-saving boundary; adding 24h of milliseconds would not.
+ */
+function addCalendarDays(t: Date, days: number): Date {
+  const d = new Date(t);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
 // Show the current week (Mon–Sun) anchored to today.
 function startOfWeek(d: Date): Date {
   const x = new Date(d);
@@ -1198,6 +1211,17 @@ function ShiftEditorForm({
       setHoursStr(fmtHoursValue(hoursBetween(from, to)));
     }
   }
+  // "Apply to": one trip through the dialog can put the same shift on several
+  // days of that week. Only when adding - repeating an edit across the week
+  // would mean guessing which other shifts were meant to change.
+  const clickedWeekday = (target.day.getDay() + 6) % 7;
+  const [applyDays, setApplyDays] = useState<number[]>([clickedWeekday]);
+  const repeating = !target.shift;
+  // Offsets from the clicked day, ascending, so the clicked day stays first.
+  const dayOffsets = repeating
+    ? [...applyDays].sort((a, b) => a - b).map((w) => w - clickedWeekday)
+    : [0];
+
   const [position, setPosition] = useState(target.shift?.position ?? "");
   const [positionId, setPositionId] = useState<string>(target.shift?.position_id ?? "");
   const [color, setColor] = useState<string>(target.shift?.color ?? SHIFT_COLORS[0].key);
@@ -1233,24 +1257,43 @@ function ShiftEditorForm({
       endStr,
       positionId,
       target.shift?.id ?? null,
+      dayOffsets.join(","),
     ],
     enabled: rangeValid,
     queryFn: async () => {
-      const { data, error } = await supabase.rpc("check_shift_conflicts", {
-        _employee_id: target.memberId,
-        _starts_at: start.toISOString(),
-        _ends_at: end.toISOString(),
-        ...(positionId ? { _position_id: positionId } : {}),
-        ...(target.shift?.id ? { _shift_id: target.shift.id } : {}),
-      });
-      if (error) throw error;
-      return (data ?? []) as { code: string; severity: string; message: string }[];
+      // Every day this save would write gets the same check the single-day
+      // save has always had, so picking a second day cannot slip an unchecked
+      // shift past availability, time off or the weekly hour cap.
+      const found: { code: string; severity: string; message: string; day: string | null }[] = [];
+      for (const off of dayOffsets) {
+        const from = addCalendarDays(start, off);
+        const to = addCalendarDays(end, off);
+        const { data, error } = await supabase.rpc("check_shift_conflicts", {
+          _employee_id: target.memberId,
+          _starts_at: from.toISOString(),
+          _ends_at: to.toISOString(),
+          ...(positionId ? { _position_id: positionId } : {}),
+          ...(target.shift?.id ? { _shift_id: target.shift.id } : {}),
+        });
+        if (error) throw error;
+        for (const c of (data ?? []) as { code: string; severity: string; message: string }[]) {
+          found.push({ ...c, day: dayOffsets.length > 1 ? fmtDayLabel(from) : null });
+        }
+      }
+      return found;
     },
   });
 
   const conflicts = rangeValid
     ? (conflictsQ.data ?? [])
-    : [{ code: "range", severity: "error", message: "End time must be after start time." }];
+    : [
+        {
+          code: "range",
+          severity: "error",
+          message: "End time must be after start time.",
+          day: null,
+        },
+      ];
 
   // An admin may override any finding; only an unusable time range blocks saving.
   const blocking = !rangeValid;
@@ -1258,22 +1301,34 @@ function ShiftEditorForm({
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const payload = {
+      const base = {
         company_id: companyId,
         employee_id: target.memberId,
-        starts_at: new Date(startStr).toISOString(),
-        ends_at: new Date(endStr).toISOString(),
         position,
         position_id: positionId || null,
         color,
       };
       if (target.shift) {
-        const { error } = await supabase.from("shifts").update(payload).eq("id", target.shift.id);
+        const { error } = await supabase
+          .from("shifts")
+          .update({
+            ...base,
+            starts_at: start.toISOString(),
+            ends_at: end.toISOString(),
+          })
+          .eq("id", target.shift.id);
         if (error) throw error;
-      } else {
-        const { error } = await supabase.from("shifts").insert({ ...payload, published: false });
-        if (error) throw error;
+        return;
       }
+      // One row per chosen weekday, all inside the clicked day's week.
+      const rows = dayOffsets.map((off) => ({
+        ...base,
+        starts_at: addCalendarDays(start, off).toISOString(),
+        ends_at: addCalendarDays(end, off).toISOString(),
+        published: false,
+      }));
+      const { error } = await supabase.from("shifts").insert(rows);
+      if (error) throw error;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["shifts"] });
@@ -1388,6 +1443,44 @@ function ShiftEditorForm({
           </div>
         </div>
 
+        {repeating && (
+          <div className="space-y-1.5">
+            <Label>Apply to</Label>
+            <div className="flex flex-wrap gap-2">
+              {WEEKDAYS.map((label, w) => {
+                const on = applyDays.includes(w);
+                const isClicked = w === clickedWeekday;
+                // The day that was clicked is what this dialog is for, so it
+                // cannot be switched off - cancel instead.
+                return (
+                  <button
+                    key={label}
+                    type="button"
+                    aria-pressed={on}
+                    disabled={isClicked}
+                    title={isClicked ? `${label} — the day you clicked` : label}
+                    onClick={() =>
+                      setApplyDays((d) => (d.includes(w) ? d.filter((x) => x !== w) : [...d, w]))
+                    }
+                    className={`h-11 w-11 rounded-full border text-xs font-medium transition-colors ${
+                      on
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                    } ${isClicked ? "cursor-default" : ""}`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {dayOffsets.length === 1
+                ? `Just ${fmtDayLabel(target.day)}.`
+                : `Adds ${dayOffsets.length} shifts, in the week of ${fmtDayLabel(startOfWeek(target.day))}.`}
+            </p>
+          </div>
+        )}
+
         {conflictsQ.isFetching && rangeValid && (
           <p className="flex items-center gap-2 text-xs text-muted-foreground">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -1409,7 +1502,7 @@ function ShiftEditorForm({
             </div>
             <ul className="mt-1.5 space-y-1 text-xs">
               {conflicts.map((c) => (
-                <li key={c.code} className="flex gap-2">
+                <li key={`${c.day ?? ""}-${c.code}`} className="flex gap-2">
                   <span
                     className={`mt-px shrink-0 rounded px-1 text-[10px] font-semibold uppercase ${c.severity === "error" ? "bg-destructive/20 text-destructive" : "bg-warning/30 text-warning-foreground"}`}
                   >
@@ -1420,6 +1513,7 @@ function ShiftEditorForm({
                       errorCount > 0 ? "text-destructive/90" : "text-warning-foreground/90"
                     }
                   >
+                    {c.day && <span className="font-medium">{c.day}: </span>}
                     {c.message}
                   </span>
                 </li>
