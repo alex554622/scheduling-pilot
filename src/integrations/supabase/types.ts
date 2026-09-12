@@ -1272,6 +1272,15 @@ export type Database = {
       respond_to_trade: { Args: { _trade: string; _accept: boolean }; Returns: Json }
       claim_super_admin: { Args: never; Returns: boolean }
       dismiss_break_reminder: { Args: { _user: string; _kind: string; _stretch_start: string }; Returns: undefined }
+      company_presence: {
+        Args: never
+        Returns: {
+          full_name: string
+          job_title: string | null
+          status: string
+          user_id: string
+        }[]
+      }
       billing_overview: {
         Args: never
         Returns: {

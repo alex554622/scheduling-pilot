@@ -24,6 +24,9 @@ type Member = { id: string; full_name: string | null; position: string | null };
 
 type Status = "working" | "on_break" | "clocked_out" | "no_show";
 
+/** What an employee is allowed to see about a colleague: a state, nothing more. */
+type PresenceRow = { user_id: string; full_name: string; job_title: string | null; status: string };
+
 function fmtTime(s: string) {
   return new Date(s).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
@@ -77,6 +80,20 @@ function DashboardPage() {
         .order("at", { ascending: true });
       if (error) throw error;
       return (data ?? []) as Punch[];
+    },
+  });
+
+  // An employee cannot read a colleague's punches, so their view of the floor
+  // comes from a definer function that answers with states only — no times, no
+  // totals, nothing that adds up to someone else's hours.
+  const presenceQ = useQuery<PresenceRow[]>({
+    queryKey: ["company-presence", company?.id],
+    enabled: !!company?.id && !isManager,
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("company_presence");
+      if (error) throw error;
+      return (data ?? []) as PresenceRow[];
     },
   });
 
@@ -252,6 +269,112 @@ function DashboardPage() {
 
   const today = new Date();
 
+  // Employees get presence and nothing else: who is here, who is on a break.
+  // Hours, punch times and break totals stay on the manager's side of this
+  // page, the same line the database draws for the punch rows themselves.
+  if (!isManager) {
+    const presence = presenceQ.data ?? [];
+    const present = {
+      working: presence.filter((p) => p.status === "working").length,
+      onBreak: presence.filter((p) => p.status === "on_break").length,
+      off: presence.filter((p) => p.status === "off").length,
+    };
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold text-foreground">Who's on duty</h1>
+            <p className="text-sm text-muted-foreground">
+              <CalendarDays className="mr-1 inline h-4 w-4 align-text-bottom" />
+              {today.toLocaleDateString(undefined, {
+                weekday: "long",
+                month: "long",
+                day: "numeric",
+                year: "numeric",
+              })}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild className="shadow">
+              <Link to="/timeclock">
+                <Clock className="mr-2 h-4 w-4" />
+                Time clock
+              </Link>
+            </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link to="/timecards">
+                <FileClock className="mr-2 h-4 w-4" />
+                My timecard
+              </Link>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => qc.invalidateQueries({ queryKey: ["company-presence", company.id] })}
+            >
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Refresh
+            </Button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3">
+          <Stat
+            label="Working"
+            value={present.working}
+            icon={<Clock className="h-4 w-4" />}
+            color="emerald"
+          />
+          <Stat
+            label="On break"
+            value={present.onBreak}
+            icon={<Coffee className="h-4 w-4" />}
+            color="amber"
+          />
+          <Stat
+            label="Off"
+            value={present.off}
+            icon={<LogOut className="h-4 w-4" />}
+            color="slate"
+          />
+        </div>
+
+        <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+          <div className="grid grid-cols-[2fr_1fr] border-b border-border bg-muted/30 px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <div>Employee</div>
+            <div className="text-right">Status</div>
+          </div>
+          {presenceQ.isLoading && (
+            <div className="px-4 py-6 text-center text-sm text-muted-foreground">Loading…</div>
+          )}
+          {!presenceQ.isLoading && presence.length === 0 && (
+            <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+              Nobody to show yet.
+            </div>
+          )}
+          {presence.map((p) => (
+            <div
+              key={p.user_id}
+              className="grid grid-cols-[2fr_1fr] items-center gap-2 border-b border-border px-4 py-3 text-sm last:border-0"
+            >
+              <div className="min-w-0">
+                <div className="truncate font-medium text-foreground">
+                  {p.full_name || "Unnamed"}
+                </div>
+                {p.job_title && (
+                  <div className="truncate text-xs text-muted-foreground">{p.job_title}</div>
+                )}
+              </div>
+              <div className="text-right">
+                <PresencePill status={p.status} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -376,6 +499,27 @@ function DashboardPage() {
         ))}
       </div>
     </div>
+  );
+}
+
+/** The employee-facing badge: a state, with no time attached to it. */
+function PresencePill({ status }: { status: string }) {
+  if (status === "working") {
+    return (
+      <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
+        ● Working
+      </span>
+    );
+  }
+  if (status === "on_break") {
+    return (
+      <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+        ● On break
+      </span>
+    );
+  }
+  return (
+    <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Off</span>
   );
 }
 
