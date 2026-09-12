@@ -240,6 +240,7 @@ export type Database = {
         Row: {
           billing_mode: string
           created_at: string
+          data_retention_months: number | null
           geofence_radius_m: number
           id: string
           join_code: string | null
@@ -254,6 +255,7 @@ export type Database = {
         Insert: {
           billing_mode?: string
           created_at?: string
+          data_retention_months?: number | null
           geofence_radius_m?: number
           id?: string
           join_code?: string | null
@@ -268,6 +270,7 @@ export type Database = {
         Update: {
           billing_mode?: string
           created_at?: string
+          data_retention_months?: number | null
           geofence_radius_m?: number
           id?: string
           join_code?: string | null
@@ -1288,6 +1291,7 @@ export type Database = {
     }
     Functions: {
       accept_invitation: { Args: { _token: string }; Returns: string }
+      is_platform_admin: { Args: never; Returns: boolean }
       manager_delete_punch_range: {
         Args: {
           _company: string
@@ -1298,6 +1302,8 @@ export type Database = {
         }
         Returns: number
       }
+      company_history_stats: { Args: { _company: string }; Returns: Json }
+      purge_company_history: { Args: { _company: string }; Returns: Json }
       create_kiosk_device: {
         Args: { _label?: string }
         Returns: Database["public"]["Tables"]["kiosk_devices"]["Row"]
