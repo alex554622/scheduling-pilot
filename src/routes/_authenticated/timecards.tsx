@@ -1,10 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useAppRules, roundToMinutes } from "@/lib/app-rules";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   AlertTriangle,
   ChevronLeft,
@@ -16,11 +18,22 @@ import {
   MapPin,
   Pencil,
   Printer,
+  Trash2,
   Users,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { PrintableTimecard } from "@/components/printable-timecard";
 import { TimecardDayEditor, type EditablePunch } from "@/components/timecard-day-editor";
 import { splitPeriod, overtimeNote } from "@/lib/overtime";
+import { totalsByPerson, type SimplePunch } from "@/lib/timecard-totals";
+import { fromDayString, toDayString } from "@/lib/schedule-pattern";
 
 export const Route = createFileRoute("/_authenticated/timecards")({
   component: TimecardsPage,
@@ -86,6 +99,15 @@ function TimecardsPage() {
   const [selectedUser, setSelectedUser] = useState<string | "me">("me");
   const [editingDay, setEditingDay] = useState<Date | null>(null);
   const [savingPdf, setSavingPdf] = useState(false);
+  // Clearing a whole period is easy to regret, so it takes a tick and a click.
+  const [wipeOpen, setWipeOpen] = useState(false);
+  const [wipeUnderstood, setWipeUnderstood] = useState(false);
+  const [wipeError, setWipeError] = useState<string | null>(null);
+  const [wipeWho, setWipeWho] = useState<"one" | "all">("one");
+  const [wipeScope, setWipeScope] = useState<"day" | "period" | "month">("period");
+  const [wipeDay, setWipeDay] = useState(() => toDayString(new Date()));
+  const [wipeReason, setWipeReason] = useState("");
+  const [wipeDone, setWipeDone] = useState<number | null>(null);
 
   // Keep the anchor aligned to the configured week-start day if it changes.
   useEffect(() => {
@@ -148,8 +170,12 @@ function TimecardsPage() {
 
   // "Me" is meaningless for a super admin — they have no punches of their own —
   // so fall back to the first person on the roster.
-  const targetUserId =
-    !isManager || (selectedUser === "me" && !isSuperAdmin)
+  /** The whole roster at once, rather than one card at a time. */
+  const viewingAll = isManager && selectedUser === "all";
+
+  const targetUserId = viewingAll
+    ? undefined
+    : !isManager || (selectedUser === "me" && !isSuperAdmin)
       ? user?.id
       : selectedUser === "me"
         ? rosterQ.data?.[0]?.id
@@ -171,6 +197,112 @@ function TimecardsPage() {
       if (error) throw error;
       return (data ?? []) as Punch[];
     },
+  });
+
+  // Everyone's punches for the period, for the roster-wide view. Only a
+  // manager can read another person's punches, so this stays off for employees
+  // rather than returning their own rows and reading as "nobody worked".
+  const allQ = useQuery({
+    queryKey: ["timecards-all", rangeStart.toISOString(), rangeEnd.toISOString()],
+    enabled: viewingAll,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("time_punches")
+        .select("user_id, kind, at, break_minutes")
+        .gte("at", rangeStart.toISOString())
+        .lt("at", rangeEnd.toISOString())
+        .order("at", { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as SimplePunch[];
+    },
+  });
+
+  /** One line per person: their days, breaks, hours and overtime split. */
+  const everyone = useMemo(() => {
+    if (!viewingAll) return [];
+    const totals = totalsByPerson(allQ.data ?? []);
+    return (rosterQ.data ?? [])
+      .map((m) => {
+        const t = totals.get(m.id) ?? { workedMs: 0, unpaidMs: 0, paidMs: 0, dayTotals: [] };
+        const split = splitPeriod(t.dayTotals, rules, period === "week");
+        return {
+          id: m.id,
+          name: m.full_name || "Unnamed",
+          position: m.position ?? null,
+          daysWorked: t.dayTotals.filter((ms) => ms > 0).length,
+          ...t,
+          ...split,
+        };
+      })
+      .sort((a, b) => b.workedMs - a.workedMs || a.name.localeCompare(b.name));
+  }, [viewingAll, allQ.data, rosterQ.data, rules, period]);
+
+  /** Every punch on screen for this person, deleted in one go. */
+  /** Whose punches are being cleared — a super admin has no company of their own. */
+  const wipeCompanyId =
+    company?.id ?? (rosterQ.data ?? []).find((m) => m.id === targetUserId)?.company_id ?? null;
+
+  /** Start and end of whatever the delete dialog is pointed at. */
+  const wipeRange = useMemo(() => {
+    if (wipeScope === "day") {
+      const from = fromDayString(wipeDay);
+      return { from, to: addDays(from, 1) };
+    }
+    if (wipeScope === "month") {
+      const from = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+      return { from, to: new Date(anchor.getFullYear(), anchor.getMonth() + 1, 1) };
+    }
+    return { from: rangeStart, to: rangeEnd };
+  }, [wipeScope, wipeDay, anchor, rangeStart, rangeEnd]);
+
+  // How many punches that range holds, so nobody deletes blind.
+  const wipeCountQ = useQuery({
+    queryKey: [
+      "timecards-wipe-count",
+      wipeCompanyId,
+      wipeWho === "one" ? targetUserId : "all",
+      wipeRange.from.toISOString(),
+      wipeRange.to.toISOString(),
+    ],
+    enabled: wipeOpen && !!wipeCompanyId,
+    queryFn: async () => {
+      let q = supabase
+        .from("time_punches")
+        .select("id", { count: "exact", head: true })
+        .eq("company_id", wipeCompanyId!)
+        .gte("at", wipeRange.from.toISOString())
+        .lt("at", wipeRange.to.toISOString());
+      if (wipeWho === "one" && targetUserId) q = q.eq("user_id", targetUserId);
+      const { count, error } = await q;
+      if (error) throw error;
+      return count ?? 0;
+    },
+  });
+
+  /**
+   * Deleting goes through manager_delete_punch_range: `authenticated` may only
+   * read and insert punches, and every removal is recorded with a reason.
+   */
+  const wipePeriod = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.rpc("manager_delete_punch_range", {
+        _company: wipeCompanyId!,
+        _user: wipeWho === "one" ? (targetUserId ?? null) : null,
+        _from: wipeRange.from.toISOString(),
+        _to: wipeRange.to.toISOString(),
+        _reason: wipeReason.trim(),
+      });
+      if (error) throw error;
+      return (data as unknown as number) ?? 0;
+    },
+    onSuccess: (n) => {
+      setWipeDone(n);
+      setWipeUnderstood(false);
+      void qc.invalidateQueries({ queryKey: ["timecards"] });
+      void qc.invalidateQueries({ queryKey: ["timecards-all"] });
+      void qc.invalidateQueries({ queryKey: ["timecards-wipe-count"] });
+    },
+    onError: (e: Error) => setWipeError(e.message),
   });
 
   const grouped = useMemo(() => {
@@ -445,6 +577,26 @@ function TimecardsPage() {
               <Printer className="mr-2 h-4 w-4" />
               Print
             </Button>
+            {isManager && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                onClick={() => {
+                  setWipeError(null);
+                  setWipeUnderstood(false);
+                  setWipeDone(null);
+                  setWipeReason("");
+                  setWipeWho(viewingAll ? "all" : "one");
+                  setWipeScope("period");
+                  setWipeOpen(true);
+                }}
+                title="Delete timecards for a day, this period, or the whole month"
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete timecards
+              </Button>
+            )}
             <Button
               size="sm"
               onClick={downloadTimecard}
@@ -506,6 +658,7 @@ function TimecardsPage() {
                 value={selectedUser}
                 onChange={(e) => setSelectedUser(e.target.value)}
               >
+                <option value="all">All employees</option>
                 {!isSuperAdmin && (
                   <option value="me">Me ({profile?.full_name || user?.email})</option>
                 )}
@@ -547,168 +700,396 @@ function TimecardsPage() {
           </div>
         )}
 
-        <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-          <div
-            className={`grid ${isManager ? "grid-cols-[1fr_2fr_1fr_auto]" : "grid-cols-[1fr_2fr_1fr]"} border-b border-border bg-muted/30 px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground`}
-          >
-            <div>Date</div>
-            <div>Punches</div>
-            <div className="text-right">Hours</div>
-            {isManager && <div className="w-16 text-right">Edit</div>}
-          </div>
-          {!punchesQ.isLoading && !punchesQ.error && (punchesQ.data ?? []).length === 0 && (
-            <div className="border-b border-border px-4 py-6 text-center text-sm text-muted-foreground">
-              No punches for <span className="font-medium text-foreground">{employeeName}</span>{" "}
-              between {fmtDate(rangeStart)} and {fmtDate(addDays(rangeEnd, -1))}.
-              {isManager && " Use Edit on a day to add one."}
+        {/* Everyone at once: one line per person for the period on screen. */}
+        {viewingAll && (
+          <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
+              <h2 className="font-semibold text-foreground">
+                All employees · {fmtDate(rangeStart)} – {fmtDate(addDays(rangeEnd, -1))}
+              </h2>
+              {allQ.isLoading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
             </div>
-          )}
-          {grouped.rows.map((r) => (
-            <div
-              key={r.date.toISOString()}
-              className={`grid ${isManager ? "grid-cols-[1fr_2fr_1fr_auto]" : "grid-cols-[1fr_2fr_1fr]"} items-start gap-2 border-b border-border px-4 py-3 text-sm last:border-0`}
-            >
-              <div className="font-medium text-foreground">{fmtDate(r.date)}</div>
-              <div className="space-y-1">
-                {r.pairs.length === 0 && <span className="text-muted-foreground">—</span>}
-                {r.pairs.map((p, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-700">
-                      IN {fmtTime(p.in.at, rules.punch_round_minutes)}
-                    </span>
-                    {p.out ? (
-                      <span className="rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700">
-                        OUT {fmtTime(p.out.at, rules.punch_round_minutes)}
-                      </span>
-                    ) : (
-                      <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700">
-                        Still clocked in
-                      </span>
-                    )}
-                    {(!p.in.within_geofence || (p.out && !p.out.within_geofence)) && (
-                      <span className="text-xs text-destructive">⚠ off-site</span>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] text-sm">
+                <thead>
+                  <tr className="bg-muted/30 text-xs uppercase tracking-wide text-muted-foreground">
+                    <th className="px-4 py-2 text-left font-medium">Employee</th>
+                    <th className="px-3 py-2 text-right font-medium">Days</th>
+                    <th className="px-3 py-2 text-right font-medium">Unpaid break</th>
+                    <th className="px-3 py-2 text-right font-medium">Paid break</th>
+                    <th className="px-3 py-2 text-right font-medium">Worked</th>
+                    <th className="px-3 py-2 text-right font-medium">Overtime</th>
+                    <th className="px-3 py-2 text-right font-medium">Double time</th>
+                    <th className="px-3 py-2" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {everyone.map((r) => (
+                    <tr key={r.id} className="border-t border-border">
+                      <td className="px-4 py-2">
+                        <div className="font-medium text-foreground">{r.name}</div>
+                        {r.position && (
+                          <div className="text-xs text-muted-foreground">{r.position}</div>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right text-muted-foreground">{r.daysWorked}</td>
+                      <td className="px-3 py-2 text-right text-muted-foreground">
+                        {r.unpaidMs > 0 ? fmtHours(r.unpaidMs) : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-right text-muted-foreground">
+                        {r.paidMs > 0 ? fmtHours(r.paidMs) : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-right font-medium text-foreground">
+                        {fmtHours(r.workedMs)}
+                      </td>
+                      <td
+                        className={`px-3 py-2 text-right ${r.overtimeMs > 0 ? "font-medium text-amber-700" : "text-muted-foreground"}`}
+                      >
+                        {r.overtimeMs > 0 ? fmtHours(r.overtimeMs) : "—"}
+                      </td>
+                      <td
+                        className={`px-3 py-2 text-right ${r.doubleTimeMs > 0 ? "font-medium text-destructive" : "text-muted-foreground"}`}
+                      >
+                        {r.doubleTimeMs > 0 ? fmtHours(r.doubleTimeMs) : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <Button variant="outline" size="sm" onClick={() => setSelectedUser(r.id)}>
+                          Open
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                  {everyone.length === 0 && !allQ.isLoading && (
+                    <tr>
+                      <td colSpan={8} className="px-4 py-6 text-center text-muted-foreground">
+                        No punches for this period.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+                {everyone.length > 0 && (
+                  <tfoot>
+                    <tr className="border-t border-border bg-muted/30 font-medium text-foreground">
+                      <td className="px-4 py-2">Everyone</td>
+                      <td className="px-3 py-2 text-right">
+                        {everyone.reduce((n, r) => n + r.daysWorked, 0)}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {fmtHours(everyone.reduce((n, r) => n + r.unpaidMs, 0))}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {fmtHours(everyone.reduce((n, r) => n + r.paidMs, 0))}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {fmtHours(everyone.reduce((n, r) => n + r.workedMs, 0))}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {fmtHours(everyone.reduce((n, r) => n + r.overtimeMs, 0))}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {fmtHours(everyone.reduce((n, r) => n + r.doubleTimeMs, 0))}
+                      </td>
+                      <td />
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          </div>
+        )}
+
+        {!viewingAll && (
+          <>
+            <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+              <div
+                className={`grid ${isManager ? "grid-cols-[1fr_2fr_1fr_auto]" : "grid-cols-[1fr_2fr_1fr]"} border-b border-border bg-muted/30 px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground`}
+              >
+                <div>Date</div>
+                <div>Punches</div>
+                <div className="text-right">Hours</div>
+                {isManager && <div className="w-16 text-right">Edit</div>}
+              </div>
+              {!punchesQ.isLoading && !punchesQ.error && (punchesQ.data ?? []).length === 0 && (
+                <div className="border-b border-border px-4 py-6 text-center text-sm text-muted-foreground">
+                  No punches for <span className="font-medium text-foreground">{employeeName}</span>{" "}
+                  between {fmtDate(rangeStart)} and {fmtDate(addDays(rangeEnd, -1))}.
+                  {isManager && " Use Edit on a day to add one."}
+                </div>
+              )}
+              {grouped.rows.map((r) => (
+                <div
+                  key={r.date.toISOString()}
+                  className={`grid ${isManager ? "grid-cols-[1fr_2fr_1fr_auto]" : "grid-cols-[1fr_2fr_1fr]"} items-start gap-2 border-b border-border px-4 py-3 text-sm last:border-0`}
+                >
+                  <div className="font-medium text-foreground">{fmtDate(r.date)}</div>
+                  <div className="space-y-1">
+                    {r.pairs.length === 0 && <span className="text-muted-foreground">—</span>}
+                    {r.pairs.map((p, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-700">
+                          IN {fmtTime(p.in.at, rules.punch_round_minutes)}
+                        </span>
+                        {p.out ? (
+                          <span className="rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700">
+                            OUT {fmtTime(p.out.at, rules.punch_round_minutes)}
+                          </span>
+                        ) : (
+                          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700">
+                            Still clocked in
+                          </span>
+                        )}
+                        {(!p.in.within_geofence || (p.out && !p.out.within_geofence)) && (
+                          <span className="text-xs text-destructive">⚠ off-site</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="text-right font-medium text-foreground">
+                    {fmtHours(r.totalMs)}
+                    {(r.unpaidBreakMs > 0 || r.paidBreakMs > 0) && (
+                      <div className="text-[10px] font-normal text-muted-foreground">
+                        {r.unpaidBreakMs > 0 && <>unpaid {fmtHours(r.unpaidBreakMs)}</>}
+                        {r.unpaidBreakMs > 0 && r.paidBreakMs > 0 && " · "}
+                        {r.paidBreakMs > 0 && <>paid {fmtHours(r.paidBreakMs)}</>}
+                      </div>
                     )}
                   </div>
-                ))}
-              </div>
-              <div className="text-right font-medium text-foreground">
-                {fmtHours(r.totalMs)}
-                {(r.unpaidBreakMs > 0 || r.paidBreakMs > 0) && (
-                  <div className="text-[10px] font-normal text-muted-foreground">
-                    {r.unpaidBreakMs > 0 && <>unpaid {fmtHours(r.unpaidBreakMs)}</>}
-                    {r.unpaidBreakMs > 0 && r.paidBreakMs > 0 && " · "}
-                    {r.paidBreakMs > 0 && <>paid {fmtHours(r.paidBreakMs)}</>}
+                  {isManager && (
+                    <div className="w-16 text-right">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2"
+                        onClick={() => setEditingDay(r.date)}
+                        aria-label={`Edit punches for ${fmtDate(r.date)}`}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ))}
+              {(() => {
+                const split = splitPeriod(
+                  grouped.rows.map((r) => r.totalMs),
+                  rules,
+                  period === "week",
+                );
+                const isOT = split.overtimeMs > 0 || split.doubleTimeMs > 0;
+                return (
+                  <div className="grid grid-cols-[1fr_2fr_1fr] bg-muted/30 px-4 py-3 text-sm">
+                    <div className="font-semibold text-foreground">Total</div>
+                    <div className="text-xs text-muted-foreground">
+                      Unpaid break: {fmtHours(grouped.weekUnpaid)} · Paid break:{" "}
+                      {fmtHours(grouped.weekPaid)}
+                      {split.overtimeMs > 0 && (
+                        <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800">
+                          OT {fmtHours(split.overtimeMs)}
+                        </span>
+                      )}
+                      {split.doubleTimeMs > 0 && (
+                        <span className="ml-2 rounded bg-destructive/10 px-1.5 py-0.5 font-medium text-destructive">
+                          2× {fmtHours(split.doubleTimeMs)}
+                        </span>
+                      )}
+                    </div>
+                    <div
+                      className={`text-right font-semibold ${isOT ? "text-amber-700" : "text-foreground"}`}
+                    >
+                      {fmtHours(grouped.weekTotal)}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Where each punch was made. Managers only: an employee's own timecard
+          is about their hours, not a map of their movements. */}
+            {isManager && (
+              <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+                <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
+                  <MapPin className="h-4 w-4 text-muted-foreground" />
+                  <h2 className="font-semibold text-foreground">Clock-in locations</h2>
+                  <span className="text-xs text-muted-foreground">
+                    {employeeName} · this {period === "week" ? "week" : "fortnight"}
+                  </span>
+                </div>
+                {locationRows.length === 0 ? (
+                  <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+                    No locations recorded for this period.
+                  </div>
+                ) : (
+                  <div className="divide-y divide-border">
+                    {locationRows.map((p) => (
+                      <div
+                        key={p.id}
+                        className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-sm"
+                      >
+                        <div className="min-w-0">
+                          <span className="font-medium text-foreground">{KIND_LABEL[p.kind]}</span>{" "}
+                          <span className="text-muted-foreground">
+                            {new Date(p.at).toLocaleString(undefined, {
+                              month: "short",
+                              day: "numeric",
+                              hour: "numeric",
+                              minute: "2-digit",
+                            })}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {p.distance_m != null && (
+                            <span
+                              className={`rounded px-2 py-0.5 text-xs font-medium ${
+                                p.within_geofence
+                                  ? "bg-secondary text-muted-foreground"
+                                  : "bg-destructive/10 text-destructive"
+                              }`}
+                            >
+                              {Math.round(p.distance_m)} m from worksite
+                            </span>
+                          )}
+                          <a
+                            href={`https://www.openstreetmap.org/?mlat=${p.latitude}&mlon=${p.longitude}#map=17/${p.latitude}/${p.longitude}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                          >
+                            Map <ExternalLink className="h-3 w-3" />
+                          </a>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
-              {isManager && (
-                <div className="w-16 text-right">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-2"
-                    onClick={() => setEditingDay(r.date)}
-                    aria-label={`Edit punches for ${fmtDate(r.date)}`}
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
+            )}
+          </>
+        )}
+
+        {wipeOpen && (
+          <Dialog open onOpenChange={(o) => !o && setWipeOpen(false)}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Delete timecards</DialogTitle>
+                <DialogDescription>
+                  Each deleted punch is recorded in the audit log with your reason, but the hours
+                  themselves are gone. Anything already paid from these timecards will no longer add
+                  up.
+                </DialogDescription>
+              </DialogHeader>
+
+              {wipeDone !== null ? (
+                <p className="rounded-md bg-primary-soft px-3 py-2 text-sm text-primary">
+                  Deleted {wipeDone} punch{wipeDone === 1 ? "" : "es"}.
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="wipe-who">Whose timecards</Label>
+                    <select
+                      id="wipe-who"
+                      value={wipeWho}
+                      onChange={(e) => setWipeWho(e.target.value as "one" | "all")}
+                      className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                    >
+                      <option value="one" disabled={!targetUserId}>
+                        Just {employeeName}
+                      </option>
+                      <option value="all">Everyone in the company</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="wipe-scope">Which dates</Label>
+                    <select
+                      id="wipe-scope"
+                      value={wipeScope}
+                      onChange={(e) => setWipeScope(e.target.value as "day" | "period" | "month")}
+                      className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                    >
+                      <option value="day">One day</option>
+                      <option value="period">
+                        {period === "week" ? "This week" : "These two weeks"} ({fmtDate(rangeStart)}
+                        {" – "}
+                        {fmtDate(addDays(rangeEnd, -1))})
+                      </option>
+                      <option value="month">
+                        The whole of{" "}
+                        {anchor.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
+                      </option>
+                    </select>
+                    {wipeScope === "day" && (
+                      <Input
+                        type="date"
+                        value={wipeDay}
+                        onChange={(e) => setWipeDay(e.target.value)}
+                      />
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="wipe-reason">Reason (kept in the audit log)</Label>
+                    <Input
+                      id="wipe-reason"
+                      value={wipeReason}
+                      onChange={(e) => setWipeReason(e.target.value)}
+                      placeholder="e.g. punches imported twice by mistake"
+                    />
+                  </div>
+
+                  <p className="text-sm text-muted-foreground">
+                    {wipeCountQ.isLoading
+                      ? "Counting…"
+                      : `${wipeCountQ.data ?? 0} punch${(wipeCountQ.data ?? 0) === 1 ? "" : "es"} will be deleted.`}
+                  </p>
+
+                  <label className="flex cursor-pointer items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-foreground">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 h-4 w-4 rounded border-border accent-destructive"
+                      checked={wipeUnderstood}
+                      onChange={(e) => setWipeUnderstood(e.target.checked)}
+                    />
+                    <span>
+                      I have checked the people and the dates, and I understand these punches cannot
+                      be brought back.
+                    </span>
+                  </label>
+
+                  {wipeError && (
+                    <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                      {wipeError}
+                    </p>
+                  )}
                 </div>
               )}
-            </div>
-          ))}
-          {(() => {
-            const split = splitPeriod(
-              grouped.rows.map((r) => r.totalMs),
-              rules,
-              period === "week",
-            );
-            const isOT = split.overtimeMs > 0 || split.doubleTimeMs > 0;
-            return (
-              <div className="grid grid-cols-[1fr_2fr_1fr] bg-muted/30 px-4 py-3 text-sm">
-                <div className="font-semibold text-foreground">Total</div>
-                <div className="text-xs text-muted-foreground">
-                  Unpaid break: {fmtHours(grouped.weekUnpaid)} · Paid break:{" "}
-                  {fmtHours(grouped.weekPaid)}
-                  {split.overtimeMs > 0 && (
-                    <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800">
-                      OT {fmtHours(split.overtimeMs)}
-                    </span>
-                  )}
-                  {split.doubleTimeMs > 0 && (
-                    <span className="ml-2 rounded bg-destructive/10 px-1.5 py-0.5 font-medium text-destructive">
-                      2× {fmtHours(split.doubleTimeMs)}
-                    </span>
-                  )}
-                </div>
-                <div
-                  className={`text-right font-semibold ${isOT ? "text-amber-700" : "text-foreground"}`}
-                >
-                  {fmtHours(grouped.weekTotal)}
-                </div>
-              </div>
-            );
-          })()}
-        </div>
 
-        {/* Where each punch was made. Managers only: an employee's own timecard
-          is about their hours, not a map of their movements. */}
-        {isManager && (
-          <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-            <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
-              <MapPin className="h-4 w-4 text-muted-foreground" />
-              <h2 className="font-semibold text-foreground">Clock-in locations</h2>
-              <span className="text-xs text-muted-foreground">
-                {employeeName} · this {period === "week" ? "week" : "fortnight"}
-              </span>
-            </div>
-            {locationRows.length === 0 ? (
-              <div className="px-4 py-6 text-center text-sm text-muted-foreground">
-                No locations recorded for this period.
-              </div>
-            ) : (
-              <div className="divide-y divide-border">
-                {locationRows.map((p) => (
-                  <div
-                    key={p.id}
-                    className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-sm"
-                  >
-                    <div className="min-w-0">
-                      <span className="font-medium text-foreground">{KIND_LABEL[p.kind]}</span>{" "}
-                      <span className="text-muted-foreground">
-                        {new Date(p.at).toLocaleString(undefined, {
-                          month: "short",
-                          day: "numeric",
-                          hour: "numeric",
-                          minute: "2-digit",
-                        })}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {p.distance_m != null && (
-                        <span
-                          className={`rounded px-2 py-0.5 text-xs font-medium ${
-                            p.within_geofence
-                              ? "bg-secondary text-muted-foreground"
-                              : "bg-destructive/10 text-destructive"
-                          }`}
-                        >
-                          {Math.round(p.distance_m)} m from worksite
-                        </span>
-                      )}
-                      <a
-                        href={`https://www.openstreetmap.org/?mlat=${p.latitude}&mlon=${p.longitude}#map=17/${p.latitude}/${p.longitude}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-                      >
-                        Map <ExternalLink className="h-3 w-3" />
-                      </a>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+              <DialogFooter>
+                {wipeDone !== null ? (
+                  <Button onClick={() => setWipeOpen(false)}>Done</Button>
+                ) : (
+                  <>
+                    <Button variant="outline" onClick={() => setWipeOpen(false)}>
+                      Keep them
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      disabled={
+                        !wipeUnderstood ||
+                        wipeReason.trim().length < 3 ||
+                        (wipeCountQ.data ?? 0) === 0 ||
+                        wipePeriod.isPending
+                      }
+                      onClick={() => wipePeriod.mutate()}
+                    >
+                      {wipePeriod.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      Delete {wipeCountQ.data ?? 0}
+                    </Button>
+                  </>
+                )}
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         )}
 
         {isManager && editingDay && targetUserId && (

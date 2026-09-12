@@ -1288,6 +1288,16 @@ export type Database = {
     }
     Functions: {
       accept_invitation: { Args: { _token: string }; Returns: string }
+      manager_delete_punch_range: {
+        Args: {
+          _company: string
+          _user: string | null
+          _from: string
+          _to: string
+          _reason: string
+        }
+        Returns: number
+      }
       create_kiosk_device: {
         Args: { _label?: string }
         Returns: Database["public"]["Tables"]["kiosk_devices"]["Row"]

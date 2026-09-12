@@ -12,7 +12,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test:pattern": "bun scripts/schedule-pattern.test.ts",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "test:timecards": "bun scripts/timecard-totals.test.ts",
+    "test": "bun scripts/schedule-pattern.test.ts && bun scripts/timecard-totals.test.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
