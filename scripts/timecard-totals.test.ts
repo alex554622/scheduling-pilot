@@ -95,6 +95,29 @@ console.log("\npunches arriving out of order");
 t = totalsByPerson([punch("a", "out", 3, 16), punch("a", "in", 3, 8)]).get("a")!;
 eq("are sorted before pairing", t.workedMs / HOUR, 8);
 
+console.log("\nthe day detail the roster table expands");
+t = totalsByPerson([
+  punch("a", "in", 3, 9),
+  punch("a", "break_start", 3, 12),
+  punch("a", "break_end", 3, 12, 30),
+  punch("a", "out", 3, 17),
+  punch("a", "in", 4, 9),
+  punch("a", "out", 4, 13),
+]).get("a")!;
+eq("one entry per day", t.days.length, 2);
+eq("oldest day first", t.days[0].date.getDate() < t.days[1].date.getDate(), true);
+eq("gross keeps the break in", t.days[0].grossMs / HOUR, 8);
+eq("worked takes the unpaid break out", t.days[0].workedMs / HOUR, 7.5);
+eq("gross across the period", t.grossMs / HOUR, 12);
+eq("one span on each day", [t.days[0].spans.length, t.days[1].spans.length], [1, 1]);
+eq("the span carries both punch times", t.days[1].spans[0].outAt !== null, true);
+
+console.log("\nstill on the clock");
+t = totalsByPerson([punch("a", "in", 3, 9)]).get("a")!;
+eq("the open span is still listed", t.days[0].spans.length, 1);
+eq("with no clock-out", t.days[0].spans[0].outAt, null);
+eq("and counts nothing", t.days[0].workedMs, 0);
+
 console.log(
   failures === 0 ? "\nAll timecard checks passed.\n" : `\n${failures} check(s) failed.\n`,
 );

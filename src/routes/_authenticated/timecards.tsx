@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   AlertTriangle,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -82,6 +83,23 @@ function fmtTime(s: string, roundMin = 0) {
     minute: "2-digit",
   });
 }
+/** 6.00, 29.90 — decimal hours, the unit payroll actually takes. */
+function fmtDecimal(ms: number) {
+  return (ms / 3600000).toFixed(2);
+}
+
+/** `Sat Sep 5`, for the day rows under a person. */
+function fmtDayShort(d: Date) {
+  return d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+}
+
+/** AP, DG — the initials shown in the avatar circle. */
+function initials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  return (parts[0][0] + (parts[1]?.[0] ?? "")).toUpperCase();
+}
+
 function fmtHours(ms: number) {
   const h = Math.floor(ms / 3600000);
   const m = Math.round((ms % 3600000) / 60000);
@@ -172,6 +190,8 @@ function TimecardsPage() {
   // so fall back to the first person on the roster.
   /** The whole roster at once, rather than one card at a time. */
   const viewingAll = isManager && selectedUser === "all";
+  // Which people are expanded to show their individual time cards.
+  const [expanded, setExpanded] = useState<string[]>([]);
 
   const targetUserId = viewingAll
     ? undefined
@@ -223,13 +243,22 @@ function TimecardsPage() {
     const totals = totalsByPerson(allQ.data ?? []);
     return (rosterQ.data ?? [])
       .map((m) => {
-        const t = totals.get(m.id) ?? { workedMs: 0, unpaidMs: 0, paidMs: 0, dayTotals: [] };
+        const t = totals.get(m.id) ?? {
+          grossMs: 0,
+          workedMs: 0,
+          unpaidMs: 0,
+          paidMs: 0,
+          dayTotals: [],
+          days: [],
+        };
         const split = splitPeriod(t.dayTotals, rules, period === "week");
         return {
           id: m.id,
           name: m.full_name || "Unnamed",
           position: m.position ?? null,
           daysWorked: t.dayTotals.filter((ms) => ms > 0).length,
+          // One time card per clock-in, which is what the count column means.
+          cardCount: t.days.reduce((n, d) => n + d.spans.length, 0),
           ...t,
           ...split,
         };
@@ -707,58 +736,145 @@ function TimecardsPage() {
               <h2 className="font-semibold text-foreground">
                 All employees · {fmtDate(rangeStart)} – {fmtDate(addDays(rangeEnd, -1))}
               </h2>
-              {allQ.isLoading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+              <div className="flex items-center gap-3">
+                {everyone.some((r) => r.cardCount > 0) && (
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-primary hover:underline"
+                    onClick={() =>
+                      setExpanded((e) =>
+                        e.length > 0
+                          ? []
+                          : everyone.filter((r) => r.cardCount > 0).map((r) => r.id),
+                      )
+                    }
+                  >
+                    {expanded.length > 0 ? "Collapse all" : "Expand all"}
+                  </button>
+                )}
+                {allQ.isLoading && (
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                )}
+              </div>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] text-sm">
+              <table className="w-full min-w-[820px] text-sm">
                 <thead>
                   <tr className="bg-muted/30 text-xs uppercase tracking-wide text-muted-foreground">
-                    <th className="px-4 py-2 text-left font-medium">Employee</th>
-                    <th className="px-3 py-2 text-right font-medium">Days</th>
-                    <th className="px-3 py-2 text-right font-medium">Unpaid break</th>
-                    <th className="px-3 py-2 text-right font-medium">Paid break</th>
-                    <th className="px-3 py-2 text-right font-medium">Worked</th>
-                    <th className="px-3 py-2 text-right font-medium">Overtime</th>
+                    <th className="px-4 py-2 text-left font-medium">Date</th>
+                    <th className="px-3 py-2 text-left font-medium">Time card</th>
+                    <th className="px-3 py-2 text-right font-medium">Actual hours</th>
+                    <th className="px-3 py-2 text-right font-medium">Total paid hours</th>
+                    <th className="px-3 py-2 text-right font-medium">Regular hours</th>
+                    <th className="px-3 py-2 text-right font-medium">OT hours</th>
                     <th className="px-3 py-2 text-right font-medium">Double time</th>
                     <th className="px-3 py-2" />
                   </tr>
                 </thead>
                 <tbody>
-                  {everyone.map((r) => (
-                    <tr key={r.id} className="border-t border-border">
-                      <td className="px-4 py-2">
-                        <div className="font-medium text-foreground">{r.name}</div>
-                        {r.position && (
-                          <div className="text-xs text-muted-foreground">{r.position}</div>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-right text-muted-foreground">{r.daysWorked}</td>
-                      <td className="px-3 py-2 text-right text-muted-foreground">
-                        {r.unpaidMs > 0 ? fmtHours(r.unpaidMs) : "—"}
-                      </td>
-                      <td className="px-3 py-2 text-right text-muted-foreground">
-                        {r.paidMs > 0 ? fmtHours(r.paidMs) : "—"}
-                      </td>
-                      <td className="px-3 py-2 text-right font-medium text-foreground">
-                        {fmtHours(r.workedMs)}
-                      </td>
-                      <td
-                        className={`px-3 py-2 text-right ${r.overtimeMs > 0 ? "font-medium text-amber-700" : "text-muted-foreground"}`}
-                      >
-                        {r.overtimeMs > 0 ? fmtHours(r.overtimeMs) : "—"}
-                      </td>
-                      <td
-                        className={`px-3 py-2 text-right ${r.doubleTimeMs > 0 ? "font-medium text-destructive" : "text-muted-foreground"}`}
-                      >
-                        {r.doubleTimeMs > 0 ? fmtHours(r.doubleTimeMs) : "—"}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        <Button variant="outline" size="sm" onClick={() => setSelectedUser(r.id)}>
-                          Open
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
+                  {everyone.map((r) => {
+                    const open = expanded.includes(r.id);
+                    return (
+                      <Fragment key={r.id}>
+                        <tr className="border-t border-border">
+                          <td className="px-4 py-2">
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                disabled={r.cardCount === 0}
+                                onClick={() =>
+                                  setExpanded((e) =>
+                                    e.includes(r.id) ? e.filter((x) => x !== r.id) : [...e, r.id],
+                                  )
+                                }
+                                aria-expanded={open}
+                                aria-label={`${open ? "Hide" : "Show"} ${r.name}'s time cards`}
+                                className="rounded p-0.5 text-muted-foreground hover:bg-muted disabled:opacity-30"
+                              >
+                                <ChevronDown
+                                  className={`h-4 w-4 transition-transform ${open ? "" : "-rotate-90"}`}
+                                />
+                              </button>
+                              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-primary-soft text-[11px] font-semibold text-primary">
+                                {initials(r.name)}
+                              </span>
+                              <div>
+                                <div className="font-medium text-foreground">{r.name}</div>
+                                {r.position && (
+                                  <div className="text-xs text-muted-foreground">{r.position}</div>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 font-medium text-foreground">
+                            {r.cardCount === 0
+                              ? "—"
+                              : `${r.cardCount} Time Card${r.cardCount === 1 ? "" : "s"}`}
+                          </td>
+                          <td className="px-3 py-2 text-right font-medium text-foreground">
+                            {fmtDecimal(r.grossMs)}
+                          </td>
+                          <td className="px-3 py-2 text-right font-medium text-foreground">
+                            {fmtDecimal(r.workedMs)}
+                          </td>
+                          <td className="px-3 py-2 text-right text-foreground">
+                            {fmtDecimal(r.regularMs)}
+                          </td>
+                          <td
+                            className={`px-3 py-2 text-right ${r.overtimeMs > 0 ? "font-medium text-amber-700" : "text-muted-foreground"}`}
+                          >
+                            {fmtDecimal(r.overtimeMs)}
+                          </td>
+                          <td
+                            className={`px-3 py-2 text-right ${r.doubleTimeMs > 0 ? "font-medium text-destructive" : "text-muted-foreground"}`}
+                          >
+                            {fmtDecimal(r.doubleTimeMs)}
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setSelectedUser(r.id)}
+                            >
+                              Open
+                            </Button>
+                          </td>
+                        </tr>
+
+                        {open &&
+                          r.days.map((d) =>
+                            d.spans.map((span, i) => (
+                              <tr
+                                key={`${d.key}-${span.inAt}`}
+                                className="border-t border-border/50 bg-muted/20"
+                              >
+                                <td className="py-1.5 pl-14 pr-4 text-muted-foreground">
+                                  {i === 0 ? fmtDayShort(d.date) : ""}
+                                </td>
+                                <td className="px-3 py-1.5 text-foreground">
+                                  {fmtTime(span.inAt, rules.punch_round_minutes)}
+                                  {" – "}
+                                  {span.outAt ? (
+                                    fmtTime(span.outAt, rules.punch_round_minutes)
+                                  ) : (
+                                    <span className="text-warning-foreground">
+                                      still clocked in
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="px-3 py-1.5 text-right text-muted-foreground">
+                                  {fmtDecimal(span.grossMs)}
+                                </td>
+                                <td className="px-3 py-1.5 text-right text-muted-foreground">
+                                  {fmtDecimal(span.workedMs)}
+                                </td>
+                                <td className="px-3 py-1.5" colSpan={4} />
+                              </tr>
+                            )),
+                          )}
+                      </Fragment>
+                    );
+                  })}
                   {everyone.length === 0 && !allQ.isLoading && (
                     <tr>
                       <td colSpan={8} className="px-4 py-6 text-center text-muted-foreground">
@@ -770,24 +886,24 @@ function TimecardsPage() {
                 {everyone.length > 0 && (
                   <tfoot>
                     <tr className="border-t border-border bg-muted/30 font-medium text-foreground">
-                      <td className="px-4 py-2">Everyone</td>
-                      <td className="px-3 py-2 text-right">
-                        {everyone.reduce((n, r) => n + r.daysWorked, 0)}
+                      <td className="px-4 py-2">Totals</td>
+                      <td className="px-3 py-2">
+                        {everyone.reduce((n, r) => n + r.cardCount, 0)} Time Cards
                       </td>
                       <td className="px-3 py-2 text-right">
-                        {fmtHours(everyone.reduce((n, r) => n + r.unpaidMs, 0))}
+                        {fmtDecimal(everyone.reduce((n, r) => n + r.grossMs, 0))}
                       </td>
                       <td className="px-3 py-2 text-right">
-                        {fmtHours(everyone.reduce((n, r) => n + r.paidMs, 0))}
+                        {fmtDecimal(everyone.reduce((n, r) => n + r.workedMs, 0))}
                       </td>
                       <td className="px-3 py-2 text-right">
-                        {fmtHours(everyone.reduce((n, r) => n + r.workedMs, 0))}
+                        {fmtDecimal(everyone.reduce((n, r) => n + r.regularMs, 0))}
                       </td>
                       <td className="px-3 py-2 text-right">
-                        {fmtHours(everyone.reduce((n, r) => n + r.overtimeMs, 0))}
+                        {fmtDecimal(everyone.reduce((n, r) => n + r.overtimeMs, 0))}
                       </td>
                       <td className="px-3 py-2 text-right">
-                        {fmtHours(everyone.reduce((n, r) => n + r.doubleTimeMs, 0))}
+                        {fmtDecimal(everyone.reduce((n, r) => n + r.doubleTimeMs, 0))}
                       </td>
                       <td />
                     </tr>
@@ -795,6 +911,10 @@ function TimecardsPage() {
                 )}
               </table>
             </div>
+            <p className="border-t border-border px-4 py-2 text-xs text-muted-foreground">
+              Actual hours is time on the clock. Total paid hours is the same less unpaid breaks,
+              and splits into regular, overtime and double time.
+            </p>
           </div>
         )}
 
