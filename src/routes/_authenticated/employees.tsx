@@ -1048,6 +1048,9 @@ function EditMemberDialog({
 }) {
   const [fullName, setFullName] = useState("");
   const [position, setPosition] = useState("");
+  // Which team they are on. Teams are the company's departments, and the
+  // schedule builder can divide its rows by them.
+  const [departmentId, setDepartmentId] = useState("");
   const [maxHours, setMaxHours] = useState<number>(40);
   const [isActive, setIsActive] = useState(true);
   const [qualified, setQualified] = useState<Set<string>>(new Set());
@@ -1062,6 +1065,20 @@ function EditMemberDialog({
     queryFn: async () => {
       const { data, error } = await supabase
         .from("positions").select("id, name").eq("company_id", companyId).order("name");
+      if (error) throw error;
+      return (data ?? []) as { id: string; name: string }[];
+    },
+  });
+
+  const departmentsQ = useQuery({
+    queryKey: ["departments", companyId],
+    enabled: !!member,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("departments")
+        .select("id, name")
+        .eq("company_id", companyId)
+        .order("name");
       if (error) throw error;
       return (data ?? []) as { id: string; name: string }[];
     },
@@ -1083,7 +1100,10 @@ function EditMemberDialog({
     enabled: !!member,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("profiles").select("max_weekly_hours, is_active").eq("id", member!.id).maybeSingle();
+        .from("profiles")
+        .select("max_weekly_hours, is_active, department_id")
+        .eq("id", member!.id)
+        .maybeSingle();
       if (error) throw error;
       return data;
     },
@@ -1101,6 +1121,7 @@ function EditMemberDialog({
     if (profileQ.data) {
       setMaxHours(Number(profileQ.data.max_weekly_hours ?? 40));
       setIsActive(profileQ.data.is_active ?? true);
+      setDepartmentId(profileQ.data.department_id ?? "");
     }
   }, [profileQ.data]);
 
@@ -1126,6 +1147,7 @@ function EditMemberDialog({
       .update({
         full_name: fullName.trim(),
         position: position.trim() || null,
+        department_id: departmentId || null,
         max_weekly_hours: maxHours,
         is_active: isActive,
       })
@@ -1177,6 +1199,28 @@ function EditMemberDialog({
               placeholder="e.g. Barista, Shift Lead"
               maxLength={120}
             />
+          </div>
+
+          <div>
+            <Label htmlFor="team">Team</Label>
+            <select
+              id="team"
+              className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
+              value={departmentId}
+              onChange={(e) => setDepartmentId(e.target.value)}
+            >
+              <option value="">— no team —</option>
+              {(departmentsQ.data ?? []).map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {(departmentsQ.data ?? []).length === 0
+                ? "No teams yet — add them on Organization → Departments."
+                : "The schedule builder can divide its rows under each team."}
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

@@ -102,7 +102,44 @@ interface MemberRow {
   id: string;
   full_name: string;
   position: string | null;
+  /** The team they belong to — `departments` on the Organization page. */
+  department_id: string | null;
 }
+
+interface TeamRow {
+  id: string;
+  name: string;
+}
+
+/** Rows grouped under a heading; null means show one flat list. */
+type TeamGroup = { id: string; name: string; members: MemberRow[] };
+
+const NO_TEAM = "__none__";
+
+/**
+ * Employees divided under their team, teams in the order the company set,
+ * everyone without one last. A team nobody is on is left out rather than
+ * shown as an empty heading.
+ */
+function groupByTeam(members: MemberRow[], teams: TeamRow[]): TeamGroup[] {
+  const known = new Set(teams.map((t) => t.id));
+  const byTeam = new Map<string, MemberRow[]>();
+  for (const m of members) {
+    // A department that is gone, or on another company, counts as no team
+    // rather than dropping that person off the schedule entirely.
+    const key = m.department_id && known.has(m.department_id) ? m.department_id : NO_TEAM;
+    if (!byTeam.has(key)) byTeam.set(key, []);
+    byTeam.get(key)!.push(m);
+  }
+  const out: TeamGroup[] = teams
+    .filter((t) => byTeam.has(t.id))
+    .map((t) => ({ id: t.id, name: t.name, members: byTeam.get(t.id)! }));
+  const rest = byTeam.get(NO_TEAM);
+  if (rest?.length) out.push({ id: NO_TEAM, name: "No team", members: rest });
+  return out;
+}
+
+const GROUP_BY_TEAM_KEY = "ps-schedule-group-by-team";
 
 const WEEKLY_HOUR_LIMIT = 40;
 
@@ -358,11 +395,27 @@ function CompanyDashboard({ role }: { role: AppRole }) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("profiles")
-        .select("id, full_name, position")
+        .select("id, full_name, position, department_id")
         .eq("company_id", companyId!)
         .order("full_name");
       if (error) throw error;
       return data as MemberRow[];
+    },
+  });
+
+  // Teams are the company's departments. Nothing here creates or edits them;
+  // they are maintained on Organization → Departments.
+  const teamsQ = useQuery({
+    queryKey: ["schedule-teams", companyId],
+    enabled: !!companyId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("departments")
+        .select("id, name")
+        .eq("company_id", companyId!)
+        .order("name");
+      if (error) throw error;
+      return (data ?? []) as TeamRow[];
     },
   });
 
@@ -385,6 +438,7 @@ function CompanyDashboard({ role }: { role: AppRole }) {
   if (!companyId || !company) return <NoRoleState />;
 
   const members = membersQ.data ?? [];
+  const teams = teamsQ.data ?? [];
   const shifts = shiftsQ.data ?? [];
 
   if (role === "employee") {
@@ -406,6 +460,7 @@ function CompanyDashboard({ role }: { role: AppRole }) {
         companyId={companyId}
         companyName={company.name}
         members={members}
+        teams={teams}
         shifts={shifts}
         days={days}
         anchor={anchor}
@@ -507,6 +562,7 @@ interface BuilderProps {
   companyId: string;
   companyName: string;
   members: MemberRow[];
+  teams: TeamRow[];
   shifts: ShiftRow[];
   days: Date[];
   anchor: Date;
@@ -523,6 +579,7 @@ function ScheduleBuilder(props: BuilderProps) {
     companyId,
     companyName,
     members,
+    teams,
     shifts,
     days,
     anchor,
@@ -537,6 +594,35 @@ function ScheduleBuilder(props: BuilderProps) {
   const [savingPdf, setSavingPdf] = useState(false);
   // Double-click a day heading or a shift to start picking things to clear.
   const sel = useScheduleSelection();
+
+  // Divide the rows under their team. Remembered per browser, because a
+  // company that runs teams wants them every time and one that does not
+  // should never see the headings.
+  const [groupByTeamOn, setGroupByTeamOn] = useState(false);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(GROUP_BY_TEAM_KEY) === "1") setGroupByTeamOn(true);
+    } catch {
+      /* private mode, or storage switched off */
+    }
+  }, []);
+  function toggleGroupByTeam() {
+    setGroupByTeamOn((on) => {
+      const next = !on;
+      try {
+        localStorage.setItem(GROUP_BY_TEAM_KEY, next ? "1" : "0");
+      } catch {
+        /* not worth failing the click over */
+      }
+      return next;
+    });
+  }
+
+  /** null renders one flat list, exactly as before. */
+  const groups = useMemo(
+    () => (groupByTeamOn ? groupByTeam(members, teams) : null),
+    [groupByTeamOn, members, teams],
+  );
 
   const draftCount = shifts.filter((s) => !s.published).length;
 
@@ -657,6 +743,20 @@ function ScheduleBuilder(props: BuilderProps) {
         </Button>
         <span className="ml-1 text-sm text-muted-foreground">{rangeLabel}</span>
         <div className="ml-auto flex items-center gap-2">
+          {teams.length > 0 && (
+            <Button
+              variant={groupByTeamOn ? "default" : "outline"}
+              size="sm"
+              onClick={toggleGroupByTeam}
+              aria-pressed={groupByTeamOn}
+              title={
+                groupByTeamOn ? "Show everyone in one list" : "Divide the rows under each team"
+              }
+            >
+              <Users className="mr-2 h-4 w-4" />
+              {groupByTeamOn ? "Teams on" : "Group by team"}
+            </Button>
+          )}
           {canEdit && !sel.active && (
             <Button
               variant="outline"
@@ -721,12 +821,24 @@ function ScheduleBuilder(props: BuilderProps) {
         />
       )}
 
-      {view === "day" && <DayView {...props} onEdit={setEdit} />}
+      {view === "day" && <DayView {...props} groups={groups} onEdit={setEdit} />}
       {view === "week" && (
-        <GridView {...props} onEdit={setEdit} dayCount={7} selection={canEdit ? sel : undefined} />
+        <GridView
+          {...props}
+          groups={groups}
+          onEdit={setEdit}
+          dayCount={7}
+          selection={canEdit ? sel : undefined}
+        />
       )}
       {view === "twoweek" && (
-        <GridView {...props} onEdit={setEdit} dayCount={14} selection={canEdit ? sel : undefined} />
+        <GridView
+          {...props}
+          groups={groups}
+          onEdit={setEdit}
+          dayCount={14}
+          selection={canEdit ? sel : undefined}
+        />
       )}
       {view === "month" && <MonthView {...props} onEdit={setEdit} />}
 
@@ -744,6 +856,7 @@ function ScheduleBuilder(props: BuilderProps) {
 
 function GridView({
   members,
+  groups,
   shifts,
   days,
   canEdit,
@@ -752,6 +865,7 @@ function GridView({
   dayCount,
   selection,
 }: BuilderProps & {
+  groups: TeamGroup[] | null;
   onEdit: (t: EditTarget) => void;
   dayCount: 7 | 14;
   selection?: ScheduleSelection;
@@ -785,7 +899,9 @@ function GridView({
           }}
         >
           <div className="px-3 py-3 text-sm font-semibold text-foreground">
-            Team ({members.length})
+            {groups
+              ? `${groups.length} team${groups.length === 1 ? "" : "s"} · ${members.length}`
+              : `Team (${members.length})`}
           </div>
           {days.map((d, i) => {
             const today = new Date().toDateString() === d.toDateString();
@@ -825,100 +941,112 @@ function GridView({
             No team members yet.
           </p>
         ) : (
-          members.map((m) => {
-            const row = grid.get(m.id) ?? new Array(dayCount).fill(null);
-            return (
-              <div
-                key={m.id}
-                className="grid border-t border-border"
-                style={{
-                  gridTemplateColumns: `${memberCol}px repeat(${dayCount}, minmax(${dayMin}px, 1fr))`,
-                }}
-              >
-                <div className="flex items-center gap-2 px-3 py-3">
-                  <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary-soft text-xs font-semibold text-primary">
-                    {m.full_name
-                      .split(" ")
-                      .map((p) => p[0])
-                      .join("")
-                      .slice(0, 2)
-                      .toUpperCase() || "?"}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-foreground">
-                      {m.full_name || "(unnamed)"}
-                    </p>
-                    {m.position && (
-                      <p className="truncate text-xs text-muted-foreground">{m.position}</p>
-                    )}
-                  </div>
+          (groups ?? [{ id: NO_TEAM, name: "", members }]).map((group) => (
+            <div key={group.id}>
+              {groups && (
+                <div className="flex items-center justify-between gap-2 border-t border-border bg-secondary/60 px-3 py-1.5">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-foreground">
+                    {group.name}
+                  </span>
+                  <span className="text-[11px] text-muted-foreground">{group.members.length}</span>
                 </div>
-                {row.map((s, i) => {
-                  const weekDivider = dayCount === 14 && i === 7;
-                  const pickedShift = !!s && (selection?.shifts.has(s.id) ?? false);
-                  const pickedDay = selection?.days.has(toDayString(days[i])) ?? false;
-                  const marked = pickedShift || (pickedDay && !!s);
-                  return (
-                    <button
-                      key={i}
-                      type="button"
-                      disabled={!canEdit}
-                      onDoubleClick={() => {
-                        if (!canEdit) return;
-                        // The two clicks behind this double-click picked the
-                        // cell and put it back, so the selection is unchanged
-                        // and the editor can open cleanly.
-                        onEdit({
-                          memberId: m.id,
-                          memberName: m.full_name || "(unnamed)",
-                          day: days[i],
-                          shift: s,
-                        });
-                      }}
-                      onClick={() => {
-                        if (!canEdit) return;
-                        // A filled cell is picked by clicking it; an empty one
-                        // has nothing to pick, so it opens the editor to make
-                        // a shift there.
-                        if (s) {
-                          selection?.toggleShift(s.id);
-                          return;
-                        }
-                        onEdit({
-                          memberId: m.id,
-                          memberName: m.full_name || "(unnamed)",
-                          day: days[i],
-                          shift: s,
-                        });
-                      }}
-                      title={
-                        s
-                          ? "Click to pick this shift · double-click to edit it"
-                          : "Click to add a shift"
-                      }
-                      className={`group relative border-l border-border p-1 text-left transition-colors enabled:hover:bg-primary-soft/40 disabled:cursor-default ${weekDivider ? "border-l-2 border-primary/30" : ""} ${marked ? "bg-primary/15 ring-1 ring-inset ring-primary" : ""}`}
-                    >
-                      {s ? (
-                        <div
-                          className={`rounded-md px-1.5 py-1 text-[10px] leading-tight ${shiftColorClass(s.color)}`}
+              )}
+              {group.members.map((m) => {
+                const row = grid.get(m.id) ?? new Array(dayCount).fill(null);
+                return (
+                  <div
+                    key={m.id}
+                    className="grid border-t border-border"
+                    style={{
+                      gridTemplateColumns: `${memberCol}px repeat(${dayCount}, minmax(${dayMin}px, 1fr))`,
+                    }}
+                  >
+                    <div className="flex items-center gap-2 px-3 py-3">
+                      <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary-soft text-xs font-semibold text-primary">
+                        {m.full_name
+                          .split(" ")
+                          .map((p) => p[0])
+                          .join("")
+                          .slice(0, 2)
+                          .toUpperCase() || "?"}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-foreground">
+                          {m.full_name || "(unnamed)"}
+                        </p>
+                        {m.position && (
+                          <p className="truncate text-xs text-muted-foreground">{m.position}</p>
+                        )}
+                      </div>
+                    </div>
+                    {row.map((s, i) => {
+                      const weekDivider = dayCount === 14 && i === 7;
+                      const pickedShift = !!s && (selection?.shifts.has(s.id) ?? false);
+                      const pickedDay = selection?.days.has(toDayString(days[i])) ?? false;
+                      const marked = pickedShift || (pickedDay && !!s);
+                      return (
+                        <button
+                          key={i}
+                          type="button"
+                          disabled={!canEdit}
+                          onDoubleClick={() => {
+                            if (!canEdit) return;
+                            // The two clicks behind this double-click picked the
+                            // cell and put it back, so the selection is unchanged
+                            // and the editor can open cleanly.
+                            onEdit({
+                              memberId: m.id,
+                              memberName: m.full_name || "(unnamed)",
+                              day: days[i],
+                              shift: s,
+                            });
+                          }}
+                          onClick={() => {
+                            if (!canEdit) return;
+                            // A filled cell is picked by clicking it; an empty one
+                            // has nothing to pick, so it opens the editor to make
+                            // a shift there.
+                            if (s) {
+                              selection?.toggleShift(s.id);
+                              return;
+                            }
+                            onEdit({
+                              memberId: m.id,
+                              memberName: m.full_name || "(unnamed)",
+                              day: days[i],
+                              shift: s,
+                            });
+                          }}
+                          title={
+                            s
+                              ? "Click to pick this shift · double-click to edit it"
+                              : "Click to add a shift"
+                          }
+                          className={`group relative border-l border-border p-1 text-left transition-colors enabled:hover:bg-primary-soft/40 disabled:cursor-default ${weekDivider ? "border-l-2 border-primary/30" : ""} ${marked ? "bg-primary/15 ring-1 ring-inset ring-primary" : ""}`}
                         >
-                          <p className="font-semibold">
-                            {fmtTime(new Date(s.starts_at))}–{fmtTime(new Date(s.ends_at))}
-                          </p>
-                          {s.position && <p className="truncate opacity-90">{s.position}</p>}
-                          {!s.published && <p className="opacity-90">draft</p>}
-                        </div>
-                      ) : canEdit ? (
-                        <div className="grid h-full min-h-10 place-items-center rounded-md border border-dashed border-transparent text-muted-foreground opacity-0 transition-opacity group-hover:border-primary/40 group-hover:opacity-100">
-                          <Plus className="h-4 w-4" />
-                        </div>
-                      ) : null}
-                    </button>
-                  );
-                })}
-              </div>
-            );
-          })
+                          {s ? (
+                            <div
+                              className={`rounded-md px-1.5 py-1 text-[10px] leading-tight ${shiftColorClass(s.color)}`}
+                            >
+                              <p className="font-semibold">
+                                {fmtTime(new Date(s.starts_at))}–{fmtTime(new Date(s.ends_at))}
+                              </p>
+                              {s.position && <p className="truncate opacity-90">{s.position}</p>}
+                              {!s.published && <p className="opacity-90">draft</p>}
+                            </div>
+                          ) : canEdit ? (
+                            <div className="grid h-full min-h-10 place-items-center rounded-md border border-dashed border-transparent text-muted-foreground opacity-0 transition-opacity group-hover:border-primary/40 group-hover:opacity-100">
+                              <Plus className="h-4 w-4" />
+                            </div>
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          ))
         )}
       </div>
     </div>
@@ -929,12 +1057,13 @@ function GridView({
 
 function DayView({
   members,
+  groups,
   shifts,
   days,
   canEdit,
   isLoading,
   onEdit,
-}: BuilderProps & { onEdit: (t: EditTarget) => void }) {
+}: BuilderProps & { groups: TeamGroup[] | null; onEdit: (t: EditTarget) => void }) {
   const day = days[0];
   if (isLoading)
     return (
@@ -957,78 +1086,93 @@ function DayView({
         </p>
       </div>
       <ul className="divide-y divide-border">
-        {members.map((m) => {
-          const mine = shifts.filter((s) => s.employee_id === m.id);
-          return (
-            <li
-              key={m.id}
-              className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-            >
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary-soft text-xs font-semibold text-primary">
-                  {m.full_name
-                    .split(" ")
-                    .map((p) => p[0])
-                    .join("")
-                    .slice(0, 2)
-                    .toUpperCase() || "?"}
+        {(groups ?? [{ id: NO_TEAM, name: "", members }]).flatMap((group) => [
+          ...(groups
+            ? [
+                <li
+                  key={`head-${group.id}`}
+                  className="flex items-center justify-between gap-2 bg-secondary/60 px-4 py-1.5"
+                >
+                  <span className="text-xs font-semibold uppercase tracking-wide text-foreground">
+                    {group.name}
+                  </span>
+                  <span className="text-[11px] text-muted-foreground">{group.members.length}</span>
+                </li>,
+              ]
+            : []),
+          ...group.members.map((m) => {
+            const mine = shifts.filter((s) => s.employee_id === m.id);
+            return (
+              <li
+                key={m.id}
+                className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary-soft text-xs font-semibold text-primary">
+                    {m.full_name
+                      .split(" ")
+                      .map((p) => p[0])
+                      .join("")
+                      .slice(0, 2)
+                      .toUpperCase() || "?"}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-foreground">
+                      {m.full_name || "(unnamed)"}
+                    </p>
+                    {m.position && (
+                      <p className="truncate text-xs text-muted-foreground">{m.position}</p>
+                    )}
+                  </div>
                 </div>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-foreground">
-                    {m.full_name || "(unnamed)"}
-                  </p>
-                  {m.position && (
-                    <p className="truncate text-xs text-muted-foreground">{m.position}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  {mine.length === 0 ? (
+                    canEdit ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onEdit({
+                            memberId: m.id,
+                            memberName: m.full_name || "(unnamed)",
+                            day,
+                            shift: null,
+                          })
+                        }
+                        className="inline-flex items-center gap-1 rounded-md border border-dashed border-border px-3 py-1.5 text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                      >
+                        <Plus className="h-3.5 w-3.5" /> Add shift
+                      </button>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">Off</span>
+                    )
+                  ) : (
+                    mine.map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        disabled={!canEdit}
+                        onClick={() =>
+                          canEdit &&
+                          onEdit({
+                            memberId: m.id,
+                            memberName: m.full_name || "(unnamed)",
+                            day,
+                            shift: s,
+                          })
+                        }
+                        className={`rounded-md px-2.5 py-1.5 text-xs font-medium ${shiftColorClass(s.color)} ${!s.published ? "ring-1 ring-warning" : ""}`}
+                      >
+                        {fmtTime(new Date(s.starts_at))} – {fmtTime(new Date(s.ends_at))}
+                        {s.position ? ` · ${s.position}` : ""}
+                        {!s.published ? " · draft" : ""}
+                      </button>
+                    ))
                   )}
                 </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                {mine.length === 0 ? (
-                  canEdit ? (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onEdit({
-                          memberId: m.id,
-                          memberName: m.full_name || "(unnamed)",
-                          day,
-                          shift: null,
-                        })
-                      }
-                      className="inline-flex items-center gap-1 rounded-md border border-dashed border-border px-3 py-1.5 text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground"
-                    >
-                      <Plus className="h-3.5 w-3.5" /> Add shift
-                    </button>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">Off</span>
-                  )
-                ) : (
-                  mine.map((s) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      disabled={!canEdit}
-                      onClick={() =>
-                        canEdit &&
-                        onEdit({
-                          memberId: m.id,
-                          memberName: m.full_name || "(unnamed)",
-                          day,
-                          shift: s,
-                        })
-                      }
-                      className={`rounded-md px-2.5 py-1.5 text-xs font-medium ${shiftColorClass(s.color)} ${!s.published ? "ring-1 ring-warning" : ""}`}
-                    >
-                      {fmtTime(new Date(s.starts_at))} – {fmtTime(new Date(s.ends_at))}
-                      {s.position ? ` · ${s.position}` : ""}
-                      {!s.published ? " · draft" : ""}
-                    </button>
-                  ))
-                )}
-              </div>
-            </li>
-          );
-        })}
+              </li>
+            );
+          }),
+        ])}
       </ul>
     </div>
   );
