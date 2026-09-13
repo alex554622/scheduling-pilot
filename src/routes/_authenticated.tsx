@@ -353,16 +353,20 @@ function AuthLayout() {
 
   return (
     <div data-print-root className="flex min-h-screen bg-secondary/30">
+      {/* A column, not a box with something pinned to the bottom of it: the nav
+          scrolls on its own and the account card sits below it, so a long menu
+          can never end up underneath Sign out. Held to the viewport's height on
+          desktop so the card stays in sight however long the page is. */}
       <aside
         data-print-hide
-        className={`fixed inset-y-0 left-0 z-30 w-64 transform border-r border-border bg-[var(--sidebar-bg)] transition-[width,transform] duration-200 lg:static lg:translate-x-0 ${sideWidth} ${open ? "translate-x-0" : "-translate-x-full"}`}
+        className={`fixed bottom-0 left-0 top-0 z-30 flex w-64 shrink-0 transform flex-col border-r border-border bg-[var(--sidebar-bg)] transition-[width,transform] duration-200 lg:sticky lg:bottom-auto lg:top-0 lg:h-screen lg:translate-x-0 ${sideWidth} ${open ? "translate-x-0" : "-translate-x-full"}`}
       >
         <div
-          className={`flex h-16 items-center border-b border-border ${collapsed ? "justify-center px-2" : "px-5"}`}
+          className={`flex h-16 shrink-0 items-center border-b border-border ${collapsed ? "justify-center px-2" : "px-5"}`}
         >
           {collapsed ? <BrandMark size={40} /> : <BrandLogo className="h-12" />}
         </div>
-        <nav className={collapsed ? "px-2 py-4" : "px-3 py-4"}>
+        <nav className={`min-h-0 flex-1 overflow-y-auto ${collapsed ? "px-2 py-4" : "px-3 py-4"}`}>
           {items.map((n, i) => {
             const active = path === n.to;
             return (
@@ -380,7 +384,7 @@ function AuthLayout() {
           })}
         </nav>
         <div
-          className={`absolute bottom-3 ${collapsed ? "inset-x-2" : "inset-x-3"} rounded-xl border border-border bg-card p-3`}
+          className={`shrink-0 ${collapsed ? "mx-2 mb-3" : "mx-3 mb-3"} rounded-xl border border-border bg-card p-3`}
         >
           {collapsed ? (
             <div className="flex flex-col items-center gap-2">
