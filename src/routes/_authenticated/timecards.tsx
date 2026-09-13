@@ -776,7 +776,11 @@ function TimecardsPage() {
                     const open = expanded.includes(r.id);
                     return (
                       <Fragment key={r.id}>
-                        <tr className="border-t border-border">
+                        {/* The shadow under the cells is what separates one
+                            person from the next once their time cards are
+                            expanded underneath — a plain border leaves the day
+                            rows looking like part of the person above. */}
+                        <tr className="border-t border-border bg-card [&>td]:shadow-[0_3px_4px_-3px_oklch(0.22_0.04_250_/_0.35)] dark:[&>td]:shadow-[0_3px_4px_-3px_oklch(0_0_0_/_0.6)]">
                           <td className="px-4 py-2">
                             <div className="flex items-center gap-2">
                               <button
