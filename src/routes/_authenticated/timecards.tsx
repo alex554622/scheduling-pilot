@@ -772,15 +772,19 @@ function TimecardsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {everyone.map((r) => {
+                  {everyone.map((r, rowIndex) => {
                     const open = expanded.includes(r.id);
+                    // Every other person is banded, and their expanded time
+                    // cards carry the same band, so one person's days never
+                    // read as belonging to the name above them. A shadow under
+                    // the row cannot do this job: the next row paints its own
+                    // background straight over it.
+                    const banded = rowIndex % 2 === 1;
                     return (
                       <Fragment key={r.id}>
-                        {/* The shadow under the cells is what separates one
-                            person from the next once their time cards are
-                            expanded underneath — a plain border leaves the day
-                            rows looking like part of the person above. */}
-                        <tr className="border-t border-border bg-card [&>td]:shadow-[0_3px_4px_-3px_oklch(0.22_0.04_250_/_0.35)] dark:[&>td]:shadow-[0_3px_4px_-3px_oklch(0_0_0_/_0.6)]">
+                        <tr
+                          className={`border-t border-border ${banded ? "bg-muted/40" : "bg-card"}`}
+                        >
                           <td className="px-4 py-2">
                             <div className="flex items-center gap-2">
                               <button
@@ -850,7 +854,7 @@ function TimecardsPage() {
                             d.spans.map((span, i) => (
                               <tr
                                 key={`${d.key}-${span.inAt}`}
-                                className="border-t border-border/50 bg-muted/20"
+                                className={`border-t border-border/50 ${banded ? "bg-muted/60" : "bg-muted/25"}`}
                               >
                                 <td className="py-1.5 pl-14 pr-4 text-muted-foreground">
                                   {i === 0 ? fmtDayShort(d.date) : ""}
