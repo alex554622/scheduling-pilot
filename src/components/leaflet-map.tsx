@@ -28,7 +28,15 @@ interface Props {
   className?: string;
 }
 
-export function LeafletMap({ center, zoom = 15, pins = [], circle, height = 320, onClick, className }: Props) {
+export function LeafletMap({
+  center,
+  zoom = 15,
+  pins = [],
+  circle,
+  height = 320,
+  onClick,
+  className,
+}: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LeafletMapInstance | null>(null);
   const layerRef = useRef<LeafletLayerGroup | null>(null);
@@ -101,12 +109,34 @@ export function LeafletMap({ center, zoom = 15, pins = [], circle, height = 320,
         }).addTo(layer as Parameters<ReturnType<LeafletModule["circle"]>["addTo"]>[0]);
       }
       for (const p of pins) {
-        const m = L.marker([p.lat, p.lng]).addTo(layer as Parameters<ReturnType<LeafletModule["marker"]>["addTo"]>[0]);
+        const m = L.marker([p.lat, p.lng]).addTo(
+          layer as Parameters<ReturnType<LeafletModule["marker"]>["addTo"]>[0],
+        );
         if (p.label) m.bindPopup(p.label);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [JSON.stringify(pins), circle?.lat, circle?.lng, circle?.radiusM, ready]);
 
-  return <div ref={ref} className={className} style={{ height, width: "100%", borderRadius: 12, overflow: "hidden" }} />;
+  // `isolation: isolate` keeps Leaflet's own z-indexes to itself. Its panes sit
+  // at 400 and its controls as high as 1000, which without a stacking context
+  // of their own are measured against the page and draw straight over the
+  // sidebar drawer and its backdrop.
+  return (
+    <div
+      ref={ref}
+      className={className}
+      style={{
+        height,
+        width: "100%",
+        borderRadius: 12,
+        overflow: "hidden",
+        isolation: "isolate",
+        position: "relative",
+        zIndex: 0,
+      }}
+    />
+  );
 }
