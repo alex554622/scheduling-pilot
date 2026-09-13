@@ -40,9 +40,22 @@ function startOfWeek(d: Date) {
   x.setDate(x.getDate() - day);
   return x;
 }
-function addDays(d: Date, n: number) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
-function fmtDate(d: Date) { return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }); }
-function fmtDT(s: string) { return new Date(s).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }); }
+function addDays(d: Date, n: number) {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+function fmtDate(d: Date) {
+  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}
+function fmtDT(s: string) {
+  return new Date(s).toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 function toLocalInput(s: string) {
   const d = new Date(s);
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -71,14 +84,30 @@ function PunchCorrectionsPage() {
     if (!company?.id) return;
     const ch = supabase
       .channel(`corrections:${company.id}`)
-      .on("postgres_changes",
-        { event: "*", schema: "public", table: "time_punches", filter: `company_id=eq.${company.id}` },
-        () => qc.invalidateQueries({ queryKey: ["correct-punches"] }))
-      .on("postgres_changes",
-        { event: "*", schema: "public", table: "time_punch_audit", filter: `company_id=eq.${company.id}` },
-        () => qc.invalidateQueries({ queryKey: ["correct-audit"] }))
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "time_punches",
+          filter: `company_id=eq.${company.id}`,
+        },
+        () => qc.invalidateQueries({ queryKey: ["correct-punches"] }),
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "time_punch_audit",
+          filter: `company_id=eq.${company.id}`,
+        },
+        () => qc.invalidateQueries({ queryKey: ["correct-audit"] }),
+      )
       .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    return () => {
+      supabase.removeChannel(ch);
+    };
   }, [company?.id, qc]);
 
   const rangeStart = anchor;
@@ -134,7 +163,10 @@ function PunchCorrectionsPage() {
   const updateMut = useMutation({
     mutationFn: async (v: { id: string; at: string; kind: string; reason: string }) => {
       const { error } = await supabase.rpc("manager_update_punch", {
-        _id: v.id, _at: v.at, _kind: v.kind as any, _reason: v.reason,
+        _id: v.id,
+        _at: v.at,
+        _kind: v.kind as any,
+        _reason: v.reason,
       });
       if (error) throw error;
     },
@@ -150,7 +182,10 @@ function PunchCorrectionsPage() {
   const insertMut = useMutation({
     mutationFn: async (v: { user_id: string; at: string; kind: string; reason: string }) => {
       const { error } = await supabase.rpc("manager_insert_punch", {
-        _user_id: v.user_id, _at: v.at, _kind: v.kind as any, _reason: v.reason,
+        _user_id: v.user_id,
+        _at: v.at,
+        _kind: v.kind as any,
+        _reason: v.reason,
       });
       if (error) throw error;
     },
@@ -165,7 +200,10 @@ function PunchCorrectionsPage() {
 
   const deleteMut = useMutation({
     mutationFn: async (v: { id: string; reason: string }) => {
-      const { error } = await supabase.rpc("manager_delete_punch", { _id: v.id, _reason: v.reason });
+      const { error } = await supabase.rpc("manager_delete_punch", {
+        _id: v.id,
+        _reason: v.reason,
+      });
       if (error) throw error;
     },
     onSuccess: () => {
@@ -184,7 +222,8 @@ function PunchCorrectionsPage() {
 
   if (loading) return <div className="text-sm text-muted-foreground">Loading…</div>;
   if (!company) return <div className="text-sm text-muted-foreground">Join a company first.</div>;
-  if (!isManager) return <div className="text-sm text-muted-foreground">Manager access required.</div>;
+  if (!isManager)
+    return <div className="text-sm text-muted-foreground">Manager access required.</div>;
 
   return (
     <div className="space-y-6">
@@ -192,15 +231,24 @@ function PunchCorrectionsPage() {
         <div>
           <h1 className="text-2xl font-semibold text-foreground">Punch corrections</h1>
           <p className="text-sm text-muted-foreground">
-            Override or correct employee time punches. Every change is logged with a reason.
+            Override or correct employee time punches. Every change is logged with your name, the
+            time, and what the punch was before.
           </p>
         </div>
         <div className="flex items-center gap-2">
           <Button asChild variant="outline" size="sm">
-            <Link to="/timecards"><Clock className="mr-2 h-4 w-4" />Timecards</Link>
+            <Link to="/timecards">
+              <Clock className="mr-2 h-4 w-4" />
+              Timecards
+            </Link>
           </Button>
-          <Button variant={showAudit ? "default" : "outline"} size="sm" onClick={() => setShowAudit((v) => !v)}>
-            <History className="mr-2 h-4 w-4" />Audit log
+          <Button
+            variant={showAudit ? "default" : "outline"}
+            size="sm"
+            onClick={() => setShowAudit((v) => !v)}
+          >
+            <History className="mr-2 h-4 w-4" />
+            Audit log
           </Button>
         </div>
       </div>
@@ -212,15 +260,24 @@ function PunchCorrectionsPage() {
           onChange={(e) => setSelectedUser(e.target.value)}
         >
           {(rosterQ.data ?? []).map((m: any) => (
-            <option key={m.id} value={m.id}>{m.full_name || "Unnamed"}</option>
+            <option key={m.id} value={m.id}>
+              {m.full_name || "Unnamed"}
+            </option>
           ))}
         </select>
         <div className="ml-auto flex items-center gap-2">
-          <Button variant="outline" size="icon" onClick={() => setAnchor((a) => addDays(a, -7))}><ChevronLeft className="h-4 w-4" /></Button>
-          <Button variant="outline" size="sm" onClick={() => setAnchor(startOfWeek(new Date()))}>This week</Button>
-          <Button variant="outline" size="icon" onClick={() => setAnchor((a) => addDays(a, 7))}><ChevronRight className="h-4 w-4" /></Button>
+          <Button variant="outline" size="icon" onClick={() => setAnchor((a) => addDays(a, -7))}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setAnchor(startOfWeek(new Date()))}>
+            This week
+          </Button>
+          <Button variant="outline" size="icon" onClick={() => setAnchor((a) => addDays(a, 7))}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
           <Button size="sm" onClick={() => setAdding(true)} disabled={!targetUserId}>
-            <Plus className="mr-2 h-4 w-4" />Add punch
+            <Plus className="mr-2 h-4 w-4" />
+            Add punch
           </Button>
         </div>
       </div>
@@ -240,10 +297,15 @@ function PunchCorrectionsPage() {
           <div className="px-4 py-6 text-sm text-muted-foreground">No punches in this week.</div>
         )}
         {(punchesQ.data ?? []).map((p) => (
-          <div key={p.id} className="grid grid-cols-[1fr_1fr_1fr_auto] items-center gap-2 border-b border-border px-4 py-3 text-sm last:border-0">
+          <div
+            key={p.id}
+            className="grid grid-cols-[1fr_1fr_1fr_auto] items-center gap-2 border-b border-border px-4 py-3 text-sm last:border-0"
+          >
             <div className="font-medium text-foreground">{KIND_LABEL[p.kind]}</div>
             <div className="text-foreground">{fmtDT(p.at)}</div>
-            <div className="truncate font-mono text-xs text-muted-foreground">{p.id.slice(0, 8)}</div>
+            <div className="truncate font-mono text-xs text-muted-foreground">
+              {p.id.slice(0, 8)}
+            </div>
             <div className="flex justify-end gap-1">
               <Button variant="outline" size="sm" onClick={() => setEditing(p)}>
                 <Pencil className="h-3.5 w-3.5" />
@@ -252,9 +314,9 @@ function PunchCorrectionsPage() {
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  const reason = window.prompt("Reason for deleting this punch?");
-                  if (reason && reason.trim().length >= 3) deleteMut.mutate({ id: p.id, reason });
-                  else if (reason !== null) toast.error("Reason must be at least 3 characters");
+                  // The note is optional; the deletion is logged either way.
+                  const reason = window.prompt("Delete this punch? Add a note if it needs one.");
+                  if (reason !== null) deleteMut.mutate({ id: p.id, reason: reason.trim() });
                 }}
               >
                 <Trash2 className="h-3.5 w-3.5 text-destructive" />
@@ -275,19 +337,43 @@ function PunchCorrectionsPage() {
           {(auditQ.data ?? []).map((a) => (
             <div key={a.id} className="border-b border-border px-4 py-3 text-sm last:border-0">
               <div className="flex flex-wrap items-center gap-2">
-                <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${
-                  a.action === "create" ? "bg-emerald-100 text-emerald-700" :
-                  a.action === "update" ? "bg-amber-100 text-amber-700" :
-                  "bg-red-100 text-red-700"
-                }`}>{a.action.toUpperCase()}</span>
+                <span
+                  className={`rounded px-1.5 py-0.5 text-xs font-medium ${
+                    a.action === "create"
+                      ? "bg-emerald-100 text-emerald-700"
+                      : a.action === "update"
+                        ? "bg-amber-100 text-amber-700"
+                        : "bg-red-100 text-red-700"
+                  }`}
+                >
+                  {a.action.toUpperCase()}
+                </span>
                 <span className="text-xs text-muted-foreground">{fmtDT(a.created_at)}</span>
-                <span className="text-xs text-muted-foreground">by {rosterMap.get(a.actor_id) ?? a.actor_id.slice(0, 8)}</span>
+                <span className="text-xs text-muted-foreground">
+                  by {rosterMap.get(a.actor_id) ?? a.actor_id.slice(0, 8)}
+                </span>
               </div>
-              <div className="mt-1 text-foreground">{a.reason}</div>
+              {/* A note is optional, so the before/after below is often the
+                  whole story. Say so rather than leaving a blank line. */}
+              <div
+                className={a.reason.trim() ? "mt-1 text-foreground" : "mt-1 text-muted-foreground"}
+              >
+                {a.reason.trim() || "No note given"}
+              </div>
               {(a.before || a.after) && (
                 <div className="mt-1 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                  {a.before && <div><span className="font-medium">Before:</span> {KIND_LABEL[a.before.kind] ?? a.before.kind} @ {fmtDT(a.before.at)}</div>}
-                  {a.after && <div><span className="font-medium">After:</span> {KIND_LABEL[a.after.kind] ?? a.after.kind} @ {fmtDT(a.after.at)}</div>}
+                  {a.before && (
+                    <div>
+                      <span className="font-medium">Before:</span>{" "}
+                      {KIND_LABEL[a.before.kind] ?? a.before.kind} @ {fmtDT(a.before.at)}
+                    </div>
+                  )}
+                  {a.after && (
+                    <div>
+                      <span className="font-medium">After:</span>{" "}
+                      {KIND_LABEL[a.after.kind] ?? a.after.kind} @ {fmtDT(a.after.at)}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -302,10 +388,20 @@ function PunchCorrectionsPage() {
           targetUserId={targetUserId!}
           targetUserName={rosterMap.get(targetUserId!) ?? "Employee"}
           busy={updateMut.isPending || insertMut.isPending}
-          onClose={() => { setEditing(null); setAdding(false); }}
+          onClose={() => {
+            setEditing(null);
+            setAdding(false);
+          }}
           onSubmit={(v) => {
-            if (editing) updateMut.mutate({ id: editing.id, at: v.at, kind: v.kind, reason: v.reason });
-            else insertMut.mutate({ user_id: targetUserId!, at: v.at, kind: v.kind, reason: v.reason });
+            if (editing)
+              updateMut.mutate({ id: editing.id, at: v.at, kind: v.kind, reason: v.reason });
+            else
+              insertMut.mutate({
+                user_id: targetUserId!,
+                at: v.at,
+                kind: v.kind,
+                reason: v.reason,
+              });
           }}
         />
       )}
@@ -314,7 +410,12 @@ function PunchCorrectionsPage() {
 }
 
 function PunchDialog({
-  mode, initial, targetUserName, busy, onClose, onSubmit,
+  mode,
+  initial,
+  targetUserName,
+  busy,
+  onClose,
+  onSubmit,
 }: {
   mode: "edit" | "add";
   initial?: Punch;
@@ -325,12 +426,20 @@ function PunchDialog({
   onSubmit: (v: { at: string; kind: string; reason: string }) => void;
 }) {
   const [kind, setKind] = useState<string>(initial?.kind ?? "in");
-  const [at, setAt] = useState<string>(initial ? toLocalInput(initial.at) : toLocalInput(new Date().toISOString()));
+  const [at, setAt] = useState<string>(
+    initial ? toLocalInput(initial.at) : toLocalInput(new Date().toISOString()),
+  );
   const [reason, setReason] = useState("");
 
   return (
-    <div className="fixed inset-0 z-40 grid place-items-center bg-foreground/40 p-4" onClick={onClose}>
-      <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-lg" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 z-40 grid place-items-center bg-foreground/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
         <h2 className="text-lg font-semibold text-foreground">
           {mode === "edit" ? "Edit punch" : "Add punch"} · {targetUserName}
         </h2>
@@ -354,10 +463,15 @@ function PunchDialog({
           </div>
           <div>
             <Label htmlFor="at">Date &amp; time</Label>
-            <Input id="at" type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} />
+            <Input
+              id="at"
+              type="datetime-local"
+              value={at}
+              onChange={(e) => setAt(e.target.value)}
+            />
           </div>
           <div>
-            <Label htmlFor="reason">Reason</Label>
+            <Label htmlFor="reason">Note (optional)</Label>
             <Textarea
               id="reason"
               placeholder="e.g. Employee forgot to clock out; verified via timesheet."
@@ -368,10 +482,14 @@ function PunchDialog({
           </div>
         </div>
         <div className="mt-5 flex justify-end gap-2">
-          <Button variant="outline" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button variant="outline" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
           <Button
-            disabled={busy || reason.trim().length < 3 || !at}
-            onClick={() => onSubmit({ at: new Date(at).toISOString(), kind, reason: reason.trim() })}
+            disabled={busy || !at}
+            onClick={() =>
+              onSubmit({ at: new Date(at).toISOString(), kind, reason: reason.trim() })
+            }
           >
             {busy ? "Saving…" : mode === "edit" ? "Save change" : "Add punch"}
           </Button>

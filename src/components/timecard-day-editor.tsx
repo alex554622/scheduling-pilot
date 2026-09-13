@@ -75,12 +75,17 @@ export function TimecardDayEditor({
   const [newMinutes, setNewMinutes] = useState<number>(30);
 
   // Local edits, keyed by punch id, so a row can be changed and saved on its own.
-  const [drafts, setDrafts] = useState<Record<string, { at: string; kind: EditablePunch["kind"]; minutes: number | null }>>({});
+  const [drafts, setDrafts] = useState<
+    Record<string, { at: string; kind: EditablePunch["kind"]; minutes: number | null }>
+  >({});
 
   function draftFor(p: EditablePunch) {
     return drafts[p.id] ?? { at: toLocalInput(p.at), kind: p.kind, minutes: p.break_minutes };
   }
-  function setDraft(p: EditablePunch, patch: Partial<{ at: string; kind: EditablePunch["kind"]; minutes: number | null }>) {
+  function setDraft(
+    p: EditablePunch,
+    patch: Partial<{ at: string; kind: EditablePunch["kind"]; minutes: number | null }>,
+  ) {
     setDrafts((d) => ({ ...d, [p.id]: { ...draftFor(p), ...patch } }));
   }
 
@@ -90,19 +95,18 @@ export function TimecardDayEditor({
     qc.invalidateQueries({ queryKey: ["correct-punches"] });
   }
 
-  function requireReason(): string | null {
-    const trimmed = reason.trim();
-    if (trimmed.length < 3) {
-      setError("Give a reason for the correction (at least 3 characters) — it goes on the audit trail.");
-      return null;
-    }
-    return trimmed;
+  /**
+   * A note if one was typed. Optional: who changed what, from what and to what
+   * is recorded either way, and demanding a sentence first only ever produced
+   * "fix" and "typo".
+   */
+  function noteOrNothing(): string {
+    return reason.trim();
   }
 
   const saveMut = useMutation({
     mutationFn: async (p: EditablePunch) => {
-      const why = requireReason();
-      if (!why) throw new Error("__reason__");
+      const why = noteOrNothing();
       const d = draftFor(p);
       const isBreak = d.kind === "break_start" || d.kind === "break_end";
       // `_minutes` only exists once the break-length migration is pushed. Send it
@@ -127,31 +131,28 @@ export function TimecardDayEditor({
       setError(null);
       refresh();
     },
-    onError: (e: Error) => {
-      if (e.message !== "__reason__") setError(e.message);
-    },
+    onError: (e: Error) => setError(e.message),
   });
 
   const deleteMut = useMutation({
     mutationFn: async (p: EditablePunch) => {
-      const why = requireReason();
-      if (!why) throw new Error("__reason__");
-      const { error: rpcError } = await supabase.rpc("manager_delete_punch", { _id: p.id, _reason: why });
+      const why = noteOrNothing();
+      const { error: rpcError } = await supabase.rpc("manager_delete_punch", {
+        _id: p.id,
+        _reason: why,
+      });
       if (rpcError) throw rpcError;
     },
     onSuccess: () => {
       setError(null);
       refresh();
     },
-    onError: (e: Error) => {
-      if (e.message !== "__reason__") setError(e.message);
-    },
+    onError: (e: Error) => setError(e.message),
   });
 
   const addMut = useMutation({
     mutationFn: async () => {
-      const why = requireReason();
-      if (!why) throw new Error("__reason__");
+      const why = noteOrNothing();
       const isBreak = newKind === "break_start" || newKind === "break_end";
       const { error: rpcError } = await supabase.rpc("manager_insert_punch", {
         _user_id: employeeId,
@@ -167,9 +168,7 @@ export function TimecardDayEditor({
       setError(null);
       refresh();
     },
-    onError: (e: Error) => {
-      if (e.message !== "__reason__") setError(e.message);
-    },
+    onError: (e: Error) => setError(e.message),
   });
 
   const busy = saveMut.isPending || deleteMut.isPending || addMut.isPending;
@@ -180,12 +179,17 @@ export function TimecardDayEditor({
         <DialogHeader>
           <DialogTitle>Edit punches — {employeeName}</DialogTitle>
           <DialogDescription>
-            {day.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
+            {day.toLocaleDateString(undefined, {
+              weekday: "long",
+              month: "long",
+              day: "numeric",
+              year: "numeric",
+            })}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-1.5">
-          <Label htmlFor="correction-reason">Reason for the correction</Label>
+          <Label htmlFor="correction-reason">Note (optional)</Label>
           <Input
             id="correction-reason"
             placeholder="e.g. Forgot to clock out — confirmed with supervisor"
@@ -193,7 +197,8 @@ export function TimecardDayEditor({
             onChange={(e) => setReason(e.target.value)}
           />
           <p className="text-xs text-muted-foreground">
-            Recorded against every change below and visible in the audit log.
+            Every change below is logged with your name, the time, and what it was before — with or
+            without a note. Add one when the change needs explaining.
           </p>
         </div>
 
@@ -206,10 +211,14 @@ export function TimecardDayEditor({
 
           {punches.map((p) => {
             const d = draftFor(p);
-            const dirty = d.at !== toLocalInput(p.at) || d.kind !== p.kind || d.minutes !== p.break_minutes;
+            const dirty =
+              d.at !== toLocalInput(p.at) || d.kind !== p.kind || d.minutes !== p.break_minutes;
             const isBreak = d.kind === "break_start" || d.kind === "break_end";
             return (
-              <div key={p.id} className="flex flex-wrap items-end gap-2 rounded-lg border border-border p-2.5">
+              <div
+                key={p.id}
+                className="flex flex-wrap items-end gap-2 rounded-lg border border-border p-2.5"
+              >
                 <div className="w-32 shrink-0 space-y-1">
                   <Label className="text-xs">Type</Label>
                   <select
@@ -218,7 +227,9 @@ export function TimecardDayEditor({
                     onChange={(e) => setDraft(p, { kind: e.target.value as EditablePunch["kind"] })}
                   >
                     {(Object.keys(KIND_LABEL) as EditablePunch["kind"][]).map((k) => (
-                      <option key={k} value={k}>{KIND_LABEL[k]}</option>
+                      <option key={k} value={k}>
+                        {KIND_LABEL[k]}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -239,11 +250,15 @@ export function TimecardDayEditor({
                     <select
                       className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
                       value={d.minutes ?? ""}
-                      onChange={(e) => setDraft(p, { minutes: e.target.value ? Number(e.target.value) : null })}
+                      onChange={(e) =>
+                        setDraft(p, { minutes: e.target.value ? Number(e.target.value) : null })
+                      }
                     >
                       <option value="">—</option>
                       {BREAK_LENGTHS.map((m) => (
-                        <option key={m} value={m}>{m} min{m === 10 ? " (paid)" : ""}</option>
+                        <option key={m} value={m}>
+                          {m} min{m === 10 ? " (paid)" : ""}
+                        </option>
                       ))}
                     </select>
                   </div>
@@ -284,13 +299,20 @@ export function TimecardDayEditor({
                 onChange={(e) => setNewKind(e.target.value as EditablePunch["kind"])}
               >
                 {(Object.keys(KIND_LABEL) as EditablePunch["kind"][]).map((k) => (
-                  <option key={k} value={k}>{KIND_LABEL[k]}</option>
+                  <option key={k} value={k}>
+                    {KIND_LABEL[k]}
+                  </option>
                 ))}
               </select>
             </div>
             <div className="w-44 shrink-0 space-y-1">
               <Label className="text-xs">Time</Label>
-              <Input type="datetime-local" className="h-9" value={newAt} onChange={(e) => setNewAt(e.target.value)} />
+              <Input
+                type="datetime-local"
+                className="h-9"
+                value={newAt}
+                onChange={(e) => setNewAt(e.target.value)}
+              />
             </div>
             {(newKind === "break_start" || newKind === "break_end") && (
               <div className="w-28 shrink-0 space-y-1">
@@ -301,7 +323,9 @@ export function TimecardDayEditor({
                   onChange={(e) => setNewMinutes(Number(e.target.value))}
                 >
                   {BREAK_LENGTHS.map((m) => (
-                    <option key={m} value={m}>{m} min{m === 10 ? " (paid)" : ""}</option>
+                    <option key={m} value={m}>
+                      {m} min{m === 10 ? " (paid)" : ""}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -315,13 +339,20 @@ export function TimecardDayEditor({
             </Button>
           </div>
         ) : (
-          <Button variant="outline" size="sm" className="self-start" onClick={() => setAdding(true)}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="self-start"
+            onClick={() => setAdding(true)}
+          >
             <Plus className="mr-1.5 h-4 w-4" />
             Add a punch
           </Button>
         )}
 
-        {error && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+        {error && (
+          <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>
+        )}
       </DialogContent>
     </Dialog>
   );

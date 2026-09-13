@@ -1100,7 +1100,7 @@ function TimecardsPage() {
               <DialogHeader>
                 <DialogTitle>Delete timecards</DialogTitle>
                 <DialogDescription>
-                  Each deleted punch is recorded in the audit log with your reason, but the hours
+                  Each deleted punch is recorded in the audit log under your name, but the hours
                   themselves are gone. Anything already paid from these timecards will no longer add
                   up.
                 </DialogDescription>
@@ -1156,7 +1156,7 @@ function TimecardsPage() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label htmlFor="wipe-reason">Reason (kept in the audit log)</Label>
+                    <Label htmlFor="wipe-reason">Note (optional)</Label>
                     <Input
                       id="wipe-reason"
                       value={wipeReason}
@@ -1203,10 +1203,7 @@ function TimecardsPage() {
                     <Button
                       variant="destructive"
                       disabled={
-                        !wipeUnderstood ||
-                        wipeReason.trim().length < 3 ||
-                        (wipeCountQ.data ?? 0) === 0 ||
-                        wipePeriod.isPending
+                        !wipeUnderstood || (wipeCountQ.data ?? 0) === 0 || wipePeriod.isPending
                       }
                       onClick={() => wipePeriod.mutate()}
                     >
