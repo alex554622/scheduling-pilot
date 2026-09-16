@@ -3,62 +3,24 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { DEFAULT_APP_RULES, type AppRules as LibAppRules } from "@/lib/app-rules";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, Check, Clock, FileClock, Calendar, ShieldAlert } from "lucide-react";
+import { Loader2, Check, Clock, FileClock, Calendar, ShieldAlert, EyeOff } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/app-rules")({
   component: AppRulesPage,
 });
 
-type AppRules = {
-  // Timecard rules
-  overtime_threshold_hours: number; // weekly OT threshold
-  /** Hours in one day before overtime. 0 = off. */
-  daily_overtime_hours: number;
-  /** Hours in one day before double time. 0 = off. */
-  daily_double_time_hours: number;
-  punch_round_minutes: number; // round punches to nearest N min (0 = off)
-  workday_start_hour: number; // 0-23
-  // Clock-in rules
-  require_geofence: boolean;
-  allow_break_10: boolean;
-  allow_break_30: boolean;
-  allow_break_60: boolean;
-  /** Flag an employee who has worked this long with no break. 0 turns it off. */
-  break_reminder_hours: number;
-  /** Same, for a proper meal break (a 30 or 60). 0 turns it off. */
-  lunch_reminder_hours: number;
-  auto_clockout_hours: number; // 0 = off
-  // Scheduling rules
-  week_start_day: number; // 0=Sun..6=Sat
-  allow_shift_trades: boolean;
-  allow_time_off_requests: boolean;
-  schedule_advance_notice_hours: number;
-  schedule_menu: "builder" | "sheet";
-};
-
-const DEFAULTS: AppRules = {
-  overtime_threshold_hours: 40,
-  daily_overtime_hours: 8,
-  daily_double_time_hours: 12,
-  punch_round_minutes: 0,
-  workday_start_hour: 0,
-  require_geofence: true,
-  allow_break_10: true,
-  allow_break_30: true,
-  allow_break_60: true,
-  break_reminder_hours: 2,
-  lunch_reminder_hours: 5,
-  auto_clockout_hours: 0,
-  week_start_day: 0,
-  allow_shift_trades: true,
-  allow_time_off_requests: true,
-  schedule_advance_notice_hours: 24,
-  schedule_menu: "builder",
-};
+/**
+ * The shape and the defaults live in `@/lib/app-rules`, next to the hook every
+ * other page reads them through — this editor and the rest of the app were
+ * carrying two copies of the same list, one field apart from each other.
+ */
+type AppRules = LibAppRules;
+const DEFAULTS = DEFAULT_APP_RULES;
 
 function AppRulesPage() {
   const { primaryRole, company, loading } = useAuth();
@@ -184,16 +146,49 @@ function AppRulesPage() {
               </div>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Round punches (minutes)">
-                <Input
-                  type="number"
-                  min={0}
-                  max={30}
-                  value={rules.punch_round_minutes}
-                  onChange={(e) => set("punch_round_minutes", Number(e.target.value))}
+            {/* Rounding is nearest, never up or never down, so it costs the
+                employee no more than it costs the company. */}
+            <div className="mb-4 rounded-lg border border-border bg-muted/30 p-3">
+              <p className="text-sm font-medium text-foreground">Punch rounding</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Clock-in, clock-out and break punches all read to the nearest mark, and hours are
+                paid from those times. On a 5-minute rule 2:23 reads 2:25 and 2:22 reads 2:20; on a
+                10-minute rule 2:23 reads 2:20. The punch the clock recorded is never changed — a
+                manager editing a day still sees the real time.
+              </p>
+              <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                <ModeChoice
+                  active={rules.punch_round_minutes <= 0}
+                  onClick={() => set("punch_round_minutes", 0)}
+                  title="Off"
+                  detail="Pay to the minute, exactly as punched."
                 />
-              </Field>
+                <ModeChoice
+                  active={rules.punch_round_minutes === 5}
+                  onClick={() => set("punch_round_minutes", 5)}
+                  title="Nearest 5 minutes"
+                  detail="2:23 → 2:25. Quarter-hour marks stay put."
+                />
+                <ModeChoice
+                  active={rules.punch_round_minutes === 10}
+                  onClick={() => set("punch_round_minutes", 10)}
+                  title="Nearest 10 minutes"
+                  detail="2:23 → 2:20, and 2:26 → 2:30."
+                />
+              </div>
+              {/* The setting used to be a free-form minute count, so a company
+                  can be on a value none of these three buttons show. */}
+              {rules.punch_round_minutes > 0 &&
+                rules.punch_round_minutes !== 5 &&
+                rules.punch_round_minutes !== 10 && (
+                  <p className="mt-2 text-xs text-warning-foreground">
+                    Currently set to {rules.punch_round_minutes} minutes. Picking one of the options
+                    above replaces it.
+                  </p>
+                )}
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Workday start hour (0–23)">
                 <Input
                   type="number"
@@ -369,6 +364,20 @@ function AppRulesPage() {
                 onChange={(v) => set("allow_time_off_requests", v)}
               />
             </div>
+          </section>
+
+          {/* What employees see */}
+          <section className="rounded-xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
+            <div className="mb-4 flex items-center gap-2">
+              <EyeOff className="h-5 w-5 text-primary" />
+              <h3 className="font-semibold text-foreground">What employees see</h3>
+            </div>
+            <ToggleRow
+              label="Hide admins from employees"
+              description="Admins drop out of the lists employees see — the dashboard roster, the schedule, timecards, and who they can trade a shift with. Admins still see each other, and everyone still sees themselves."
+              checked={rules.hide_admins_from_staff}
+              onChange={(v) => set("hide_admins_from_staff", v)}
+            />
           </section>
 
           {err && (

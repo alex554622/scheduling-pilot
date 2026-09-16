@@ -7,6 +7,37 @@
  * clock-out contributes nothing until someone closes it.
  */
 
+/**
+ * Round a Date to the nearest N minutes (0 = no rounding).
+ *
+ * Nearest, not up and not down: with a 5-minute rule 2:23 reads 2:25 and 2:22
+ * reads 2:20, so the rounding costs the employee no more than it costs the
+ * company. Lives here rather than with the rest of the rules because this
+ * module is the one that turns punches into hours, and it has to stay free of
+ * React and Supabase imports so the test script can run it under bun.
+ */
+export function roundToMinutes(d: Date, minutes: number): Date {
+  if (!minutes || minutes <= 0) return d;
+  const ms = minutes * 60_000;
+  return new Date(Math.round(d.getTime() / ms) * ms);
+}
+
+/**
+ * The same punches as the rounding rule says they read.
+ *
+ * Hours are counted from these, not from the raw rows — a card that printed
+ * "in 8:00, out 4:25" while paying from 7:58 to 4:23 was showing one thing and
+ * paying another. The raw punch is never overwritten; only this reading of it
+ * is rounded, so a manager editing a day still sees what the clock recorded.
+ */
+export function roundPunches<T extends { at: string }>(punches: T[], minutes: number): T[] {
+  if (!minutes || minutes <= 0) return punches;
+  return punches.map((p) => ({
+    ...p,
+    at: roundToMinutes(new Date(p.at), minutes).toISOString(),
+  }));
+}
+
 export type PunchKind = "in" | "out" | "break_start" | "break_end";
 
 export interface SimplePunch {
@@ -51,7 +82,13 @@ export interface PersonTotals {
   days: DayDetail[];
 }
 
-export function totalsByPerson(punches: SimplePunch[]): Map<string, PersonTotals> {
+/**
+ * @param roundMinutes the company's punch-rounding rule; 0 counts raw times.
+ */
+export function totalsByPerson(
+  punches: SimplePunch[],
+  roundMinutes = 0,
+): Map<string, PersonTotals> {
   const byUser = new Map<string, Map<string, SimplePunch[]>>();
   for (const p of punches) {
     const day = new Date(p.at).toDateString();
@@ -72,7 +109,13 @@ export function totalsByPerson(punches: SimplePunch[]): Map<string, PersonTotals
       days: [],
     };
     for (const [key, list] of days) {
-      const ordered = [...list].sort((a, b) => a.at.localeCompare(b.at));
+      // Grouped by the day the punch actually happened, then rounded — a
+      // rounding that crosses midnight must not move someone's shift onto the
+      // next day's card.
+      const ordered = roundPunches(
+        [...list].sort((a, b) => a.at.localeCompare(b.at)),
+        roundMinutes,
+      );
       const detail: DayDetail = {
         key,
         date: new Date(key),

@@ -3,7 +3,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
-import { useAppRules, roundToMinutes } from "@/lib/app-rules";
+import { useAppRules } from "@/lib/app-rules";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -33,7 +33,12 @@ import {
 import { PrintableTimecard } from "@/components/printable-timecard";
 import { TimecardDayEditor, type EditablePunch } from "@/components/timecard-day-editor";
 import { splitPeriod, overtimeNote } from "@/lib/overtime";
-import { totalsByPerson, type SimplePunch } from "@/lib/timecard-totals";
+import {
+  roundPunches,
+  roundToMinutes,
+  totalsByPerson,
+  type SimplePunch,
+} from "@/lib/timecard-totals";
 import { fromDayString, toDayString } from "@/lib/schedule-pattern";
 
 export const Route = createFileRoute("/_authenticated/timecards")({
@@ -240,7 +245,7 @@ function TimecardsPage() {
   /** One line per person: their days, breaks, hours and overtime split. */
   const everyone = useMemo(() => {
     if (!viewingAll) return [];
-    const totals = totalsByPerson(allQ.data ?? []);
+    const totals = totalsByPerson(allQ.data ?? [], rules.punch_round_minutes);
     return (rosterQ.data ?? [])
       .map((m) => {
         const t = totals.get(m.id) ?? {
@@ -356,6 +361,11 @@ function TimecardsPage() {
     for (let i = 0; i < days; i++) {
       const d = addDays(rangeStart, i);
       const list = byDay.get(d.toDateString()) ?? [];
+      // The hours are counted from the rounded reading of the day, so the
+      // times printed on the card are the times that were paid. `list` stays
+      // raw: it is what the day editor opens, and a manager correcting a punch
+      // must see what the clock recorded.
+      const counted = roundPunches(list, rules.punch_round_minutes);
       const pairs: Pair[] = [];
       let totalMs = 0;
       let dayUnpaidMs = 0;
@@ -364,7 +374,7 @@ function TimecardsPage() {
       let openBreak: Punch | null = null;
       let currentUnpaid = 0;
       let currentPaid = 0;
-      for (const p of list) {
+      for (const p of counted) {
         if (p.kind === "in") {
           if (openIn)
             pairs.push({ in: openIn, unpaidBreakMs: currentUnpaid, paidBreakMs: currentPaid });
@@ -417,7 +427,7 @@ function TimecardsPage() {
       weekPaid += dayPaidMs;
     }
     return { rows, weekTotal, weekUnpaid, weekPaid };
-  }, [punchesQ.data, rangeStart, days]);
+  }, [punchesQ.data, rangeStart, days, rules.punch_round_minutes]);
 
   // Managers only: every punch in view that carries coordinates, newest first.
   const locationRows = useMemo(
@@ -503,7 +513,7 @@ function TimecardsPage() {
       doubleTime: doubleTimeMs > 0 ? fmtHours(doubleTimeMs) : null,
       doubleTimeDecimal: doubleTimeMs > 0 ? dec(doubleTimeMs) : null,
       overtimeNote: overtimeNote(rules, period === "week"),
-      roundNote: `Punch times ${rules.punch_round_minutes > 0 ? `rounded to the nearest ${rules.punch_round_minutes} minutes` : "shown as recorded"}. Unpaid break time is deducted from hours worked; paid break time is not.`,
+      roundNote: `Punch times ${rules.punch_round_minutes > 0 ? `and hours rounded to the nearest ${rules.punch_round_minutes} minutes` : "shown as recorded"}. Unpaid break time is deducted from hours worked; paid break time is not.`,
       filename: `timecard-${employeeName.replace(/[^\w.-]+/g, "-").replace(/^-|-$/g, "")}-${rangeStart.toISOString().slice(0, 10)}.pdf`,
     };
   }

@@ -4,6 +4,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useAppRules } from "@/lib/app-rules";
+import { useStaffVisibility } from "@/lib/staff-visibility";
+import { roundPunches } from "@/lib/timecard-totals";
 import { breakAlertsFor, type BreakAlert, type ReminderDismissal, type ReminderKind } from "@/lib/break-reminders";
 import { Button } from "@/components/ui/button";
 import { Clock, Coffee, LogOut, Users, RefreshCw, CalendarDays, FileClock, AlertTriangle, X } from "lucide-react";
@@ -42,6 +44,7 @@ function endOfDay(d = new Date()) { const x = new Date(d); x.setHours(23, 59, 59
 function DashboardPage() {
   const { company, primaryRole, loading } = useAuth();
   const rules = useAppRules();
+  const staff = useStaffVisibility();
   const isManager = primaryRole === "company_admin" || primaryRole === "super_admin";
   const qc = useQueryClient();
   const [now, setNow] = useState(Date.now());
@@ -160,6 +163,10 @@ function DashboardPage() {
     const members = membersQ.data ?? [];
     const list: Row[] = members.map((m) => {
       const punches = byUser.get(m.id) ?? [];
+      // Hours follow the rounding rule so this roster and the timecard agree.
+      // The break reminders below keep the raw punches: how long someone has
+      // really been on their feet is not a payroll question.
+      const counted = roundPunches(punches, rules.punch_round_minutes);
       let openIn: Punch | null = null;
       let openBreak: Punch | null = null;
       let workedMs = 0;
@@ -169,7 +176,7 @@ function DashboardPage() {
       let currentPaid = 0;
       let firstIn: string | null = null;
       let lastOut: string | null = null;
-      for (const p of punches) {
+      for (const p of counted) {
         if (p.kind === "in") {
           if (!firstIn) firstIn = p.at;
           openIn = p;
@@ -273,7 +280,13 @@ function DashboardPage() {
   // Hours, punch times and break totals stay on the manager's side of this
   // page, the same line the database draws for the punch rows themselves.
   if (!isManager) {
-    const presence = presenceQ.data ?? [];
+    // `company_presence()` leaves the admins out too, so this is belt and
+    // braces — but it is also what keeps the list right in a company whose
+    // database hasn't taken the newer function yet.
+    const presence = staff.visible(presenceQ.data ?? [], (p) => p.user_id);
+    // Until the admin list has landed, saying "loading" beats showing a roster
+    // that is about to lose rows.
+    const presenceLoading = presenceQ.isLoading || staff.isLoading;
     const present = {
       working: presence.filter((p) => p.status === "working").length,
       onBreak: presence.filter((p) => p.status === "on_break").length,
@@ -344,10 +357,10 @@ function DashboardPage() {
             <div>Employee</div>
             <div className="text-right">Status</div>
           </div>
-          {presenceQ.isLoading && (
+          {presenceLoading && (
             <div className="px-4 py-6 text-center text-sm text-muted-foreground">Loading…</div>
           )}
-          {!presenceQ.isLoading && presence.length === 0 && (
+          {!presenceLoading && presence.length === 0 && (
             <div className="px-4 py-6 text-center text-sm text-muted-foreground">
               Nobody to show yet.
             </div>

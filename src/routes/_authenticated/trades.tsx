@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { useStaffVisibility } from "@/lib/staff-visibility";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -40,6 +41,7 @@ function fmtRange(a: string, b: string) {
 
 function TradesPage() {
   const { user, profile, primaryRole, loading } = useAuth();
+  const staff = useStaffVisibility();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const companyId = profile?.company_id ?? null;
@@ -248,7 +250,12 @@ function TradesPage() {
         companyId={companyId}
         myShifts={myShifts}
         allShifts={shiftsQ.data ?? []}
-        teammates={(peopleQ.data ?? []).filter((p) => p.id !== user?.id)}
+        /* Someone an employee can't see on the schedule isn't someone they can
+           offer a shift to either, so the picker drops the admins too. */
+        teammates={staff.visible(
+          (peopleQ.data ?? []).filter((p) => p.id !== user?.id),
+          (p) => p.id,
+        )}
         onSaved={() => { setOpen(false); qc.invalidateQueries({ queryKey: ["trades"] }); }}
       />
     </div>

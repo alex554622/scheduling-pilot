@@ -16,7 +16,14 @@ function eq<T>(name: string, actual: T, expected: T) {
 }
 
 const HOUR = 3_600_000;
+const MINUTE = 60_000;
 const at = (day: number, hour: number, min = 0) => new Date(2026, 7, day, hour, min).toISOString();
+/** "14:25" — a punch time in local wall clock, which is what rounding works on. */
+const clock = (iso: string | null) => {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+};
 const punch = (
   user: string,
   kind: SimplePunch["kind"],
@@ -117,6 +124,58 @@ t = totalsByPerson([punch("a", "in", 3, 9)]).get("a")!;
 eq("the open span is still listed", t.days[0].spans.length, 1);
 eq("with no clock-out", t.days[0].spans[0].outAt, null);
 eq("and counts nothing", t.days[0].workedMs, 0);
+
+console.log("\npunch rounding, off by default");
+t = totalsByPerson([punch("a", "in", 3, 8, 2), punch("a", "out", 3, 16, 23)]).get("a")!;
+eq("counts to the minute", t.workedMs / MINUTE, 8 * 60 + 21);
+
+console.log("\nrounding to the nearest 5 minutes");
+// The clock-out the rule is named for: 2:23 reads 2:25.
+t = totalsByPerson([punch("a", "in", 3, 14), punch("a", "out", 3, 14, 23)], 5).get("a")!;
+eq("2:23 reads 2:25", clock(t.days[0].spans[0].outAt), "14:25");
+eq("and is paid to 2:25", t.workedMs / MINUTE, 25);
+
+t = totalsByPerson([punch("a", "in", 3, 14), punch("a", "out", 3, 14, 22)], 5).get("a")!;
+eq("2:22 reads 2:20 — nearest, not up", clock(t.days[0].spans[0].outAt), "14:20");
+
+t = totalsByPerson([punch("a", "in", 3, 8, 2), punch("a", "out", 3, 16, 23)], 5).get("a")!;
+eq(
+  "both ends round",
+  [clock(t.days[0].spans[0].inAt), clock(t.days[0].spans[0].outAt)],
+  ["08:00", "16:25"],
+);
+eq("hours follow the rounded times", t.workedMs / MINUTE, 8 * 60 + 25);
+
+t = totalsByPerson([punch("a", "in", 3, 8), punch("a", "out", 3, 16)], 5).get("a")!;
+eq("a punch already on the mark doesn't move", t.workedMs / HOUR, 8);
+
+console.log("\nrounding to the nearest 10 minutes");
+t = totalsByPerson([punch("a", "in", 3, 14), punch("a", "out", 3, 14, 23)], 10).get("a")!;
+eq("2:23 reads 2:20", clock(t.days[0].spans[0].outAt), "14:20");
+eq("and is paid to 2:20", t.workedMs / MINUTE, 20);
+
+t = totalsByPerson([punch("a", "in", 3, 14), punch("a", "out", 3, 14, 26)], 10).get("a")!;
+eq("2:26 reads 2:30", clock(t.days[0].spans[0].outAt), "14:30");
+
+console.log("\nrounding and breaks");
+t = totalsByPerson(
+  [
+    punch("a", "in", 3, 8, 2),
+    punch("a", "break_start", 3, 12, 1, 30),
+    punch("a", "break_end", 3, 12, 29),
+    punch("a", "out", 3, 16, 23),
+  ],
+  5,
+).get("a")!;
+eq("the break rounds to half an hour", t.unpaidMs / MINUTE, 30);
+eq("and comes off the rounded shift", t.workedMs / MINUTE, 8 * 60 + 25 - 30);
+
+console.log("\nrounding never moves a punch onto another day");
+// 11:58pm rounds to midnight, which belongs to the day it was punched.
+t = totalsByPerson([punch("a", "in", 3, 20), punch("a", "out", 3, 23, 58)], 5).get("a")!;
+eq("still one day", t.days.length, 1);
+eq("still the 3rd", t.days[0].date.getDate(), 3);
+eq("paid to midnight", t.workedMs / HOUR, 4);
 
 console.log(
   failures === 0 ? "\nAll timecard checks passed.\n" : `\n${failures} check(s) failed.\n`,

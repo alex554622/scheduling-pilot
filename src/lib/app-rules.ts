@@ -25,6 +25,12 @@ export type AppRules = {
   schedule_advance_notice_hours: number;
   /** Which schedule screen an admin gets in the menu: the builder, or the monthly sheet. */
   schedule_menu: "builder" | "sheet";
+  /**
+   * Keep admins out of the people an employee sees — the dashboard roster, the
+   * schedule, timecards, and who they can trade a shift with. Admins still see
+   * each other, and nobody is ever hidden from themselves.
+   */
+  hide_admins_from_staff: boolean;
 };
 
 export const DEFAULT_APP_RULES: AppRules = {
@@ -45,6 +51,7 @@ export const DEFAULT_APP_RULES: AppRules = {
   allow_time_off_requests: true,
   schedule_advance_notice_hours: 24,
   schedule_menu: "builder",
+  hide_admins_from_staff: true,
 };
 
 export function useAppRules() {
@@ -66,9 +73,6 @@ export function useAppRules() {
   return q.data ?? DEFAULT_APP_RULES;
 }
 
-/** Round a Date to the nearest N minutes (0 = no rounding). */
-export function roundToMinutes(d: Date, minutes: number): Date {
-  if (!minutes || minutes <= 0) return d;
-  const ms = minutes * 60_000;
-  return new Date(Math.round(d.getTime() / ms) * ms);
-}
+// `roundToMinutes` and `roundPunches` moved to `@/lib/timecard-totals`, next to
+// the hours they now affect — rounding used to change only how a punch was
+// printed, and the two had drifted apart.

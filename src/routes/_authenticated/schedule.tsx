@@ -350,6 +350,8 @@ function CompanyDashboard({ role }: { role: AppRole }) {
   const { capabilities } = useCapabilities();
   const companyId = profile?.company_id;
   const canEdit = role === "company_admin";
+  /** Who gets the grid of everyone. An employee gets their own week instead. */
+  const isBuilder = role !== "employee";
 
   const [view, setView] = useState<ScheduleView>(() => {
     if (typeof window === "undefined") return "week";
@@ -389,9 +391,13 @@ function CompanyDashboard({ role }: { role: AppRole }) {
     return { rangeStart: s, rangeEnd: addDays(s, 7), days: ds };
   }, [view, anchor]);
 
+  // The roster and the teams it is divided into belong to the builder, which is
+  // an admin screen. An employee gets `EmployeeView` — fetching the company's
+  // people for them only pulled every admin's name into a browser that has
+  // nowhere to show it.
   const membersQ = useQuery({
     queryKey: ["members", companyId],
-    enabled: !!companyId,
+    enabled: !!companyId && isBuilder,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("profiles")
@@ -407,7 +413,7 @@ function CompanyDashboard({ role }: { role: AppRole }) {
   // they are maintained on Organization → Departments.
   const teamsQ = useQuery({
     queryKey: ["schedule-teams", companyId],
-    enabled: !!companyId,
+    enabled: !!companyId && isBuilder,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("departments")
@@ -420,16 +426,26 @@ function CompanyDashboard({ role }: { role: AppRole }) {
   });
 
   const shiftsQ = useQuery({
-    queryKey: ["shifts", companyId, rangeStart.toISOString(), rangeEnd.toISOString()],
+    queryKey: [
+      "shifts",
+      companyId,
+      isBuilder ? "all" : user?.id,
+      rangeStart.toISOString(),
+      rangeEnd.toISOString(),
+    ],
     enabled: !!companyId,
     queryFn: async () => {
-      const { data, error } = await supabase
+      let q = supabase
         .from("shifts")
         .select("*")
         .eq("company_id", companyId!)
         .gte("starts_at", rangeStart.toISOString())
-        .lt("starts_at", rangeEnd.toISOString())
-        .order("starts_at");
+        .lt("starts_at", rangeEnd.toISOString());
+      // "My week" only ever shows the signed-in person's own shifts. Asking for
+      // the whole company and then filtering in the browser meant an admin's
+      // roster travelled down the wire to every employee who opened the page.
+      if (!isBuilder) q = q.eq("employee_id", user!.id);
+      const { data, error } = await q.order("starts_at");
       if (error) throw error;
       return data as ShiftRow[];
     },
@@ -444,13 +460,8 @@ function CompanyDashboard({ role }: { role: AppRole }) {
   if (role === "employee") {
     const ws = startOfWeek(new Date());
     const wdays = Array.from({ length: 7 }, (_, i) => addDays(ws, i));
-    return (
-      <EmployeeView
-        userId={user!.id}
-        days={wdays}
-        shifts={shifts.filter((s) => s.employee_id === user!.id)}
-      />
-    );
+    // Already only this person's shifts — the query asked for nothing else.
+    return <EmployeeView userId={user!.id} days={wdays} shifts={shifts} />;
   }
 
   return (
