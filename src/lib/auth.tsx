@@ -1,4 +1,12 @@
-import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+  type ReactNode,
+} from "react";
 import { useNavigate } from "@tanstack/react-router";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
@@ -102,6 +110,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [company, setCompany] = useState<CompanyLite | null>(null);
   const [roles, setRoles] = useState<AppRole[]>([]);
   const [loading, setLoading] = useState(true);
+  /**
+   * Whose profile, roles and company are the ones currently in state.
+   *
+   * `loading` has to mean "the context matches the signed-in user", not merely
+   * "the first load finished". A sign-in arrives on a page that already
+   * finished loading as an anonymous visitor, so without this the layout
+   * rendered against a null profile and flashed the "add your company" gate at
+   * someone who has one.
+   */
+  const contextFor = useRef<string | null>(null);
   const navigate = useNavigate();
 
   // Pull profile, role memberships, and the company row that the user belongs to.
@@ -112,6 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfile(null);
       setCompany(null);
       setRoles([]);
+      contextFor.current = null;
       return;
     }
     let [{ data: prof }, { data: roleRows }] = await Promise.all([
@@ -149,6 +168,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } else {
       setCompany(null);
     }
+    contextFor.current = uid;
   }, []);
 
   useEffect(() => {
@@ -162,6 +182,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s);
       setUser(s?.user ?? null);
+      // Someone new is signing in (or out): hold the app on its loading screen
+      // until their context arrives, rather than letting the layout decide what
+      // to show from the previous user's — or nobody's — profile. A token
+      // refresh for the same person changes nothing here, so the page they are
+      // reading doesn't blank out every hour.
+      if ((s?.user?.id ?? null) !== contextFor.current) setLoading(true);
       // Defer DB calls so we don't deadlock the auth callback.
       setTimeout(() => {
         void loadContext(s?.user ?? null).finally(() => setLoading(false));
@@ -217,6 +243,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(null);
     setCompany(null);
     setRoles([]);
+    // Nobody's context is loaded now, so signing back in — even as the same
+    // person — waits for a fresh read instead of rendering against these nulls.
+    contextFor.current = null;
   }, []);
 
   const primaryRole = ROLE_PRIORITY.find((r) => roles.includes(r)) ?? null;
