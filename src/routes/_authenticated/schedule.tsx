@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth, type AppRole } from "@/lib/auth";
 import { useCapabilities } from "@/lib/capabilities";
+import { useStaffVisibility } from "@/lib/staff-visibility";
 import { ScheduleRunsPanel } from "@/components/schedule-runs-panel";
 import {
   Dialog,
@@ -348,6 +349,10 @@ function endOfMonth(d: Date): Date {
 function CompanyDashboard({ role }: { role: AppRole }) {
   const { profile, company, user } = useAuth();
   const { capabilities } = useCapabilities();
+  // "Keep the office off the floor's screens" — the company's own rule about
+  // which colleagues an employee is shown. It applies to the posted roster
+  // exactly as it does to the dashboard list.
+  const staff = useStaffVisibility();
   const companyId = profile?.company_id;
   const canEdit = role === "company_admin";
   /** Who gets the grid of everyone. An employee gets their own week instead. */
@@ -368,18 +373,22 @@ function CompanyDashboard({ role }: { role: AppRole }) {
     }
   }, [view]);
 
+  // The day/week/month picker belongs to the builder. An employee always gets
+  // one week at a time, whatever an earlier session left in local storage.
+  const effectiveView: ScheduleView = isBuilder ? view : "week";
+
   const { rangeStart, rangeEnd, days } = useMemo(() => {
-    if (view === "day") {
+    if (effectiveView === "day") {
       const d = new Date(anchor);
       d.setHours(0, 0, 0, 0);
       return { rangeStart: d, rangeEnd: addDays(d, 1), days: [d] };
     }
-    if (view === "twoweek") {
+    if (effectiveView === "twoweek") {
       const s = startOfWeek(anchor);
       const ds = Array.from({ length: 14 }, (_, i) => addDays(s, i));
       return { rangeStart: s, rangeEnd: addDays(s, 14), days: ds };
     }
-    if (view === "month") {
+    if (effectiveView === "month") {
       const s = startOfMonth(anchor);
       const e = endOfMonth(anchor);
       const ds: Date[] = [];
@@ -389,7 +398,7 @@ function CompanyDashboard({ role }: { role: AppRole }) {
     const s = startOfWeek(anchor);
     const ds = Array.from({ length: 7 }, (_, i) => addDays(s, i));
     return { rangeStart: s, rangeEnd: addDays(s, 7), days: ds };
-  }, [view, anchor]);
+  }, [effectiveView, anchor]);
 
   // The roster and the teams it is divided into belong to the builder, which is
   // an admin screen. An employee gets `EmployeeView` — fetching the company's
@@ -451,6 +460,44 @@ function CompanyDashboard({ role }: { role: AppRole }) {
     },
   });
 
+  // The posted roster: every *published* shift of the week, whoever works it.
+  // Employees get this beside their own week so a schedule the company put up
+  // reads the way it does on the wall. Drafts never leave the builder, so the
+  // database is asked for published rows rather than a week being filtered
+  // down in the browser.
+  const rosterQ = useQuery({
+    queryKey: ["published-shifts", companyId, rangeStart.toISOString(), rangeEnd.toISOString()],
+    enabled: !!companyId && !isBuilder,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("shifts")
+        .select("*")
+        .eq("company_id", companyId!)
+        .eq("published", true)
+        .gte("starts_at", rangeStart.toISOString())
+        .lt("starts_at", rangeEnd.toISOString())
+        .order("starts_at");
+      if (error) throw error;
+      return data as ShiftRow[];
+    },
+  });
+
+  // Names for that roster. The builder has `membersQ` for this; an employee
+  // needs nothing but the names, so it asks for nothing but the names.
+  const rosterNamesQ = useQuery({
+    queryKey: ["roster-names", companyId],
+    enabled: !!companyId && !isBuilder,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, full_name")
+        .eq("company_id", companyId!)
+        .order("full_name");
+      if (error) throw error;
+      return (data ?? []) as { id: string; full_name: string }[];
+    },
+  });
+
   if (!companyId || !company) return <NoRoleState />;
 
   const members = membersQ.data ?? [];
@@ -458,10 +505,29 @@ function CompanyDashboard({ role }: { role: AppRole }) {
   const shifts = shiftsQ.data ?? [];
 
   if (role === "employee") {
-    const ws = startOfWeek(new Date());
-    const wdays = Array.from({ length: 7 }, (_, i) => addDays(ws, i));
-    // Already only this person's shifts — the query asked for nothing else.
-    return <EmployeeView userId={user!.id} days={wdays} shifts={shifts} />;
+    // `shifts` is already only this person's — the query asked for nothing else.
+    // The week shown is the one the arrows are on, not a fresh "today": a week
+    // built and published ahead of time is only reachable if the employee can
+    // walk forward into it.
+    const names = new Map((rosterNamesQ.data ?? []).map((p) => [p.id, p.full_name]));
+    // An open shift has no employee_id, so it is nobody's to hide. Until the
+    // admin list lands nothing is hidden yet, so hold the roster back rather
+    // than flash a name the rule is about to take away.
+    const roster = staff.isLoading
+      ? []
+      : staff.visible(rosterQ.data ?? [], (s) => s.employee_id ?? "");
+    return (
+      <EmployeeView
+        days={days}
+        shifts={shifts}
+        roster={roster}
+        nameOf={(id) => (id ? (names.get(id) ?? "Unknown") : "Open shift")}
+        selfId={user!.id}
+        isLoading={shiftsQ.isLoading || rosterQ.isLoading || staff.isLoading}
+        isThisWeek={startOfWeek(anchor).getTime() === startOfWeek(new Date()).getTime()}
+        onWeek={(dir) => setAnchor((a) => (dir === 0 ? new Date() : addDays(a, dir * 7)))}
+      />
+    );
   }
 
   return (
@@ -491,27 +557,64 @@ function CompanyDashboard({ role }: { role: AppRole }) {
 
 /* ----------------------------- Employee view ----------------------------- */
 
+/**
+ * One week for the signed-in person: their own shifts, then the published
+ * roster for that week — and the arrows that reach the other weeks. Without
+ * those arrows a schedule built and published in advance stayed invisible
+ * until the week it covered finally arrived.
+ */
 function EmployeeView({
-  userId,
   days,
   shifts,
+  roster,
+  nameOf,
+  selfId,
+  isLoading,
+  isThisWeek,
+  onWeek,
 }: {
-  userId: string;
   days: Date[];
   shifts: ShiftRow[];
+  /** Every published shift of the week, everyone's, already filtered for privacy. */
+  roster: ShiftRow[];
+  nameOf: (id: string | null) => string;
+  selfId: string;
+  isLoading: boolean;
+  isThisWeek: boolean;
+  /** -1 a week back, 1 a week on, 0 back to the week containing today. */
+  onWeek: (dir: -1 | 0 | 1) => void;
 }) {
-  void userId;
   const totalMin = shifts.reduce(
     (s, sh) => s + (new Date(sh.ends_at).getTime() - new Date(sh.starts_at).getTime()) / 60000,
     0,
   );
+  // The roster reads like the sheet on the wall: a day, then who works it.
+  const rosterDays = days
+    .map((d) => ({
+      day: d,
+      rows: roster.filter((s) => new Date(s.starts_at).toDateString() === d.toDateString()),
+    }))
+    .filter((d) => d.rows.length > 0);
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-semibold text-foreground">My week</h2>
+        <h2 className="text-2xl font-semibold text-foreground">My schedule</h2>
         <p className="text-sm text-muted-foreground">
-          {fmtDayLabel(days[0])} – {fmtDayLabel(days[6])}
+          {isThisWeek ? "This week" : "Week of"} {fmtDayLabel(days[0])} – {fmtDayLabel(days[6])}
         </p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-3 shadow-[var(--shadow-card)]">
+        <Button variant="ghost" size="sm" onClick={() => onWeek(-1)}>
+          ← Prev week
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => onWeek(0)} disabled={isThisWeek}>
+          This week
+        </Button>
+        <Button variant="ghost" size="sm" onClick={() => onWeek(1)}>
+          Next week →
+        </Button>
+        {isLoading && <Loader2 className="ml-1 h-4 w-4 animate-spin text-muted-foreground" />}
       </div>
       <div className="grid gap-4 sm:grid-cols-3">
         <Stat icon={Calendar} label="Shifts" value={String(shifts.length)} />
@@ -523,10 +626,12 @@ function EmployeeView({
           tone="muted"
         />
       </div>
-      <SectionCard title="My upcoming shifts">
+      <SectionCard title="My shifts">
         {shifts.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
-            No shifts scheduled this week.
+            {isLoading
+              ? "Loading your shifts…"
+              : "No shifts on this week. Use Next week → to check the weeks ahead."}
           </p>
         ) : (
           <ul className="divide-y divide-border">
@@ -553,6 +658,53 @@ function EmployeeView({
               );
             })}
           </ul>
+        )}
+      </SectionCard>
+
+      {/* The published week for the whole team — the sheet on the wall. Only
+          published shifts reach here, so a week still being drafted upstairs
+          shows nothing. */}
+      <SectionCard title="Published schedule">
+        {rosterDays.length === 0 ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            {isLoading ? "Loading the schedule…" : "Nothing published for this week yet."}
+          </p>
+        ) : (
+          <div className="divide-y divide-border">
+            {rosterDays.map(({ day, rows }) => (
+              <div key={day.toDateString()} className="py-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {fmtDayLabel(day)}
+                </p>
+                <ul className="mt-2 space-y-1.5">
+                  {rows.map((s) => {
+                    const start = new Date(s.starts_at);
+                    const end = new Date(s.ends_at);
+                    const mine = s.employee_id === selfId;
+                    return (
+                      <li
+                        key={s.id}
+                        className={`flex flex-wrap items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 ${mine ? "bg-primary-soft" : "bg-secondary/50"}`}
+                      >
+                        <span
+                          className={`text-sm ${mine ? "font-semibold text-primary" : "text-foreground"}`}
+                        >
+                          {nameOf(s.employee_id)}
+                          {mine && " (you)"}
+                        </span>
+                        <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                          {s.position && <span>{s.position}</span>}
+                          <span className="font-medium text-foreground">
+                            {fmtTime(start)} – {fmtTime(end)}
+                          </span>
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
+          </div>
         )}
       </SectionCard>
     </div>
