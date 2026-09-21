@@ -390,8 +390,8 @@ function AppRulesPage() {
               <h3 className="font-semibold text-foreground">What employees see</h3>
             </div>
             <ToggleRow
-              label="Hide admins from employees"
-              description="Admins drop out of the lists employees see — the dashboard roster, the schedule, timecards, and who they can trade a shift with. Admins still see each other, and everyone still sees themselves."
+              label="Hide admins from the rosters"
+              description="Admins drop off the dashboard roster, the schedule grid, the timecard table and the list of people a shift can be traded with — on everyone's screen, including their own. They can still open their own timecard. Leave this off if your admins work shifts like anyone else."
               checked={rules.hide_admins_from_staff}
               onChange={(v) => set("hide_admins_from_staff", v)}
             />

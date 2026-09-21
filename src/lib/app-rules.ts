@@ -33,9 +33,10 @@ export type AppRules = {
   /** Which schedule screen an admin gets in the menu: the builder, or the monthly sheet. */
   schedule_menu: "builder" | "sheet";
   /**
-   * Keep admins out of the people an employee sees — the dashboard roster, the
-   * schedule, timecards, and who they can trade a shift with. Admins still see
-   * each other, and nobody is ever hidden from themselves.
+   * Keep admins off the rosters — the dashboard, the schedule grid, timecards,
+   * and who a shift can be traded with. On every screen and for every viewer,
+   * so a hidden admin is hidden from their own grid too. A platform admin
+   * looking in from outside the company still sees everyone.
    */
   hide_admins_from_staff: boolean;
 };

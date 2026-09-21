@@ -15,11 +15,15 @@ import { useAuth } from "@/lib/auth";
  * It started as a rule about what staff were shown, and the office stayed on
  * the manager's own lists — so a company that had decided its admins are not
  * part of the roster still found them in the schedule grid, on the timecard
- * table and on Today's roster. An admin is either somebody you schedule and pay
- * or they are not; it cannot depend on who is looking. The rule now applies to
- * every company screen, with two exceptions that are not really exceptions:
- * nobody is ever hidden from themselves, and a platform admin looking in from
- * outside the company sees all of it.
+ * table and on Today's roster, including their own row. An admin is either
+ * somebody you schedule and pay or they are not; it cannot depend on who is
+ * looking, and least of all on whether they are looking at themselves. The rule
+ * applies to every company screen and to every viewer, the hidden admin
+ * included. The one exception is a platform admin looking in from outside the
+ * company, who sees all of it.
+ *
+ * An admin can still open their own timecard, which is reached by name from the
+ * "Me" option rather than off a roster — their pay record is theirs to read.
  *
  * Wherever this hides something an employee could otherwise have read for
  * themselves, the query that fetched it should be narrowed too — see the
@@ -47,7 +51,7 @@ export interface StaffVisibility {
 }
 
 export function useStaffVisibility(): StaffVisibility {
-  const { company, primaryRole, user } = useAuth();
+  const { company, primaryRole } = useAuth();
   const rules = useAppRules();
 
   // A platform admin is not in the company and is not subject to its rules;
@@ -70,11 +74,15 @@ export function useStaffVisibility(): StaffVisibility {
   });
 
   const adminIds = useMemo(() => new Set(adminsQ.data ?? []), [adminsQ.data]);
-  const selfId = user?.id;
 
+  // No exemption for the viewer. The rule only ever hides an admin, so the
+  // only person it could excuse is an admin looking at themselves — and an
+  // admin who is not on the roster is not on it in their own browser either.
+  // An employee is never in `adminIds`, so they can never vanish from their
+  // own screens.
   const isHidden = useCallback(
-    (userId: string) => enforced && userId !== selfId && adminIds.has(userId),
-    [enforced, selfId, adminIds],
+    (userId: string) => enforced && adminIds.has(userId),
+    [enforced, adminIds],
   );
 
   const visible = useCallback(
