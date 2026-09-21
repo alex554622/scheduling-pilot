@@ -32,6 +32,11 @@ export const NOTIFICATION_TYPES = [
     label: "Break almost over",
     detail: "A reminder two minutes before your break is up.",
   },
+  {
+    key: "announcement",
+    label: "Announcements",
+    detail: "When an admin posts an announcement on Messages.",
+  },
 ] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number]["key"];

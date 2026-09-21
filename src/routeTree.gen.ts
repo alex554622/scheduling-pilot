@@ -37,6 +37,7 @@ import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedPunchCorrectionsRouteImport } from './routes/_authenticated/punch-corrections'
 import { Route as AuthenticatedPlatformRouteImport } from './routes/_authenticated/platform'
 import { Route as AuthenticatedOrganizationRouteImport } from './routes/_authenticated/organization'
+import { Route as AuthenticatedMessagesRouteImport } from './routes/_authenticated/messages'
 import { Route as AuthenticatedEmployeesRouteImport } from './routes/_authenticated/employees'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedCompaniesRouteImport } from './routes/_authenticated/companies'
@@ -191,6 +192,11 @@ const AuthenticatedOrganizationRoute =
     path: '/organization',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedMessagesRoute = AuthenticatedMessagesRouteImport.update({
+  id: '/messages',
+  path: '/messages',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedEmployeesRoute = AuthenticatedEmployeesRouteImport.update({
   id: '/employees',
   path: '/employees',
@@ -259,6 +265,7 @@ export interface FileRoutesByFullPath {
   '/companies': typeof AuthenticatedCompaniesRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/employees': typeof AuthenticatedEmployeesRouteWithChildren
+  '/messages': typeof AuthenticatedMessagesRoute
   '/organization': typeof AuthenticatedOrganizationRoute
   '/platform': typeof AuthenticatedPlatformRoute
   '/punch-corrections': typeof AuthenticatedPunchCorrectionsRoute
@@ -297,6 +304,7 @@ export interface FileRoutesByTo {
   '/companies': typeof AuthenticatedCompaniesRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/employees': typeof AuthenticatedEmployeesRouteWithChildren
+  '/messages': typeof AuthenticatedMessagesRoute
   '/organization': typeof AuthenticatedOrganizationRoute
   '/platform': typeof AuthenticatedPlatformRoute
   '/punch-corrections': typeof AuthenticatedPunchCorrectionsRoute
@@ -337,6 +345,7 @@ export interface FileRoutesById {
   '/_authenticated/companies': typeof AuthenticatedCompaniesRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/employees': typeof AuthenticatedEmployeesRouteWithChildren
+  '/_authenticated/messages': typeof AuthenticatedMessagesRoute
   '/_authenticated/organization': typeof AuthenticatedOrganizationRoute
   '/_authenticated/platform': typeof AuthenticatedPlatformRoute
   '/_authenticated/punch-corrections': typeof AuthenticatedPunchCorrectionsRoute
@@ -377,6 +386,7 @@ export interface FileRouteTypes {
     | '/companies'
     | '/dashboard'
     | '/employees'
+    | '/messages'
     | '/organization'
     | '/platform'
     | '/punch-corrections'
@@ -415,6 +425,7 @@ export interface FileRouteTypes {
     | '/companies'
     | '/dashboard'
     | '/employees'
+    | '/messages'
     | '/organization'
     | '/platform'
     | '/punch-corrections'
@@ -454,6 +465,7 @@ export interface FileRouteTypes {
     | '/_authenticated/companies'
     | '/_authenticated/dashboard'
     | '/_authenticated/employees'
+    | '/_authenticated/messages'
     | '/_authenticated/organization'
     | '/_authenticated/platform'
     | '/_authenticated/punch-corrections'
@@ -687,6 +699,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOrganizationRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/messages': {
+      id: '/_authenticated/messages'
+      path: '/messages'
+      fullPath: '/messages'
+      preLoaderRoute: typeof AuthenticatedMessagesRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/employees': {
       id: '/_authenticated/employees'
       path: '/employees'
@@ -777,6 +796,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedCompaniesRoute: typeof AuthenticatedCompaniesRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedEmployeesRoute: typeof AuthenticatedEmployeesRouteWithChildren
+  AuthenticatedMessagesRoute: typeof AuthenticatedMessagesRoute
   AuthenticatedOrganizationRoute: typeof AuthenticatedOrganizationRoute
   AuthenticatedPlatformRoute: typeof AuthenticatedPlatformRoute
   AuthenticatedPunchCorrectionsRoute: typeof AuthenticatedPunchCorrectionsRoute
@@ -803,6 +823,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedCompaniesRoute: AuthenticatedCompaniesRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedEmployeesRoute: AuthenticatedEmployeesRouteWithChildren,
+  AuthenticatedMessagesRoute: AuthenticatedMessagesRoute,
   AuthenticatedOrganizationRoute: AuthenticatedOrganizationRoute,
   AuthenticatedPlatformRoute: AuthenticatedPlatformRoute,
   AuthenticatedPunchCorrectionsRoute: AuthenticatedPunchCorrectionsRoute,

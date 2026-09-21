@@ -28,6 +28,7 @@ import {
   Gift,
   Tablet,
   ClipboardList,
+  MessageSquare,
 } from "lucide-react";
 import { useAuth, ROLE_LABEL, type AppRole } from "@/lib/auth";
 import { useAppRules } from "@/lib/app-rules";
@@ -133,6 +134,14 @@ const NAV: NavItem[] = [
     icon: ShieldCheck,
     roles: ["company_admin", "super_admin"],
     needs: "time_clock",
+  },
+  // Not behind a plan capability: telling your own staff something is not a
+  // premium feature.
+  {
+    to: "/messages",
+    label: "Messages",
+    icon: MessageSquare,
+    roles: ["company_admin", "employee"],
   },
   {
     to: "/trades",

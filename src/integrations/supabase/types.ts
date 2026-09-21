@@ -1112,6 +1112,33 @@ export type Database = {
           },
         ]
       }
+      company_messages: {
+        Row: {
+          author_id: string
+          body: string
+          company_id: string
+          created_at: string
+          id: string
+          is_announcement: boolean
+        }
+        Insert: {
+          author_id: string
+          body: string
+          company_id: string
+          created_at?: string
+          id?: string
+          is_announcement?: boolean
+        }
+        Update: {
+          author_id?: string
+          body?: string
+          company_id?: string
+          created_at?: string
+          id?: string
+          is_announcement?: boolean
+        }
+        Relationships: []
+      }
       time_off_requests: {
         Row: {
           company_id: string
