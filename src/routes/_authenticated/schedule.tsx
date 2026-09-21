@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import { SHIFT_COLORS, shiftColorClass, shiftColorHex } from "@/lib/shift-colors";
 import { ScheduleCopyPaste } from "@/components/schedule-copy-paste";
+import { CopyLastWeekButton } from "@/components/copy-last-week";
 import { EraseSelectionBar } from "@/components/erase-days";
 import { useScheduleSelection, type ScheduleSelection } from "@/lib/day-selection";
 import { toDayString } from "@/lib/schedule-pattern";
@@ -1026,6 +1027,11 @@ function ScheduleBuilder(props: BuilderProps) {
               <CheckSquare className="mr-2 h-4 w-4" />
               Select
             </Button>
+          )}
+          {canEdit && (
+            // The week the builder is on, whatever the view: on a day or a
+            // month it is the week holding the date the arrows are pointing at.
+            <CopyLastWeekButton companyId={companyId} weekStart={startOfWeek(anchor)} />
           )}
           {canEdit && (
             <ScheduleCopyPaste
