@@ -74,6 +74,25 @@ const ASSIGNABLE: { value: AppRole | ""; label: string }[] = [
  */
 const OWN_BUSINESS = "__own_business__";
 
+/** Platform admins run the whole platform and belong to no company by design. */
+const isPlatformAdmin = (a: AccountRow) => a.roles.includes("super_admin");
+
+/**
+ * Approved to run their own business, which they have not named yet.
+ *
+ * This is what an approval looks like when there was no company to approve
+ * them into: the admin role lands, the company does not, and the next move is
+ * theirs. Without a name for the state the row looked exactly like an account
+ * nobody had touched, and went on offering an Approve button to someone who
+ * had just been approved.
+ */
+const isRegisteringBusiness = (a: AccountRow) =>
+  !a.company_id && !isPlatformAdmin(a) && a.roles.includes("company_admin");
+
+/** Nobody has placed them and nothing is in motion — these need a decision. */
+const needsCompany = (a: AccountRow) =>
+  !a.company_id && !a.pending_company_id && !isPlatformAdmin(a) && !isRegisteringBusiness(a);
+
 function fmtDate(s: string | null): string {
   return s ? new Date(s).toLocaleDateString([], { dateStyle: "medium" }) : "never";
 }
@@ -83,7 +102,9 @@ function AccountsPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"all" | "stranded" | "pending" | "unconfirmed">("all");
+  const [filter, setFilter] = useState<
+    "all" | "stranded" | "registering" | "pending" | "unconfirmed"
+  >("all");
   const [err, setErr] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<AccountRow | null>(null);
   const [approving, setApproving] = useState<AccountRow | null>(null);
@@ -235,7 +256,8 @@ function AccountsPage() {
   const counts = useMemo(
     () => ({
       all: accounts.length,
-      stranded: accounts.filter((a) => !a.company_id && !a.pending_company_id).length,
+      stranded: accounts.filter(needsCompany).length,
+      registering: accounts.filter(isRegisteringBusiness).length,
       pending: accounts.filter((a) => a.pending_company_id).length,
       unconfirmed: accounts.filter((a) => !a.email_confirmed).length,
     }),
@@ -246,7 +268,8 @@ function AccountsPage() {
     const q = search.trim().toLowerCase();
     return accounts
       .filter((a) => {
-        if (filter === "stranded") return !a.company_id && !a.pending_company_id;
+        if (filter === "stranded") return needsCompany(a);
+        if (filter === "registering") return isRegisteringBusiness(a);
         if (filter === "pending") return !!a.pending_company_id;
         if (filter === "unconfirmed") return !a.email_confirmed;
         return true;
@@ -261,24 +284,33 @@ function AccountsPage() {
   }, [accounts, filter, search]);
 
   /**
-   * The list, under the company each account belongs to. "No company" leads,
-   * because those are the ones waiting on a decision — an account nobody has
-   * placed is the only kind that cannot use the app at all.
+   * The list, under the company each account belongs to, with the two kinds of
+   * companyless account kept apart at the top. An owner who has been approved
+   * and an account nobody has touched both have no company, and filing them
+   * together is what made an approval look like it had not happened.
    */
   const groups: { key: string; label: string; rows: AccountRow[] }[] = (() => {
-    const none: AccountRow[] = [];
+    const waiting: AccountRow[] = [];
+    const registering: AccountRow[] = [];
+    const elsewhere: AccountRow[] = [];
     const byCompany = new Map<string, AccountRow[]>();
     for (const a of rows) {
-      if (!a.company_id) {
-        none.push(a);
-        continue;
+      if (a.company_id) {
+        const list = byCompany.get(a.company_id);
+        if (list) list.push(a);
+        else byCompany.set(a.company_id, [a]);
+      } else if (isRegisteringBusiness(a)) {
+        registering.push(a);
+      } else if (needsCompany(a)) {
+        waiting.push(a);
+      } else {
+        elsewhere.push(a);
       }
-      const list = byCompany.get(a.company_id);
-      if (list) list.push(a);
-      else byCompany.set(a.company_id, [a]);
     }
     const out: { key: string; label: string; rows: AccountRow[] }[] = [];
-    if (none.length) out.push({ key: "none", label: "No company", rows: none });
+    if (waiting.length) out.push({ key: "none", label: "Needs a company", rows: waiting });
+    if (registering.length)
+      out.push({ key: "registering", label: "Registering a business", rows: registering });
     for (const [id, list] of byCompany) {
       out.push({
         key: id,
@@ -286,6 +318,8 @@ function AccountsPage() {
         rows: list,
       });
     }
+    // Platform admins and anyone mid join request: no company, nothing wrong.
+    if (elsewhere.length) out.push({ key: "other", label: "No company needed", rows: elsewhere });
     return out;
   })();
 
@@ -320,7 +354,8 @@ function AccountsPage() {
         {(
           [
             ["all", "All"],
-            ["stranded", "No company"],
+            ["stranded", "Needs a company"],
+            ["registering", "Registering a business"],
             ["pending", "Awaiting approval"],
             ["unconfirmed", "Email unconfirmed"],
           ] as const
@@ -401,9 +436,8 @@ function AccountsPage() {
                           | AppRole
                           | "";
                         const isSelf = a.user_id === user?.id;
-                        // A platform admin belongs to no company by design, so an empty
-                        // company is not something to fix for them.
-                        const isPlatformAdmin = a.roles.includes("super_admin");
+                        const platformAdmin = isPlatformAdmin(a);
+                        const registering = isRegisteringBusiness(a);
                         const expanded = openRow === a.user_id;
                         return (
                           <li key={a.user_id} className="space-y-3 px-5 py-4">
@@ -431,6 +465,11 @@ function AccountsPage() {
                                       inactive
                                     </span>
                                   )}
+                                  {registering && (
+                                    <span className="rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-normal text-success">
+                                      approved · naming their business
+                                    </span>
+                                  )}
                                 </p>
                                 <p className="truncate text-xs text-muted-foreground">
                                   {a.email ? (
@@ -453,6 +492,12 @@ function AccountsPage() {
                                     Asking to join {a.pending_company_name}
                                   </p>
                                 )}
+                                {registering && (
+                                  <p className="mt-0.5 text-xs text-muted-foreground">
+                                    Approved as an admin. Waiting for them to sign in and name their
+                                    business — it comes back here for approval once they do.
+                                  </p>
+                                )}
                               </div>
 
                               <div className="flex shrink-0 items-center gap-2">
@@ -471,7 +516,8 @@ function AccountsPage() {
                                   </Button>
                                 ) : (
                                   !a.company_id &&
-                                  !isPlatformAdmin && (
+                                  !platformAdmin &&
+                                  !registering && (
                                     <Button
                                       size="sm"
                                       disabled={busy || companies.length === 0}
@@ -570,14 +616,20 @@ function AccountsPage() {
                                     ))}
                                   </select>
                                   {/* A role is granted inside a company. Saying so beats a
-                          rejection from the database after the click. */}
-                                  {!a.company_id && !isPlatformAdmin && (
+                                      rejection from the database after the click. */}
+                                  {!a.company_id && !platformAdmin && !registering && (
                                     <p className="text-[11px] text-muted-foreground">
                                       Put them in a company first — only Platform Admin works
                                       without one.
                                     </p>
                                   )}
-                                  {isPlatformAdmin && (
+                                  {registering && (
+                                    <p className="text-[11px] text-muted-foreground">
+                                      Theirs does not exist yet. Choosing a company here puts them
+                                      in that one instead, and they will not be asked to register.
+                                    </p>
+                                  )}
+                                  {platformAdmin && (
                                     <p className="text-[11px] text-muted-foreground">
                                       Platform admins run the whole platform and belong to no
                                       company.
