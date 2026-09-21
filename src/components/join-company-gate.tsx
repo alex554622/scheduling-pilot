@@ -38,6 +38,8 @@ export function JoinCompanyGate({ onSignOut }: { onSignOut: () => void }) {
   const [mode, setMode] = useState<"join" | "create">(wasRegistering ? "create" : "join");
   const [code, setCode] = useState("");
   const [companyName, setCompanyName] = useState("");
+  const [bizPhone, setBizPhone] = useState("");
+  const [bizAddress, setBizAddress] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -51,19 +53,42 @@ export function JoinCompanyGate({ onSignOut }: { onSignOut: () => void }) {
   async function registerBusiness(e: React.FormEvent) {
     e.preventDefault();
     const name = companyName.trim();
+    const phone = bizPhone.trim();
+    const address = bizAddress.trim();
     if (name.length < 2) {
       setError("Enter the name of your business.");
+      return;
+    }
+    if (!phone || !address) {
+      setError(
+        "A platform admin approves this by hand, so they need a phone number and an address to check.",
+      );
       return;
     }
     setBusy(true);
     setError(null);
     // The same RPC the signup would have run. It lands the company at
     // 'pending', which is what puts it in front of a platform admin.
-    const { error: rpcError } = await supabase.rpc("bootstrap_company", { _name: name });
+    const { data: companyId, error: rpcError } = await supabase.rpc("bootstrap_company", {
+      _name: name,
+    });
     if (rpcError) {
       setBusy(false);
       setError(rpcError.message);
       return;
+    }
+    // The details go in the company's settings blob, which App rules and the
+    // schedule sheet already share — so every save merges rather than
+    // replaces. There is nothing in it yet at this point, but the habit is the
+    // one the rest of the app keeps.
+    if (companyId) {
+      const { error: detailsError } = await supabase
+        .from("companies")
+        .update({ settings: { business_phone: phone, business_address: address } as never })
+        .eq("id", companyId as string);
+      // The company exists either way; losing the phone number is not worth
+      // sending them back to a form they have already filled in.
+      if (detailsError) console.error("could not save business details", detailsError);
     }
     await refresh();
     setBusy(false);
@@ -105,7 +130,7 @@ export function JoinCompanyGate({ onSignOut }: { onSignOut: () => void }) {
           Your profile is ready{profile?.full_name ? `, ${profile.full_name.split(" ")[0]}` : ""}.{" "}
           {mode === "join"
             ? "Enter the join code from your manager to request access to their workspace."
-            : "Register your business and a platform admin will approve it."}
+            : "Tell us about your business and a platform admin will approve it."}
         </p>
 
         {/* The reminder. Your account exists and has no company attached to it,
@@ -114,17 +139,21 @@ export function JoinCompanyGate({ onSignOut }: { onSignOut: () => void }) {
         <div className="mt-4 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5">
           <p className="text-xs font-medium text-warning-foreground">
             {wasRegistering
-              ? "Your business still needs a name"
+              ? "Add your business details to continue"
               : "Your account isn't attached to a company yet"}
           </p>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {wasRegistering
-              ? "You're set up as an admin, but the company itself was never created. Name it below and a platform admin will approve it — nothing else on the app opens until then."
+              ? "You're approved as an admin, but your business has no name or details yet. Fill this in and a platform admin will approve it — nothing else in the app opens until you do."
               : "Nothing opens until it is. Join your employer with their code, or name your own business to register it."}
           </p>
         </div>
 
-        <div className="mt-4 inline-flex w-full rounded-lg bg-secondary p-1">
+        <div
+          className={`mt-4 inline-flex w-full rounded-lg bg-secondary p-1 ${
+            wasRegistering ? "hidden" : ""
+          }`}
+        >
           {(["join", "create"] as const).map((m) => (
             <button
               key={m}
@@ -159,8 +188,36 @@ export function JoinCompanyGate({ onSignOut }: { onSignOut: () => void }) {
                 onChange={(e) => setCompanyName(e.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                You'll be its admin. A platform admin approves the account before anyone can sign
-                in — including you.
+                This is the name your staff see on schedules and printed timecards.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="company-phone">Business phone</Label>
+              <Input
+                id="company-phone"
+                required
+                type="tel"
+                maxLength={40}
+                placeholder="e.g. (760) 555-0142"
+                value={bizPhone}
+                onChange={(e) => setBizPhone(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="company-address">Business address</Label>
+              <Input
+                id="company-address"
+                required
+                maxLength={200}
+                placeholder="Street, city, state"
+                value={bizAddress}
+                onChange={(e) => setBizAddress(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                You'll be its admin. A platform admin approves the account before anyone can sign in
+                — including you.
               </p>
             </div>
 
@@ -177,10 +234,7 @@ export function JoinCompanyGate({ onSignOut }: { onSignOut: () => void }) {
           </form>
         )}
 
-        <form
-          className={`mt-5 space-y-4 ${mode === "join" ? "" : "hidden"}`}
-          onSubmit={submit}
-        >
+        <form className={`mt-5 space-y-4 ${mode === "join" ? "" : "hidden"}`} onSubmit={submit}>
           <div className="space-y-1.5">
             <Label htmlFor="join-code">Company code</Label>
             <Input
@@ -198,7 +252,11 @@ export function JoinCompanyGate({ onSignOut }: { onSignOut: () => void }) {
             </p>
           </div>
 
-          {error && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+          {error && (
+            <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {error}
+            </p>
+          )}
 
           <Button type="submit" className="h-11 w-full" disabled={busy}>
             {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -208,7 +266,10 @@ export function JoinCompanyGate({ onSignOut }: { onSignOut: () => void }) {
 
         <div className="mt-6 border-t border-border pt-4 text-center">
           <p className="text-xs text-muted-foreground">Signed in as {user?.email}</p>
-          <button onClick={onSignOut} className="mt-2 text-sm font-medium text-primary hover:underline">
+          <button
+            onClick={onSignOut}
+            className="mt-2 text-sm font-medium text-primary hover:underline"
+          >
             Sign out
           </button>
         </div>

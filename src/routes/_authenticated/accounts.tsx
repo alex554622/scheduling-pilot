@@ -3,7 +3,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
+  Building2,
   Check,
+  ChevronDown,
+  ChevronRight,
   Loader2,
   Search,
   ShieldCheck,
@@ -65,6 +68,12 @@ const ASSIGNABLE: { value: AppRole | ""; label: string }[] = [
   { value: "super_admin", label: "Platform Admin" },
 ];
 
+/**
+ * Stands for "no company yet" in the approve dialog's company list, so the
+ * empty value can keep meaning "nothing chosen".
+ */
+const OWN_BUSINESS = "__own_business__";
+
 function fmtDate(s: string | null): string {
   return s ? new Date(s).toLocaleDateString([], { dateStyle: "medium" }) : "never";
 }
@@ -78,6 +87,11 @@ function AccountsPage() {
   const [err, setErr] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<AccountRow | null>(null);
   const [approving, setApproving] = useState<AccountRow | null>(null);
+  // Which company sections are open, and which single account is expanded.
+  // Twenty-odd accounts each carrying two dropdowns is a wall; the controls
+  // belong behind the name they act on.
+  const [closedGroups, setClosedGroups] = useState<Set<string>>(new Set());
+  const [openRow, setOpenRow] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && primaryRole && primaryRole !== "super_admin") navigate({ to: "/dashboard" });
@@ -171,12 +185,18 @@ function AccountsPage() {
    * with a wrong answer available at every step.
    */
   const approveInto = useMutation({
-    mutationFn: async (v: { userId: string; companyId: string; role: AppRole | null }) => {
-      const { error: cErr } = await supabase.rpc("admin_set_user_company", {
-        _user: v.userId,
-        _company: v.companyId,
-      });
-      if (cErr) throw cErr;
+    mutationFn: async (v: { userId: string; companyId: string | null; role: AppRole | null }) => {
+      // Approving a business owner does not need a company to put them in:
+      // theirs does not exist yet, and naming it is their job, not ours. The
+      // admin role with no company attached is what the "Add your company"
+      // screen reads to know it should ask for a business name.
+      if (v.companyId) {
+        const { error: cErr } = await supabase.rpc("admin_set_user_company", {
+          _user: v.userId,
+          _company: v.companyId,
+        });
+        if (cErr) throw cErr;
+      }
       if (v.role) {
         const { error: rErr } = await supabase.rpc("admin_set_user_role", {
           _user: v.userId,
@@ -239,6 +259,35 @@ function AccountsPage() {
           (a.company_name ?? "").toLowerCase().includes(q),
       );
   }, [accounts, filter, search]);
+
+  /**
+   * The list, under the company each account belongs to. "No company" leads,
+   * because those are the ones waiting on a decision — an account nobody has
+   * placed is the only kind that cannot use the app at all.
+   */
+  const groups: { key: string; label: string; rows: AccountRow[] }[] = (() => {
+    const none: AccountRow[] = [];
+    const byCompany = new Map<string, AccountRow[]>();
+    for (const a of rows) {
+      if (!a.company_id) {
+        none.push(a);
+        continue;
+      }
+      const list = byCompany.get(a.company_id);
+      if (list) list.push(a);
+      else byCompany.set(a.company_id, [a]);
+    }
+    const out: { key: string; label: string; rows: AccountRow[] }[] = [];
+    if (none.length) out.push({ key: "none", label: "No company", rows: none });
+    for (const [id, list] of byCompany) {
+      out.push({
+        key: id,
+        label: list[0].company_name ?? "Unnamed company",
+        rows: list,
+      });
+    }
+    return out;
+  })();
 
   if (loading || !isSuper) return <div className="text-sm text-muted-foreground">Loading…</div>;
 
@@ -312,174 +361,248 @@ function AccountsPage() {
         ) : rows.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground">No accounts match.</p>
         ) : (
-          <ul className="divide-y divide-border">
-            {rows.map((a) => {
-              const role = (a.roles.find((r) => r !== "supervisor") ?? "") as AppRole | "";
-              const isSelf = a.user_id === user?.id;
-              // A platform admin belongs to no company by design, so an empty
-              // company is not something to fix for them.
-              const isPlatformAdmin = a.roles.includes("super_admin");
+          <div className="divide-y divide-border">
+            {groups.map((g) => {
+              const open = !closedGroups.has(g.key);
               return (
-                <li key={a.user_id} className="space-y-3 px-5 py-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-foreground">
-                        {a.full_name || "Unnamed"}
-                        {isSelf && (
-                          <span className="rounded-full bg-primary-soft px-2 py-0.5 text-[11px] font-normal text-primary">
-                            you
-                          </span>
-                        )}
-                        {!a.email_confirmed && (
-                          <span className="rounded-full bg-warning/20 px-2 py-0.5 text-[11px] font-normal text-warning-foreground">
-                            email unconfirmed
-                          </span>
-                        )}
-                        {!a.has_profile && (
-                          <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-normal text-destructive">
-                            no profile
-                          </span>
-                        )}
-                        {!a.is_active && (
-                          <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-normal text-muted-foreground">
-                            inactive
-                          </span>
-                        )}
-                      </p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {a.email ? (
-                          <a href={`mailto:${a.email}`} className="text-primary hover:underline">
-                            {a.email}
-                          </a>
-                        ) : (
-                          "no email"
-                        )}
-                        {" · signed up "}
-                        {fmtDate(a.created_at)}
-                        {" · last sign-in "}
-                        {fmtDate(a.last_sign_in_at)}
-                      </p>
-                      {a.pending_company_name && (
-                        <p className="mt-0.5 text-xs text-warning-foreground">
-                          Asking to join {a.pending_company_name}
-                        </p>
-                      )}
-                    </div>
+                <section key={g.key}>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setClosedGroups((s) => {
+                        const next = new Set(s);
+                        if (next.has(g.key)) next.delete(g.key);
+                        else next.add(g.key);
+                        return next;
+                      })
+                    }
+                    className="flex w-full items-center gap-2 bg-muted/30 px-5 py-2.5 text-left hover:bg-accent/50"
+                  >
+                    {open ? (
+                      <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    )}
+                    <Building2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span
+                      className={`truncate text-sm font-medium ${
+                        g.key === "none" ? "text-warning-foreground" : "text-foreground"
+                      }`}
+                    >
+                      {g.label}
+                    </span>
+                    <span className="text-xs text-muted-foreground">({g.rows.length})</span>
+                  </button>
 
-                    <div className="flex shrink-0 items-center gap-2">
-                      {/* Two kinds of approval, one button. Someone who asked
+                  {open && (
+                    <ul className="divide-y divide-border">
+                      {g.rows.map((a) => {
+                        const role = (a.roles.find((r) => r !== "supervisor") ?? "") as
+                          | AppRole
+                          | "";
+                        const isSelf = a.user_id === user?.id;
+                        // A platform admin belongs to no company by design, so an empty
+                        // company is not something to fix for them.
+                        const isPlatformAdmin = a.roles.includes("super_admin");
+                        const expanded = openRow === a.user_id;
+                        return (
+                          <li key={a.user_id} className="space-y-3 px-5 py-4">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-foreground">
+                                  {a.full_name || "Unnamed"}
+                                  {isSelf && (
+                                    <span className="rounded-full bg-primary-soft px-2 py-0.5 text-[11px] font-normal text-primary">
+                                      you
+                                    </span>
+                                  )}
+                                  {!a.email_confirmed && (
+                                    <span className="rounded-full bg-warning/20 px-2 py-0.5 text-[11px] font-normal text-warning-foreground">
+                                      email unconfirmed
+                                    </span>
+                                  )}
+                                  {!a.has_profile && (
+                                    <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-normal text-destructive">
+                                      no profile
+                                    </span>
+                                  )}
+                                  {!a.is_active && (
+                                    <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-normal text-muted-foreground">
+                                      inactive
+                                    </span>
+                                  )}
+                                </p>
+                                <p className="truncate text-xs text-muted-foreground">
+                                  {a.email ? (
+                                    <a
+                                      href={`mailto:${a.email}`}
+                                      className="text-primary hover:underline"
+                                    >
+                                      {a.email}
+                                    </a>
+                                  ) : (
+                                    "no email"
+                                  )}
+                                  {" · signed up "}
+                                  {fmtDate(a.created_at)}
+                                  {" · last sign-in "}
+                                  {fmtDate(a.last_sign_in_at)}
+                                </p>
+                                {a.pending_company_name && (
+                                  <p className="mt-0.5 text-xs text-warning-foreground">
+                                    Asking to join {a.pending_company_name}
+                                  </p>
+                                )}
+                              </div>
+
+                              <div className="flex shrink-0 items-center gap-2">
+                                {/* Two kinds of approval, one button. Someone who asked
                           to join a company is approved into the one they asked
                           for; someone attached to nothing needs a company
                           chosen for them first. */}
-                      {a.pending_company_id ? (
-                        <Button size="sm" disabled={busy} onClick={() => approve.mutate(a.user_id)}>
-                          <UserCheck className="mr-2 h-3.5 w-3.5" />
-                          Approve
-                        </Button>
-                      ) : (
-                        !a.company_id &&
-                        !isPlatformAdmin && (
-                          <Button
-                            size="sm"
-                            disabled={busy || companies.length === 0}
-                            onClick={() => {
-                              setErr(null);
-                              setApproving(a);
-                            }}
-                            title={
-                              companies.length === 0 ? "There are no companies to approve into" : ""
-                            }
-                          >
-                            <UserCheck className="mr-2 h-3.5 w-3.5" />
-                            Approve
-                          </Button>
-                        )
-                      )}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={isSelf || remove.isPending}
-                        className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                        onClick={() => {
-                          setErr(null);
-                          setDeleting(a);
-                        }}
-                        title={isSelf ? "You cannot delete the account you are signed in with" : ""}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </div>
+                                {a.pending_company_id ? (
+                                  <Button
+                                    size="sm"
+                                    disabled={busy}
+                                    onClick={() => approve.mutate(a.user_id)}
+                                  >
+                                    <UserCheck className="mr-2 h-3.5 w-3.5" />
+                                    Approve
+                                  </Button>
+                                ) : (
+                                  !a.company_id &&
+                                  !isPlatformAdmin && (
+                                    <Button
+                                      size="sm"
+                                      disabled={busy || companies.length === 0}
+                                      onClick={() => {
+                                        setErr(null);
+                                        setApproving(a);
+                                      }}
+                                      title={
+                                        companies.length === 0
+                                          ? "There are no companies to approve into"
+                                          : ""
+                                      }
+                                    >
+                                      <UserCheck className="mr-2 h-3.5 w-3.5" />
+                                      Approve
+                                    </Button>
+                                  )
+                                )}
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={isSelf || remove.isPending}
+                                  className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                  onClick={() => {
+                                    setErr(null);
+                                    setDeleting(a);
+                                  }}
+                                  title={
+                                    isSelf
+                                      ? "You cannot delete the account you are signed in with"
+                                      : ""
+                                  }
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            </div>
 
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="space-y-1">
-                      <Label className="text-xs">Company</Label>
-                      <select
-                        className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-                        value={a.company_id ?? ""}
-                        disabled={busy}
-                        onChange={(e) =>
-                          setCompany.mutate({
-                            userId: a.user_id,
-                            companyId: e.target.value || null,
-                          })
-                        }
-                      >
-                        <option value="">— no company —</option>
-                        {companies.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name}
-                            {c.status !== "active" ? ` (${c.status})` : ""}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                            <button
+                              type="button"
+                              onClick={() => setOpenRow(expanded ? null : a.user_id)}
+                              className="flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+                              aria-expanded={expanded}
+                            >
+                              {expanded ? (
+                                <ChevronDown className="h-3.5 w-3.5" />
+                              ) : (
+                                <ChevronRight className="h-3.5 w-3.5" />
+                              )}
+                              {expanded ? "Hide" : "Company and role"}
+                            </button>
 
-                    <div className="space-y-1">
-                      <Label className="text-xs">Role</Label>
-                      <select
-                        className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-                        value={role}
-                        disabled={busy}
-                        onChange={(e) =>
-                          setRole.mutate({
-                            userId: a.user_id,
-                            companyId: a.company_id,
-                            role: (e.target.value || null) as AppRole | null,
-                          })
-                        }
-                      >
-                        {ASSIGNABLE.map((r) => (
-                          <option key={r.value} value={r.value}>
-                            {r.label}
-                          </option>
-                        ))}
-                      </select>
-                      {/* A role is granted inside a company. Saying so beats a
+                            {expanded && (
+                              <div className="grid gap-3 sm:grid-cols-2">
+                                <div className="space-y-1">
+                                  <Label className="text-xs">Company</Label>
+                                  <select
+                                    className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                                    value={a.company_id ?? ""}
+                                    disabled={busy}
+                                    onChange={(e) =>
+                                      setCompany.mutate({
+                                        userId: a.user_id,
+                                        companyId: e.target.value || null,
+                                      })
+                                    }
+                                  >
+                                    <option value="">— no company —</option>
+                                    {companies.map((c) => (
+                                      <option key={c.id} value={c.id}>
+                                        {c.name}
+                                        {c.status !== "active" ? ` (${c.status})` : ""}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+
+                                <div className="space-y-1">
+                                  <Label className="text-xs">Role</Label>
+                                  <select
+                                    className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                                    value={role}
+                                    disabled={busy}
+                                    onChange={(e) =>
+                                      setRole.mutate({
+                                        userId: a.user_id,
+                                        companyId: a.company_id,
+                                        role: (e.target.value || null) as AppRole | null,
+                                      })
+                                    }
+                                  >
+                                    {ASSIGNABLE.map((r) => (
+                                      <option key={r.value} value={r.value}>
+                                        {r.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  {/* A role is granted inside a company. Saying so beats a
                           rejection from the database after the click. */}
-                      {!a.company_id && !isPlatformAdmin && (
-                        <p className="text-[11px] text-muted-foreground">
-                          Put them in a company first — only Platform Admin works without one.
-                        </p>
-                      )}
-                      {isPlatformAdmin && (
-                        <p className="text-[11px] text-muted-foreground">
-                          Platform admins run the whole platform and belong to no company.
-                        </p>
-                      )}
-                    </div>
-                  </div>
+                                  {!a.company_id && !isPlatformAdmin && (
+                                    <p className="text-[11px] text-muted-foreground">
+                                      Put them in a company first — only Platform Admin works
+                                      without one.
+                                    </p>
+                                  )}
+                                  {isPlatformAdmin && (
+                                    <p className="text-[11px] text-muted-foreground">
+                                      Platform admins run the whole platform and belong to no
+                                      company.
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            )}
 
-                  {a.roles.length > 1 && (
-                    <p className="text-[11px] text-muted-foreground">
-                      <ShieldCheck className="mr-1 inline h-3 w-3" />
-                      Also holds: {a.roles.map((r) => ROLE_LABEL[r as AppRole] ?? r).join(", ")}
-                    </p>
+                            {expanded && a.roles.length > 1 && (
+                              <p className="text-[11px] text-muted-foreground">
+                                <ShieldCheck className="mr-1 inline h-3 w-3" />
+                                Also holds:{" "}
+                                {a.roles.map((r) => ROLE_LABEL[r as AppRole] ?? r).join(", ")}
+                              </p>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
                   )}
-                </li>
+                </section>
               );
             })}
-          </ul>
+          </div>
         )}
       </div>
 
@@ -541,9 +664,9 @@ function DeleteAccountDialog({
                 ({target}) will be removed from the platform and will not be able to sign in again.
               </p>
               <p>
-                Everything scoped to them goes too: shifts, time punches, time off, shift trades
-                and availability. Timecards for the period they worked will no longer show them.
-                Audit log entries stay, without a name attached.
+                Everything scoped to them goes too: shifts, time punches, time off, shift trades and
+                availability. Timecards for the period they worked will no longer show them. Audit
+                log entries stay, without a name attached.
               </p>
               <p className="font-medium text-foreground">This cannot be undone.</p>
             </div>
@@ -585,9 +708,13 @@ function DeleteAccountDialog({
 
 /**
  * Approving an account that belongs to no company: which company, and what they
- * are in it. Both in one dialog because both are the same decision, and neither
- * is useful without the other — a company with no role cannot do anything, and
- * a role with no company is not a role.
+ * are in it. Both in one dialog because both are the same decision.
+ *
+ * A business owner is the case where there is no company to choose. Theirs does
+ * not exist yet and naming it is their job, so they are approved as a company
+ * admin with no company attached — which is exactly what the "Add your company"
+ * screen reads to know it should ask for a business name rather than a join
+ * code. Nothing else opens for them until they have filled it in.
  */
 function ApproveAccountDialog({
   account,
@@ -600,7 +727,7 @@ function ApproveAccountDialog({
   companies: CompanyLite[];
   pending: boolean;
   onCancel: () => void;
-  onConfirm: (companyId: string, role: AppRole | null) => void;
+  onConfirm: (companyId: string | null, role: AppRole | null) => void;
 }) {
   const [companyId, setCompanyId] = useState("");
   const [role, setRole] = useState<AppRole | "">("employee");
@@ -609,6 +736,11 @@ function ApproveAccountDialog({
     setCompanyId("");
     setRole("employee");
   }, [account?.user_id]);
+
+  // Only a company admin can be approved without one: an employee with no
+  // company has nowhere to work and nothing to see.
+  const ownBusiness = companyId === OWN_BUSINESS && role === "company_admin";
+  const canApprove = !!companyId && (companyId !== OWN_BUSINESS || role === "company_admin");
 
   return (
     <Dialog open={!!account} onOpenChange={(o) => !o && onCancel()}>
@@ -627,6 +759,13 @@ function ApproveAccountDialog({
                 {account?.email ? ` (${account.email})` : ""} belongs to no company. Approving puts
                 them in one and gives them their role there.
               </p>
+              {ownBusiness && (
+                <p className="text-foreground">
+                  They will be asked to name their business the next time they sign in, and nothing
+                  else opens until they have. The company they create still comes back here for
+                  approval.
+                </p>
+              )}
               {account && !account.email_confirmed && (
                 <p className="text-warning-foreground">
                   Their email address is still unconfirmed — they will not be able to sign in until
@@ -647,6 +786,7 @@ function ApproveAccountDialog({
               onChange={(e) => setCompanyId(e.target.value)}
             >
               <option value="">— choose a company —</option>
+              <option value={OWN_BUSINESS}>— none yet, they register their own business —</option>
               {companies.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
@@ -654,6 +794,12 @@ function ApproveAccountDialog({
                 </option>
               ))}
             </select>
+            {companyId === OWN_BUSINESS && role !== "company_admin" && (
+              <p className="text-[11px] text-warning-foreground">
+                Only a Company Admin can be approved without a company — an employee with no company
+                has nowhere to work.
+              </p>
+            )}
           </div>
 
           <div className="space-y-1.5">
@@ -682,8 +828,13 @@ function ApproveAccountDialog({
             Cancel
           </Button>
           <Button
-            disabled={!companyId || pending}
-            onClick={() => onConfirm(companyId, (role || null) as AppRole | null)}
+            disabled={!canApprove || pending}
+            onClick={() =>
+              onConfirm(
+                companyId === OWN_BUSINESS ? null : companyId,
+                (role || null) as AppRole | null,
+              )
+            }
           >
             {pending ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
