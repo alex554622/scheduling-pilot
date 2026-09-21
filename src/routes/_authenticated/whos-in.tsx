@@ -72,6 +72,31 @@ function WhosInPage() {
     },
   });
 
+  // Who is scheduled to start today, so the list can be today's people rather
+  // than the whole company. Drafts count: this is a manager's screen, and a
+  // shift still being drafted is still somebody expected in.
+  const todayStart = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
+  const scheduledQ = useQuery<Set<string>>({
+    queryKey: ["whos-in-scheduled", company?.id, todayStart.toISOString()],
+    enabled: !!company?.id && isManager,
+    queryFn: async () => {
+      const tomorrow = new Date(todayStart);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const { data, error } = await supabase
+        .from("shifts")
+        .select("employee_id")
+        .eq("company_id", company!.id)
+        .gte("starts_at", todayStart.toISOString())
+        .lt("starts_at", tomorrow.toISOString());
+      if (error) throw error;
+      return new Set((data ?? []).map((s) => s.employee_id).filter((id): id is string => !!id));
+    },
+  });
+
   // Realtime — invalidate on any change
   useEffect(() => {
     if (!company?.id) return;
@@ -92,8 +117,21 @@ function WhosInPage() {
 
   const rows = useMemo(() => {
     const lastByUser = new Map<string, Punch>();
-    for (const p of punchesQ.data ?? []) lastByUser.set(p.user_id, p);
-    const members = membersQ.data ?? [];
+    const punchedToday = new Set<string>();
+    for (const p of punchesQ.data ?? []) {
+      lastByUser.set(p.user_id, p);
+      if (new Date(p.at) >= todayStart) punchedToday.add(p.user_id);
+    }
+    const scheduled = scheduledQ.data ?? new Set<string>();
+    // Today's people: scheduled to start today, punched today, or — the night
+    // shift — still on the clock from a punch made yesterday evening. A rule of
+    // "punched today" alone would hide exactly the one person on the floor at
+    // two in the morning.
+    const members = (membersQ.data ?? []).filter((m) => {
+      const last = lastByUser.get(m.id);
+      const onClock = !!last && last.kind !== "out";
+      return scheduled.has(m.id) || punchedToday.has(m.id) || onClock;
+    });
     type Row = { id: string; name: string; position: string | null; status: "working" | "on_break" | "off"; since: string | null };
     const list: Row[] = members.map((m) => {
       const last = lastByUser.get(m.id);
@@ -109,7 +147,7 @@ function WhosInPage() {
       return a.name.localeCompare(b.name);
     });
     return list;
-  }, [membersQ.data, punchesQ.data]);
+  }, [membersQ.data, punchesQ.data, scheduledQ.data, todayStart]);
 
   const counts = useMemo(() => ({
     working: rows.filter((r) => r.status === "working").length,
@@ -125,7 +163,9 @@ function WhosInPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-foreground">Who's clocked in</h1>
-          <p className="text-sm text-muted-foreground">Live view of everyone on the clock right now.</p>
+          <p className="text-sm text-muted-foreground">
+            Everyone scheduled or clocked in today, live.
+          </p>
         </div>
         <div className="flex gap-2">
           <Button asChild variant="outline" size="sm">
@@ -150,7 +190,11 @@ function WhosInPage() {
           <div className="text-right">Since</div>
         </div>
         {rows.length === 0 && (
-          <div className="px-4 py-6 text-center text-sm text-muted-foreground">No employees yet.</div>
+          <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+            {(membersQ.data ?? []).length === 0
+              ? "No employees yet."
+              : "Nobody is scheduled or clocked in today."}
+          </div>
         )}
         {rows.map((r) => {
           const elapsed = r.since ? now - new Date(r.since).getTime() : 0;

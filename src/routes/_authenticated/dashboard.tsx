@@ -33,7 +33,13 @@ type ScheduledShift = {
   published: boolean;
 };
 
-type Status = "working" | "on_break" | "clocked_out" | "no_show";
+/**
+ * `due` is someone scheduled today whose shift has not started yet. Without it
+ * everybody not yet in read as a no-show from midnight on, and a roster that
+ * says eight people failed to turn up at nine in the morning — when six of them
+ * start at seven tonight — is a roster nobody can act on.
+ */
+type Status = "working" | "on_break" | "clocked_out" | "no_show" | "due";
 
 /** What an employee is allowed to see about a colleague: a state, nothing more. */
 type PresenceRow = { user_id: string; full_name: string; job_title: string | null; status: string };
@@ -258,7 +264,13 @@ function DashboardPage() {
     // "Keep the office off the rosters" applies here too, not only to what an
     // employee is shown: a company that has decided its admins are not part of
     // the roster should not find them on it. Nobody is hidden from themselves.
-    const members = staff.visible(membersQ.data ?? [], (m) => m.id);
+    // Today's roster is today's people: anyone scheduled to start today, and
+    // anyone who has punched today whether they were scheduled or not. The rest
+    // of the company is not missing, it is off, and listing all of it buried
+    // the handful actually working under a column of "no show".
+    const members = staff
+      .visible(membersQ.data ?? [], (m) => m.id)
+      .filter((m) => dueToday.has(m.id) || byUser.has(m.id));
     const list: Row[] = members.map((m) => {
       const punches = byUser.get(m.id) ?? [];
       // Hours follow the rounding rule so this roster and the timecard agree.
@@ -342,6 +354,10 @@ function DashboardPage() {
         paid += currentPaid;
       } else if (firstIn) {
         status = "clocked_out";
+      } else {
+        // Not in, and never punched today. Late only once their shift has begun.
+        const due = dueToday.get(m.id);
+        if (due && new Date(due.starts_at).getTime() > now) status = "due";
       }
       const breakStartedAt = rawBreakStart ? new Date(rawBreakStart.at).getTime() : null;
       const allowanceMs = rawBreakStart?.break_minutes
@@ -373,7 +389,13 @@ function DashboardPage() {
         due: dueToday.get(m.id) ?? null,
       };
     });
-    const order: Record<Status, number> = { working: 0, on_break: 1, clocked_out: 2, no_show: 3 };
+    const order: Record<Status, number> = {
+      working: 0,
+      on_break: 1,
+      clocked_out: 2,
+      no_show: 3,
+      due: 4,
+    };
     list.sort((a, b) => order[a.status] - order[b.status] || a.name.localeCompare(b.name));
     return list;
   }, [membersQ.data, punchesQ.data, dismissalsQ.data, dueToday, rules, staff, now]);
@@ -382,7 +404,7 @@ function DashboardPage() {
   const overdueCount = rows.filter((r) => r.alerts.length > 0).length;
 
   const totals = useMemo(() => {
-    const counts = { working: 0, on_break: 0, clocked_out: 0, no_show: 0 };
+    const counts = { working: 0, on_break: 0, clocked_out: 0, no_show: 0, due: 0 };
     let workedMs = 0;
     let unpaidMs = 0;
     let paidMs = 0;
@@ -419,7 +441,16 @@ function DashboardPage() {
     // `company_presence()` leaves the admins out too, so this is belt and
     // braces — but it is also what keeps the list right in a company whose
     // database hasn't taken the newer function yet.
-    const presence = staff.visible(presenceQ.data ?? [], (p) => p.user_id);
+    // Today's people only, the same rule as the manager's roster. An employee
+    // cannot read a colleague's punches, so "punched today" is what the presence
+    // state can say: on the clock or on a break right now. Someone who worked a
+    // morning off the schedule and has gone home drops off, which is the one
+    // thing this list cannot know.
+    const presence = staff
+      .visible(presenceQ.data ?? [], (p) => p.user_id)
+      .filter(
+        (p) => dueToday.has(p.user_id) || p.status === "working" || p.status === "on_break",
+      );
     // Until the admin list has landed, saying "loading" beats showing a roster
     // that is about to lose rows.
     const presenceLoading = presenceQ.isLoading || staff.isLoading;
@@ -550,7 +581,7 @@ function DashboardPage() {
           )}
           {!presenceLoading && presence.length === 0 && (
             <div className="px-4 py-6 text-center text-sm text-muted-foreground">
-              Nobody to show yet.
+              Nobody is scheduled or clocked in today.
             </div>
           )}
           {presence.map((p) => (
@@ -642,7 +673,11 @@ function DashboardPage() {
           <div className="text-right">Worked</div>
         </div>
         {rows.length === 0 && (
-          <div className="px-4 py-6 text-center text-sm text-muted-foreground">No employees yet.</div>
+          <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+            {(membersQ.data ?? []).length === 0
+              ? "No employees yet."
+              : "Nobody is scheduled or clocked in today."}
+          </div>
         )}
         {rows.map((r) => (
           <div
@@ -692,6 +727,7 @@ function DashboardPage() {
               )}
               {r.status === "clocked_out" && <span className="rounded bg-blue-100 dark:bg-blue-500/15 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">Clocked out</span>}
               {r.status === "no_show" && <span className="rounded bg-slate-100 dark:bg-slate-500/15 px-2 py-0.5 text-xs font-medium text-slate-600 dark:text-slate-300">No show</span>}
+              {r.status === "due" && <span className="rounded bg-blue-50 dark:bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">Due later</span>}
             </div>
             <div className="text-xs text-muted-foreground">
               {/* What the schedule says, above what the clock says. */}
