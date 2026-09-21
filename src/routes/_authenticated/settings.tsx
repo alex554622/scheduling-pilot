@@ -19,6 +19,7 @@ import {
   MonitorSmartphone,
 } from "lucide-react";
 import { useThemePref, type ThemePref } from "@/lib/theme";
+import { SCHEDULE_LAYOUTS, useScheduleLayout } from "@/lib/schedule-layout";
 import { playChime } from "@/lib/notify-sound";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -475,6 +476,8 @@ function NotificationSettings() {
  */
 function AppearanceSettings() {
   const { pref, setPref } = useThemePref();
+  const { layout, setLayout, saving } = useScheduleLayout();
+  const [layoutErr, setLayoutErr] = useState<string | null>(null);
   const options: { value: ThemePref; label: string; detail: string; icon: typeof Sun }[] = [
     { value: "light", label: "Day", detail: "Light, always.", icon: Sun },
     { value: "dark", label: "Night", detail: "Dark, always.", icon: Moon },
@@ -520,6 +523,47 @@ function AppearanceSettings() {
             </button>
           );
         })}
+      </div>
+
+      {/* Unlike the theme, this one follows the account: the schedule looks the
+          same wherever you sign in. */}
+      <div className="mt-6 border-t border-border pt-5">
+        <p className="text-sm font-medium text-foreground">Schedule layout</p>
+        <p className="mb-3 mt-0.5 text-xs text-muted-foreground">
+          How the Schedule page is laid out for you. Saved to your account, so it follows you to any
+          device.
+        </p>
+        <div role="radiogroup" aria-label="Schedule layout" className="grid gap-2 sm:grid-cols-2">
+          {SCHEDULE_LAYOUTS.map((o) => {
+            const active = layout === o.value;
+            return (
+              <button
+                key={o.value}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                disabled={saving}
+                onClick={() => {
+                  setLayoutErr(null);
+                  setLayout(o.value).catch((e: Error) => setLayoutErr(e.message));
+                }}
+                className={`rounded-lg border p-3 text-left transition-colors ${
+                  active
+                    ? "border-primary bg-primary-soft/40 ring-1 ring-primary"
+                    : "border-border hover:bg-accent/50"
+                }`}
+              >
+                <span className="block text-sm font-medium text-foreground">{o.label}</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">{o.detail}</span>
+              </button>
+            );
+          })}
+        </div>
+        {layoutErr && (
+          <p className="mt-2 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            {layoutErr}
+          </p>
+        )}
       </div>
     </div>
   );

@@ -873,3 +873,242 @@ function signatureLine(role: string): Content {
     ],
   };
 }
+
+/* --------------------------- weekly grid sheet --------------------------- */
+
+export interface GridPdfShift {
+  time: string;
+  position: string;
+  colorHex: string;
+  draft: boolean;
+}
+
+export interface GridPdfWeek {
+  /** "September 14, 2026 – September 20, 2026" */
+  rangeLabel: string;
+  /** Seven columns: "Monday" over "09/14/2026". */
+  days: { name: string; date: string }[];
+  /** One row per person who works that week; `cells` has seven entries. */
+  rows: { name: string; cells: GridPdfShift[][] }[];
+}
+
+export interface GridPdfData {
+  companyName: string;
+  weeks: GridPdfWeek[];
+  legend: { label: string; colorHex: string }[];
+}
+
+/** The colour washed toward white, so a cell is tinted rather than flooded. */
+function wash(hex: string, strength = 0.2): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return "#eef2ff";
+  const n = parseInt(m[1], 16);
+  const mix = (c: number) => Math.round(255 - (255 - c) * strength);
+  const r = mix((n >> 16) & 255);
+  const g = mix((n >> 8) & 255);
+  const b = mix(n & 255);
+  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, "0")}`;
+}
+
+/**
+ * The posted sheet: the week across the top, everyone down the side, each
+ * shift in its day with its time and its post. The format a department pins to
+ * the wall, laid out the way the one it replaces was — then cleaned up.
+ *
+ * Each shift is a tinted tab with a solid bar of its colour down the left edge,
+ * the printed echo of the glass chips on screen: light enough to write on and
+ * cheap on ink, where a flooded yellow cell is neither. The header row repeats
+ * on every page, one week to a page, with a legend for the colours at the foot.
+ */
+export async function downloadScheduleGridPdf(data: GridPdfData): Promise<void> {
+  const HEADER = "#1e293b";
+  const LINE = "#e2e8f0";
+  const printed = longDate(new Date());
+
+  const content: Content[] = [];
+
+  data.weeks.forEach((week, wi) => {
+    const head: Content[] = [
+      {
+        text: "TEAM",
+        fontSize: 7,
+        bold: true,
+        color: "#cbd5e1",
+        characterSpacing: 0.8,
+        fillColor: HEADER,
+        margin: [4, 8, 4, 8],
+      },
+      ...week.days.map(
+        (d): Content => ({
+          stack: [
+            { text: d.name, fontSize: 9.5, bold: true, color: "#ffffff" },
+            { text: d.date, fontSize: 7.5, color: "#cbd5e1", margin: [0, 1, 0, 0] },
+          ],
+          alignment: "center",
+          fillColor: HEADER,
+          margin: [2, 5, 2, 5],
+        }),
+      ),
+    ];
+
+    const body: Content[][] = [head];
+    week.rows.forEach((row, ri) => {
+      const zebra = ri % 2 ? "#f8fafc" : "#ffffff";
+      body.push([
+        { text: row.name, fontSize: 9, bold: true, fillColor: zebra, margin: [4, 6, 4, 6] },
+        ...row.cells.map(
+          // No fill on the day cells themselves: pdfmake paints a cell fill over
+          // anything drawn inside it, and a zebra stripe here wiped out every
+          // coloured tab. The stripe stays on the name column, which is enough
+          // to follow a row across.
+          (cell): Content => ({
+            margin: [2, 3, 2, 1],
+            stack: cell.map(
+              (s): Content => ({
+                // A two-column table is the only way pdfmake draws a coloured
+                // edge on one side: a thin column of solid colour, then the tint.
+                table: {
+                  widths: [2, "*"],
+                  body: [
+                    [
+                      { text: "", fillColor: s.colorHex },
+                      {
+                        fillColor: wash(s.colorHex),
+                        margin: [4, 3, 3, 3],
+                        stack: [
+                          {
+                            text: s.time,
+                            fontSize: 8,
+                            bold: true,
+                            italics: s.draft,
+                            color: "#0f172a",
+                          },
+                          ...(s.position || s.draft
+                            ? [
+                                {
+                                  text: `${s.position}${s.draft ? `${s.position ? " · " : ""}DRAFT` : ""}`,
+                                  fontSize: 6.8,
+                                  color: "#475569",
+                                  margin: [0, 1, 0, 0] as [number, number, number, number],
+                                },
+                              ]
+                            : []),
+                        ],
+                      },
+                    ],
+                  ],
+                },
+                layout: "noBorders",
+                margin: [0, 0, 0, 2],
+              }),
+            ),
+          }),
+        ),
+      ]);
+    });
+
+    content.push(
+      {
+        columns: [
+          {
+            stack: [
+              {
+                text: "WEEKLY SCHEDULE",
+                fontSize: 7,
+                bold: true,
+                color: MUTED,
+                characterSpacing: 1,
+              },
+              { text: week.rangeLabel, fontSize: 15, bold: true, margin: [0, 2, 0, 0] },
+            ],
+          },
+          {
+            stack: [
+              { text: data.companyName, fontSize: 11, bold: true, alignment: "right" },
+              {
+                text: `Printed ${printed}`,
+                fontSize: 7.5,
+                color: MUTED,
+                alignment: "right",
+                margin: [0, 2, 0, 0],
+              },
+            ],
+          },
+        ],
+        margin: [0, 0, 0, 10],
+        ...(wi > 0 ? { pageBreak: "before" as const } : {}),
+      },
+      week.rows.length === 0
+        ? { text: "Nobody is scheduled this week.", color: MUTED, fontSize: 10, margin: [0, 20, 0, 0] }
+        : {
+            table: {
+              headerRows: 1,
+              dontBreakRows: true,
+              widths: [88, "*", "*", "*", "*", "*", "*", "*"],
+              body,
+            },
+            layout: {
+              hLineColor: () => LINE,
+              vLineColor: () => LINE,
+              hLineWidth: () => 0.6,
+              vLineWidth: () => 0.6,
+              paddingLeft: () => 0,
+              paddingRight: () => 0,
+              paddingTop: () => 0,
+              paddingBottom: () => 0,
+            },
+          },
+    );
+  });
+
+  if (data.legend.length) {
+    content.push({
+      margin: [0, 12, 0, 0],
+      columns: [
+        {
+          width: "auto",
+          text: "KEY",
+          fontSize: 7,
+          bold: true,
+          color: MUTED,
+          characterSpacing: 0.8,
+          margin: [0, 1, 8, 0],
+        },
+        // A nested column set is a legal column, but pdfmake's types only let
+        // `width` sit on the leaf kinds — hence the cast.
+        ...data.legend.map(
+          (l) =>
+            ({
+              width: "auto",
+              margin: [0, 0, 14, 0],
+              columns: [
+                {
+                  width: 8,
+                  canvas: [{ type: "rect", x: 0, y: 1, w: 8, h: 8, r: 1.5, color: l.colorHex }],
+                },
+                { width: "auto", text: l.label, fontSize: 8, margin: [4, 0, 0, 0] },
+              ],
+            }) as unknown as Content,
+        ),
+      ],
+    });
+  }
+
+  const doc: TDocumentDefinitions = {
+    pageSize: "LETTER",
+    pageOrientation: "landscape",
+    pageMargins: [30, 30, 30, 36],
+    defaultStyle: { fontSize: 9, color: INK },
+    footer: (page, pages) => ({
+      margin: [30, 10, 30, 0],
+      columns: [
+        { text: data.companyName, fontSize: 7, color: MUTED },
+        { text: `Page ${page} of ${pages}`, fontSize: 7, color: MUTED, alignment: "right" },
+      ],
+    }),
+    content,
+  };
+
+  const first = data.weeks[0]?.days[0]?.date.replace(/\//g, "-") ?? "week";
+  await createPdf(doc, `schedule-grid-${first}.pdf`);
+}

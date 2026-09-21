@@ -36,6 +36,16 @@ import {
 import { SHIFT_COLORS, shiftColorClass, shiftColorHex } from "@/lib/shift-colors";
 import { ScheduleCopyPaste } from "@/components/schedule-copy-paste";
 import { CopyLastWeekButton } from "@/components/copy-last-week";
+import { LayoutSwitch, ScheduleGrid } from "@/components/schedule-grid";
+import { sheetLegend, sheetTime, shortName } from "@/lib/sheet-format";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { useScheduleLayout, type ScheduleLayout } from "@/lib/schedule-layout";
 import { EraseSelectionBar } from "@/components/erase-days";
 import { useScheduleSelection, type ScheduleSelection } from "@/lib/day-selection";
 import { toDayString } from "@/lib/schedule-pattern";
@@ -357,6 +367,8 @@ function CompanyDashboard({ role }: { role: AppRole }) {
   // which colleagues an employee is shown. It applies to the posted roster
   // exactly as it does to the dashboard list.
   const staff = useStaffVisibility();
+  // Classic screens or the weekly grid — each person's own choice.
+  const { layout, setLayout, saving: layoutSaving } = useScheduleLayout();
   const companyId = profile?.company_id;
   const canEdit = role === "company_admin";
   /** Who gets the grid of everyone. An employee gets their own week instead. */
@@ -379,7 +391,8 @@ function CompanyDashboard({ role }: { role: AppRole }) {
 
   // The day/week/month picker belongs to the builder. An employee always gets
   // one week at a time, whatever an earlier session left in local storage.
-  const effectiveView: ScheduleView = isBuilder ? view : "week";
+  // The weekly grid is one week by definition, whoever is looking at it.
+  const effectiveView: ScheduleView = isBuilder && layout !== "grid" ? view : "week";
 
   const { rangeStart, rangeEnd, days } = useMemo(() => {
     if (effectiveView === "day") {
@@ -545,6 +558,10 @@ function CompanyDashboard({ role }: { role: AppRole }) {
         isLoading={shiftsQ.isLoading || postedQ.isLoading || staff.isLoading}
         isThisWeek={startOfWeek(anchor).getTime() === startOfWeek(new Date()).getTime()}
         onWeek={(dir) => setAnchor((a) => (dir === 0 ? new Date() : addDays(a, dir * 7)))}
+        layout={layout}
+        onLayout={(l) => void setLayout(l)}
+        layoutSaving={layoutSaving}
+        companyName={company.name}
       />
     );
   }
@@ -561,10 +578,13 @@ function CompanyDashboard({ role }: { role: AppRole }) {
         days={days}
         anchor={anchor}
         setAnchor={setAnchor}
-        view={view}
+        view={effectiveView}
         setView={setView}
         canEdit={canEdit}
         isLoading={membersQ.isLoading || shiftsQ.isLoading}
+        layout={layout}
+        onLayout={(l) => void setLayout(l)}
+        layoutSaving={layoutSaving}
       />
 
       {/* Generating a schedule and then fixing it up is one job, so it lives
@@ -591,7 +611,15 @@ function EmployeeView({
   isLoading,
   isThisWeek,
   onWeek,
+  layout,
+  onLayout,
+  layoutSaving,
+  companyName,
 }: {
+  layout: ScheduleLayout;
+  onLayout: (l: ScheduleLayout) => void;
+  layoutSaving: boolean;
+  companyName: string;
   days: Date[];
   shifts: ShiftRow[];
   /**
@@ -641,13 +669,62 @@ function EmployeeView({
   // Every week is open. Somebody checking when they work next should not have
   // to guess which heading is hiding it.
   const [collapsedWeeks, setCollapsedWeeks] = useState<Set<number>>(new Set());
+
+  // The weekly grid: every published week as the posted sheet, with their own
+  // row pinned to the top of each. Their shifts are on it, so the personal list
+  // the classic layout carries would only be saying the same thing twice.
+  if (layout === "grid") {
+    const longDay = (d: Date) =>
+      d.toLocaleDateString([], { month: "long", day: "numeric", year: "numeric" });
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-2xl font-semibold text-foreground">Schedule</h2>
+            <p className="text-sm text-muted-foreground">
+              Everything published, week by week. You're at the top of each one.
+            </p>
+          </div>
+          <LayoutSwitch layout={layout} onChange={onLayout} disabled={layoutSaving} />
+        </div>
+
+        {postedWeeks.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-border py-12 text-center text-sm text-muted-foreground">
+            {isLoading
+              ? "Loading the schedule…"
+              : "Nothing has been published yet. It appears here as soon as it is."}
+          </p>
+        ) : (
+          postedWeeks.map(({ weekStart, days: weekDays }) => {
+            const seven = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+            return (
+              <ScheduleGrid
+                key={weekStart.getTime()}
+                days={seven}
+                shifts={weekDays.flatMap((d) => d.rows)}
+                nameOf={(id) => nameOf(id)}
+                companyName={companyName}
+                rangeLabel={`${longDay(seven[0])} – ${longDay(seven[6])}`}
+                eyebrow={weekStart.getTime() === thisWeekStart ? "This week" : "Coming up"}
+                selfId={selfId}
+              />
+            );
+          })
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-semibold text-foreground">My schedule</h2>
-        <p className="text-sm text-muted-foreground">
-          {isThisWeek ? "This week" : "Week of"} {fmtDayLabel(days[0])} – {fmtDayLabel(days[6])}
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-semibold text-foreground">My schedule</h2>
+          <p className="text-sm text-muted-foreground">
+            {isThisWeek ? "This week" : "Week of"} {fmtDayLabel(days[0])} – {fmtDayLabel(days[6])}
+          </p>
+        </div>
+        <LayoutSwitch layout={layout} onChange={onLayout} disabled={layoutSaving} />
       </div>
 
       <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-3 shadow-[var(--shadow-card)]">
@@ -831,6 +908,9 @@ interface BuilderProps {
   setView: (v: ScheduleView) => void;
   canEdit: boolean;
   isLoading: boolean;
+  layout: ScheduleLayout;
+  onLayout: (l: ScheduleLayout) => void;
+  layoutSaving: boolean;
 }
 
 function ScheduleBuilder(props: BuilderProps) {
@@ -847,6 +927,9 @@ function ScheduleBuilder(props: BuilderProps) {
     view,
     setView,
     canEdit,
+    layout,
+    onLayout,
+    layoutSaving,
   } = props;
   const qc = useQueryClient();
   const [edit, setEdit] = useState<EditTarget | null>(null);
@@ -900,6 +983,78 @@ function ScheduleBuilder(props: BuilderProps) {
    * The schedule on paper: the range currently on screen, day by day, with the
    * same colours. pdfmake is ~2 MB, so it is only fetched when someone asks.
    */
+  /**
+   * The weekly grid on paper — the posted-sheet format, one week to a page.
+   * Built from the same rows the builder shows, so a hidden admin is hidden on
+   * paper too, and drafts are printed as drafts rather than passed off as the
+   * schedule.
+   */
+  const gridPrintable = view === "week" || view === "twoweek";
+  async function downloadGrid() {
+    setSavingPdf(true);
+    try {
+      const { downloadScheduleGridPdf } = await import("@/lib/pdf");
+      const nameById = new Map(members.map((m) => [m.id, m.full_name || "Unnamed"]));
+      const visible = shifts.filter((s) => !s.employee_id || nameById.has(s.employee_id));
+      const same = (a: Date, b: Date) => a.toDateString() === b.toDateString();
+      const longDay = (d: Date) =>
+        d.toLocaleDateString([], { month: "long", day: "numeric", year: "numeric" });
+
+      const weeks = [];
+      for (let i = 0; i + 7 <= days.length; i += 7) {
+        const week = days.slice(i, i + 7);
+        const inWeek = visible.filter((s) => week.some((d) => same(new Date(s.starts_at), d)));
+        const byPerson = new Map<string, ShiftRow[]>();
+        for (const s of inWeek) {
+          const key = s.employee_id ?? "open";
+          const list = byPerson.get(key);
+          if (list) list.push(s);
+          else byPerson.set(key, [s]);
+        }
+        const rows = [...byPerson.entries()]
+          .map(([id, list]) => ({
+            id,
+            name: id === "open" ? "Open shift" : shortName(nameById.get(id) ?? "Unnamed"),
+            list,
+          }))
+          .sort(
+            (a, b) =>
+              Number(a.id === "open") - Number(b.id === "open") || a.name.localeCompare(b.name),
+          )
+          .map(({ name, list }) => ({
+            name,
+            cells: week.map((d) =>
+              list
+                .filter((s) => same(new Date(s.starts_at), d))
+                .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
+                .map((s) => ({
+                  time: sheetTime(new Date(s.starts_at)) + "–" + sheetTime(new Date(s.ends_at)),
+                  position: s.position ?? "",
+                  colorHex: shiftColorHex(s.color),
+                  draft: !s.published,
+                })),
+            ),
+          }));
+        weeks.push({
+          rangeLabel: longDay(week[0]) + " – " + longDay(week[6]),
+          days: week.map((d) => ({
+            name: d.toLocaleDateString([], { weekday: "long" }),
+            date: d.toLocaleDateString([], { month: "2-digit", day: "2-digit", year: "numeric" }),
+          })),
+          rows,
+        });
+      }
+
+      const legend = sheetLegend(visible).map((l) => ({
+        label: l.label,
+        colorHex: shiftColorHex(l.color),
+      }));
+      await downloadScheduleGridPdf({ companyName, weeks, legend });
+    } finally {
+      setSavingPdf(false);
+    }
+  }
+
   async function downloadSchedule() {
     setSavingPdf(true);
     try {
@@ -979,18 +1134,23 @@ function ScheduleBuilder(props: BuilderProps) {
       </div>
 
       <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-3 shadow-[var(--shadow-card)]">
-        <div className="inline-flex rounded-lg bg-secondary p-1">
-          {(["day", "week", "twoweek", "month"] as ScheduleView[]).map((v) => (
-            <button
-              key={v}
-              type="button"
-              onClick={() => setView(v)}
-              className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${view === v ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
-            >
-              {VIEW_LABEL[v]}
-            </button>
-          ))}
-        </div>
+        <LayoutSwitch layout={layout} onChange={onLayout} disabled={layoutSaving} />
+        {/* Day, week or month is a question for the builder; the weekly grid
+            is one week by definition. */}
+        {layout !== "grid" && (
+          <div className="inline-flex rounded-lg bg-secondary p-1">
+            {(["day", "week", "twoweek", "month"] as ScheduleView[]).map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setView(v)}
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${view === v ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                {VIEW_LABEL[v]}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="hidden h-6 w-px bg-border sm:block" />
         <Button variant="outline" size="sm" onClick={() => setAnchor(new Date())}>
           Today
@@ -1017,7 +1177,7 @@ function ScheduleBuilder(props: BuilderProps) {
               {groupByTeamOn ? "Teams on" : "Group by team"}
             </Button>
           )}
-          {canEdit && !sel.active && (
+          {canEdit && !sel.active && layout !== "grid" && (
             <Button
               variant="outline"
               size="sm"
@@ -1052,20 +1212,49 @@ function ScheduleBuilder(props: BuilderProps) {
               </Link>
             </Button>
           )}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void downloadSchedule()}
-            disabled={savingPdf || shifts.length === 0}
-            title="Saves a PDF of this view — print it or pin it up"
-          >
-            {savingPdf ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Download className="mr-2 h-4 w-4" />
-            )}
-            Download PDF
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={savingPdf || shifts.length === 0}
+                title="Save a PDF to print or pin up"
+              >
+                {savingPdf ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="mr-2 h-4 w-4" />
+                )}
+                Download PDF
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuLabel className="text-xs text-muted-foreground">
+                Print format
+              </DropdownMenuLabel>
+              <DropdownMenuItem
+                disabled={!gridPrintable}
+                onSelect={() => void downloadGrid()}
+                className="flex-col items-start gap-0.5"
+              >
+                <span className="font-medium">Weekly grid</span>
+                <span className="text-xs text-muted-foreground">
+                  {gridPrintable
+                    ? "The posted sheet: everyone by the week, one week a page."
+                    : "Switch to Week or 2-Week to print the grid."}
+                </span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => void downloadSchedule()}
+                className="flex-col items-start gap-0.5"
+              >
+                <span className="font-medium">Day list</span>
+                <span className="text-xs text-muted-foreground">
+                  Every shift in this view, day by day.
+                </span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           {canEdit && (
             <Button
               onClick={() => publishMutation.mutate()}
@@ -1078,7 +1267,7 @@ function ScheduleBuilder(props: BuilderProps) {
         </div>
       </div>
 
-      {canEdit && (
+      {canEdit && layout !== "grid" && (
         <EraseSelectionBar
           selection={sel}
           shifts={shifts}
@@ -1086,8 +1275,39 @@ function ScheduleBuilder(props: BuilderProps) {
         />
       )}
 
-      {view === "day" && <DayView {...props} groups={groups} onEdit={setEdit} />}
-      {view === "week" && (
+      {/* The weekly grid is a reading surface, not an editing one: the builder's
+          cells are where shifts are added and changed. Drafts are on it and
+          marked, because a manager needs to see the week they are about to
+          publish, not only the one already out. */}
+      {layout === "grid" && (
+        <div className="space-y-2">
+          <ScheduleGrid
+            days={days}
+            shifts={shifts.filter(
+              (s) => !s.employee_id || members.some((m) => m.id === s.employee_id),
+            )}
+            nameOf={(id) => members.find((m) => m.id === id)?.full_name || "Unnamed"}
+            companyName={companyName}
+            rangeLabel={rangeLabel}
+            eyebrow={
+              days[0].toDateString() === startOfWeek(new Date()).toDateString()
+                ? "This week"
+                : "Week of"
+            }
+            showDrafts
+            emptyText="Nobody is scheduled this week yet."
+          />
+          <p className="text-xs text-muted-foreground">
+            Read-only. Switch to <span className="font-medium">Classic</span> to add or change
+            shifts.
+          </p>
+        </div>
+      )}
+
+      {layout !== "grid" && view === "day" && (
+        <DayView {...props} groups={groups} onEdit={setEdit} />
+      )}
+      {layout !== "grid" && view === "week" && (
         <GridView
           {...props}
           groups={groups}
@@ -1096,7 +1316,7 @@ function ScheduleBuilder(props: BuilderProps) {
           selection={canEdit ? sel : undefined}
         />
       )}
-      {view === "twoweek" && (
+      {layout !== "grid" && view === "twoweek" && (
         <GridView
           {...props}
           groups={groups}
@@ -1105,7 +1325,7 @@ function ScheduleBuilder(props: BuilderProps) {
           selection={canEdit ? sel : undefined}
         />
       )}
-      {view === "month" && <MonthView {...props} onEdit={setEdit} />}
+      {layout !== "grid" && view === "month" && <MonthView {...props} onEdit={setEdit} />}
 
       <ShiftEditor
         target={edit}
