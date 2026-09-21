@@ -3,7 +3,9 @@ import { useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { Bell, Check, CheckCheck } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
+import { showAppNotification, useNotificationPrefs } from "@/lib/notification-prefs";
 
 interface Notification {
   id: string;
@@ -17,10 +19,15 @@ interface Notification {
 
 export function NotificationsBell() {
   const { user } = useAuth();
+  const { wants, prefs } = useNotificationPrefs();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  // Read inside the realtime handler below. Held in a ref so changing a switch
+  // doesn't tear down and rebuild the subscription.
+  const prefsRef = useRef({ wants, desktop: prefs.desktop });
+  prefsRef.current = { wants, desktop: prefs.desktop };
 
   const notifsQ = useQuery({
     queryKey: ["notifications", user?.id],
@@ -36,7 +43,10 @@ export function NotificationsBell() {
     },
   });
 
-  // Realtime: refresh on any new/updated notification for this user.
+  // Realtime: refresh on any new/updated notification for this user, and
+  // announce the new ones. A bell that only counts up is no use to someone
+  // looking at another screen — or at an installed app, where a notification
+  // is the whole point.
   useEffect(() => {
     if (!user) return;
     const channel = supabase
@@ -44,7 +54,22 @@ export function NotificationsBell() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` },
-        () => qc.invalidateQueries({ queryKey: ["notifications", user.id] }),
+        (payload) => {
+          void qc.invalidateQueries({ queryKey: ["notifications", user.id] });
+          if (payload.eventType !== "INSERT") return;
+          const row = payload.new as Notification;
+          const { wants: allowed, desktop } = prefsRef.current;
+          if (!allowed(row.type)) return;
+          toast(row.title, { description: row.body ?? undefined, duration: 15_000 });
+          if (desktop) {
+            void showAppNotification(
+              row.title,
+              row.body ?? "",
+              `notification-${row.id}`,
+              row.link ?? "/dashboard",
+            );
+          }
+        },
       )
       .subscribe();
     return () => {
@@ -62,7 +87,10 @@ export function NotificationsBell() {
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
 
-  const items = notifsQ.data ?? [];
+  // The triggers already skip the kinds someone has switched off, but only the
+  // ones that were taught to ask. Filtering here as well means the switch holds
+  // for every kind, including rows written before it was thrown.
+  const items = useMemo(() => (notifsQ.data ?? []).filter((n) => wants(n.type)), [notifsQ.data, wants]);
   const unread = useMemo(() => items.filter((n) => !n.read_at).length, [items]);
 
   const markRead = useMutation({

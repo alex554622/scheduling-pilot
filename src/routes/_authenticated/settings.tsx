@@ -6,7 +6,15 @@ import { useAuth, ROLE_LABEL } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Check, KeyRound, UserCog, Building2, Copy } from "lucide-react";
+import { Loader2, Check, KeyRound, UserCog, Building2, Copy, Bell } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import {
+  NOTIFICATION_TYPES,
+  desktopPermission,
+  isStandalone,
+  requestDesktopPermission,
+  useNotificationPrefs,
+} from "@/lib/notification-prefs";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   component: SettingsPage,
@@ -250,6 +258,8 @@ function SettingsPage() {
         </div>
       </div>
 
+      <NotificationSettings />
+
       <div className="rounded-xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
         <div className="mb-4 flex items-center gap-2">
           <KeyRound className="h-5 w-5 text-primary" />
@@ -281,6 +291,118 @@ function SettingsPage() {
               {pwOk && <Check className="h-4 w-4" />}
               {pwOk ? "Updated" : "Update password"}
             </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Everyone's own notification switches — an employee's as much as an admin's.
+ *
+ * The master switch and the per-kind ones are saved on the account, because
+ * `wants_notification()` reads the same column inside the database triggers
+ * that write a notification: switched off here, the row is never created. The
+ * desktop pop-up is the exception, since a browser can only grant permission
+ * for itself.
+ */
+function NotificationSettings() {
+  const { prefs, unavailable, isSaving, setEnabled, setType, setDesktop } = useNotificationPrefs();
+  const [permission, setPermission] = useState<string>("default");
+  // Safari only offers notifications to an app that has been added to the Home
+  // Screen, so "unsupported" on an iPhone is an instruction, not a dead end.
+  const [needsInstall, setNeedsInstall] = useState(false);
+  useEffect(() => {
+    const p = desktopPermission();
+    setPermission(p);
+    setNeedsInstall(
+      p === "unsupported" &&
+        !isStandalone() &&
+        /iPad|iPhone|iPod/.test(window.navigator.userAgent),
+    );
+  }, []);
+
+  async function toggleDesktop(on: boolean) {
+    if (!on) {
+      setDesktop(false);
+      return;
+    }
+    const result = await requestDesktopPermission();
+    setPermission(result);
+    // A browser that refused is not a preference we can honour, so it is not
+    // one we save — the line below says why instead.
+    setDesktop(result === "granted");
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
+      <div className="mb-4 flex items-center gap-2">
+        <Bell className="h-5 w-5 text-primary" />
+        <h3 className="font-semibold text-foreground">Notifications</h3>
+      </div>
+
+      {unavailable && (
+        <p className="mb-4 rounded-md bg-warning/10 px-3 py-2 text-xs text-warning-foreground">
+          Your notification settings can't be saved yet — this company's database is still waiting
+          on an update. Everything stays switched on until then.
+        </p>
+      )}
+
+      <div className="space-y-4">
+        <div className="flex items-start justify-between gap-4 rounded-lg border border-border p-3">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-foreground">Notifications</p>
+            <p className="text-xs text-muted-foreground">
+              The master switch. Off, nothing reaches your bell and nothing pops up.
+            </p>
+          </div>
+          <Switch
+            checked={prefs.enabled}
+            disabled={unavailable || isSaving}
+            onCheckedChange={setEnabled}
+            aria-label="All notifications"
+          />
+        </div>
+
+        <div
+          className={`space-y-3 ${prefs.enabled ? "" : "pointer-events-none opacity-50"}`}
+          aria-disabled={!prefs.enabled}
+        >
+          {NOTIFICATION_TYPES.map((t) => (
+            <div key={t.key} className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-foreground">{t.label}</p>
+                <p className="text-xs text-muted-foreground">{t.detail}</p>
+              </div>
+              <Switch
+                checked={prefs.types[t.key] !== false}
+                disabled={unavailable || isSaving}
+                onCheckedChange={(v) => setType(t.key, v)}
+                aria-label={t.label}
+              />
+            </div>
+          ))}
+
+          <div className="flex items-start justify-between gap-4 border-t border-border pt-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-foreground">Show them on this device</p>
+              <p className="text-xs text-muted-foreground">
+                {needsInstall
+                  ? "Add Scheduling Pilot to your Home Screen first — on iPhone and iPad, notifications are only offered to the installed app."
+                  : permission === "unsupported"
+                    ? "This browser doesn't do system notifications."
+                    : permission === "denied"
+                      ? "This browser is blocking notifications — allow them in its site settings first."
+                      : "A system pop-up as well as the one in the app, on your phone's lock screen too. Each device asks once."}
+              </p>
+            </div>
+            <Switch
+              checked={prefs.desktop && permission === "granted"}
+              disabled={unavailable || isSaving || permission === "denied" || permission === "unsupported"}
+              onCheckedChange={(v) => void toggleDesktop(v)}
+              aria-label="Show notifications on this device"
+            />
           </div>
         </div>
       </div>

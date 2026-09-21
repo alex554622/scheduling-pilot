@@ -739,6 +739,7 @@ export type Database = {
           id: string
           is_active: boolean
           max_weekly_hours: number
+          notification_prefs: Json
           pending_company_id: string | null
           phone: string | null
           position: string | null
@@ -753,6 +754,7 @@ export type Database = {
           id: string
           is_active?: boolean
           max_weekly_hours?: number
+          notification_prefs?: Json
           pending_company_id?: string | null
           phone?: string | null
           position?: string | null
@@ -767,6 +769,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           max_weekly_hours?: number
+          notification_prefs?: Json
           pending_company_id?: string | null
           phone?: string | null
           position?: string | null
@@ -1393,6 +1396,30 @@ export type Database = {
           user_id: string
         }[]
       }
+      admin_accounts: {
+        Args: never
+        Returns: {
+          user_id: string
+          email: string | null
+          email_confirmed: boolean
+          created_at: string
+          last_sign_in_at: string | null
+          full_name: string
+          company_id: string | null
+          company_name: string | null
+          pending_company_id: string | null
+          pending_company_name: string | null
+          is_active: boolean
+          has_profile: boolean
+          roles: string[]
+        }[]
+      }
+      admin_set_user_company: { Args: { _user: string; _company: string | null }; Returns: undefined }
+      admin_set_user_role: {
+        Args: { _user: string; _company: string | null; _role: string | null }
+        Returns: undefined
+      }
+      admin_delete_user: { Args: { _user: string }; Returns: undefined }
       billing_overview: {
         Args: never
         Returns: {
