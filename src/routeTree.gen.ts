@@ -44,6 +44,7 @@ import { Route as AuthenticatedBillingRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedAvailabilityRouteImport } from './routes/_authenticated/availability'
 import { Route as AuthenticatedAuditLogRouteImport } from './routes/_authenticated/audit-log'
 import { Route as AuthenticatedAppRulesRouteImport } from './routes/_authenticated/app-rules'
+import { Route as AuthenticatedAccountsRouteImport } from './routes/_authenticated/accounts'
 import { Route as AuthenticatedEmployeesJoinRequestsRouteImport } from './routes/_authenticated/employees.join-requests'
 
 const WorkforceManagementRoute = WorkforceManagementRouteImport.update({
@@ -226,6 +227,11 @@ const AuthenticatedAppRulesRoute = AuthenticatedAppRulesRouteImport.update({
   path: '/app-rules',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedAccountsRoute = AuthenticatedAccountsRouteImport.update({
+  id: '/accounts',
+  path: '/accounts',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedEmployeesJoinRequestsRoute =
   AuthenticatedEmployeesJoinRequestsRouteImport.update({
     id: '/join-requests',
@@ -245,6 +251,7 @@ export interface FileRoutesByFullPath {
   '/time-clock': typeof TimeClockRoute
   '/time-off-management': typeof TimeOffManagementRoute
   '/workforce-management': typeof WorkforceManagementRoute
+  '/accounts': typeof AuthenticatedAccountsRoute
   '/app-rules': typeof AuthenticatedAppRulesRoute
   '/audit-log': typeof AuthenticatedAuditLogRoute
   '/availability': typeof AuthenticatedAvailabilityRoute
@@ -282,6 +289,7 @@ export interface FileRoutesByTo {
   '/time-clock': typeof TimeClockRoute
   '/time-off-management': typeof TimeOffManagementRoute
   '/workforce-management': typeof WorkforceManagementRoute
+  '/accounts': typeof AuthenticatedAccountsRoute
   '/app-rules': typeof AuthenticatedAppRulesRoute
   '/audit-log': typeof AuthenticatedAuditLogRoute
   '/availability': typeof AuthenticatedAvailabilityRoute
@@ -321,6 +329,7 @@ export interface FileRoutesById {
   '/time-clock': typeof TimeClockRoute
   '/time-off-management': typeof TimeOffManagementRoute
   '/workforce-management': typeof WorkforceManagementRoute
+  '/_authenticated/accounts': typeof AuthenticatedAccountsRoute
   '/_authenticated/app-rules': typeof AuthenticatedAppRulesRoute
   '/_authenticated/audit-log': typeof AuthenticatedAuditLogRoute
   '/_authenticated/availability': typeof AuthenticatedAvailabilityRoute
@@ -360,6 +369,7 @@ export interface FileRouteTypes {
     | '/time-clock'
     | '/time-off-management'
     | '/workforce-management'
+    | '/accounts'
     | '/app-rules'
     | '/audit-log'
     | '/availability'
@@ -397,6 +407,7 @@ export interface FileRouteTypes {
     | '/time-clock'
     | '/time-off-management'
     | '/workforce-management'
+    | '/accounts'
     | '/app-rules'
     | '/audit-log'
     | '/availability'
@@ -435,6 +446,7 @@ export interface FileRouteTypes {
     | '/time-clock'
     | '/time-off-management'
     | '/workforce-management'
+    | '/_authenticated/accounts'
     | '/_authenticated/app-rules'
     | '/_authenticated/audit-log'
     | '/_authenticated/availability'
@@ -724,6 +736,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppRulesRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/accounts': {
+      id: '/_authenticated/accounts'
+      path: '/accounts'
+      fullPath: '/accounts'
+      preLoaderRoute: typeof AuthenticatedAccountsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/employees/join-requests': {
       id: '/_authenticated/employees/join-requests'
       path: '/join-requests'
@@ -750,6 +769,7 @@ const AuthenticatedEmployeesRouteWithChildren =
   )
 
 interface AuthenticatedRouteChildren {
+  AuthenticatedAccountsRoute: typeof AuthenticatedAccountsRoute
   AuthenticatedAppRulesRoute: typeof AuthenticatedAppRulesRoute
   AuthenticatedAuditLogRoute: typeof AuthenticatedAuditLogRoute
   AuthenticatedAvailabilityRoute: typeof AuthenticatedAvailabilityRoute
@@ -775,6 +795,7 @@ interface AuthenticatedRouteChildren {
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
+  AuthenticatedAccountsRoute: AuthenticatedAccountsRoute,
   AuthenticatedAppRulesRoute: AuthenticatedAppRulesRoute,
   AuthenticatedAuditLogRoute: AuthenticatedAuditLogRoute,
   AuthenticatedAvailabilityRoute: AuthenticatedAvailabilityRoute,

@@ -12,13 +12,32 @@ const CODE_PATTERN = /^[A-Za-z0-9]{6,12}$/;
 
 /**
  * What a signed-in account with no company sees. That happens when someone signs
- * up as an employee without a code, or when the code they gave at signup was
- * rejected — either way this is the one screen they can reach, so it has to be
- * the place they can attach a company.
+ * up as an employee without a code, when the code they gave at signup was
+ * rejected — or when a business registration never completed.
+ *
+ * That last one is why this screen offers both. The company a registration asks
+ * for is created by replaying the signup intent, which is held in the browser
+ * that made it (see `@/lib/signup-intent`). Confirm the email somewhere else —
+ * and a confirmation link very often opens the phone's default browser, not the
+ * one the form was filled in on — and the intent is simply not there to replay.
+ * The account arrives here instead, and until now the only thing on offer was a
+ * join code for a company that had never been created. The registration was
+ * lost, and the platform admin's approval queue never heard about it.
  */
 export function JoinCompanyGate({ onSignOut }: { onSignOut: () => void }) {
-  const { user, profile, refresh } = useAuth();
+  const { user, profile, refresh, roles } = useAuth();
+  /**
+   * Which half of this screen someone lands on.
+   *
+   * An account that already holds a company admin role was meant to be running
+   * a company — either the registration half-finished, or the company it made
+   * was removed. Sending that person to a join-code box is sending them to the
+   * wrong screen, so they are asked for the company name instead.
+   */
+  const wasRegistering = roles.includes("company_admin") || roles.includes("super_admin");
+  const [mode, setMode] = useState<"join" | "create">(wasRegistering ? "create" : "join");
   const [code, setCode] = useState("");
+  const [companyName, setCompanyName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,6 +47,27 @@ export function JoinCompanyGate({ onSignOut }: { onSignOut: () => void }) {
     const parked = takeSignupIntentError();
     if (parked) setError(`The company code from your signup wasn't accepted: ${parked}`);
   }, []);
+
+  async function registerBusiness(e: React.FormEvent) {
+    e.preventDefault();
+    const name = companyName.trim();
+    if (name.length < 2) {
+      setError("Enter the name of your business.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    // The same RPC the signup would have run. It lands the company at
+    // 'pending', which is what puts it in front of a platform admin.
+    const { error: rpcError } = await supabase.rpc("bootstrap_company", { _name: name });
+    if (rpcError) {
+      setBusy(false);
+      setError(rpcError.message);
+      return;
+    }
+    await refresh();
+    setBusy(false);
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -62,11 +102,85 @@ export function JoinCompanyGate({ onSignOut }: { onSignOut: () => void }) {
           <h2 className="text-xl font-semibold text-foreground">Add your company</h2>
         </div>
         <p className="mt-2 text-sm text-muted-foreground">
-          Your profile is ready{profile?.full_name ? `, ${profile.full_name.split(" ")[0]}` : ""}. Enter the join code from
-          your manager to request access to their workspace.
+          Your profile is ready{profile?.full_name ? `, ${profile.full_name.split(" ")[0]}` : ""}.{" "}
+          {mode === "join"
+            ? "Enter the join code from your manager to request access to their workspace."
+            : "Register your business and a platform admin will approve it."}
         </p>
 
-        <form className="mt-5 space-y-4" onSubmit={submit}>
+        {/* The reminder. Your account exists and has no company attached to it,
+            which on a first sign-in reads as "nothing works" unless somebody
+            says plainly what is missing and that only you can supply it. */}
+        <div className="mt-4 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5">
+          <p className="text-xs font-medium text-warning-foreground">
+            {wasRegistering
+              ? "Your business still needs a name"
+              : "Your account isn't attached to a company yet"}
+          </p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {wasRegistering
+              ? "You're set up as an admin, but the company itself was never created. Name it below and a platform admin will approve it — nothing else on the app opens until then."
+              : "Nothing opens until it is. Join your employer with their code, or name your own business to register it."}
+          </p>
+        </div>
+
+        <div className="mt-4 inline-flex w-full rounded-lg bg-secondary p-1">
+          {(["join", "create"] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => {
+                setMode(m);
+                setError(null);
+              }}
+              className={`flex-1 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+                mode === m
+                  ? "bg-card text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {m === "join" ? "Join a company" : "Register a business"}
+            </button>
+          ))}
+        </div>
+
+        {mode === "create" && (
+          <form className="mt-5 space-y-4" onSubmit={registerBusiness}>
+            <div className="space-y-1.5">
+              <Label htmlFor="company-name">Business name</Label>
+              <Input
+                id="company-name"
+                autoFocus
+                required
+                maxLength={120}
+                placeholder="e.g. Calexico Parking Enforcement"
+                className="h-12"
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                You'll be its admin. A platform admin approves the account before anyone can sign
+                in — including you.
+              </p>
+            </div>
+
+            {error && (
+              <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {error}
+              </p>
+            )}
+
+            <Button type="submit" className="h-11 w-full" disabled={busy}>
+              {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Register business
+            </Button>
+          </form>
+        )}
+
+        <form
+          className={`mt-5 space-y-4 ${mode === "join" ? "" : "hidden"}`}
+          onSubmit={submit}
+        >
           <div className="space-y-1.5">
             <Label htmlFor="join-code">Company code</Label>
             <Input

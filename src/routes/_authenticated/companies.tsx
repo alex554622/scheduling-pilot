@@ -73,6 +73,22 @@ type SubRow = {
 };
 type PlanRow = { id: string; name: string; price_cents: number };
 
+/** Everything a platform admin can see about a person, which is every column. */
+interface PersonRow {
+  id: string;
+  full_name: string;
+  company_id: string | null;
+  pending_company_id: string | null;
+  position: string | null;
+  phone: string | null;
+  employee_code: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+/** One row of `billing_overview`, which is where an account's email comes from. */
+type BillingRow = { company_id: string; admin_email: string | null };
+
 const STATUSES = ["pending", "active", "past_due", "suspended"] as const;
 const SUB_STATUSES = ["trialing", "active", "past_due", "inactive", "canceled"] as const;
 const BILLING_MODES = [
@@ -119,17 +135,45 @@ function CompaniesPage() {
     },
   });
 
-  // Headcount per company in one pass rather than a count query per row.
-  const headcountQ = useQuery({
-    queryKey: ["companies-headcount"],
+  // Everyone on the platform in one pass rather than a query per company. A
+  // super admin's RLS lets them read every profile, and this page is the one
+  // place that needs all of them: the approval queue has to show who is asking
+  // before anyone decides, not just how many of them there are.
+  const peopleQ = useQuery({
+    queryKey: ["companies-people"],
     enabled: isSuper,
     queryFn: async () => {
-      const { data, error } = await supabase.from("profiles").select("company_id");
+      const { data, error } = await supabase
+        .from("profiles")
+        .select(
+          "id, full_name, company_id, pending_company_id, position, phone, employee_code, is_active, created_at",
+        )
+        .order("created_at", { ascending: true });
       if (error) throw error;
-      const map: Record<string, number> = {};
-      for (const r of data ?? [])
-        if (r.company_id) map[r.company_id] = (map[r.company_id] ?? 0) + 1;
-      return map;
+      return (data ?? []) as PersonRow[];
+    },
+  });
+
+  const rolesQ = useQuery({
+    queryKey: ["companies-roles"],
+    enabled: isSuper,
+    queryFn: async () => {
+      const { data, error } = await supabase.from("user_roles").select("user_id, company_id, role");
+      if (error) throw error;
+      return (data ?? []) as { user_id: string; company_id: string | null; role: AppRole }[];
+    },
+  });
+
+  // Emails live in auth.users, which no client may read. `billing_overview`
+  // already resolves the account email for super admins, so it answers "who
+  // registered this" too rather than adding a second way to ask.
+  const billingQ = useQuery({
+    queryKey: ["billing-overview"],
+    enabled: isSuper,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("billing_overview");
+      if (error) throw error;
+      return (data ?? []) as BillingRow[];
     },
   });
 
@@ -160,8 +204,30 @@ function CompaniesPage() {
   if (loading || !isSuper) return <div className="text-sm text-muted-foreground">Loading…</div>;
 
   const all = companiesQ.data ?? [];
-  const heads = headcountQ.data ?? {};
+  const people = peopleQ.data ?? [];
+  const roleRows = rolesQ.data ?? [];
   const subs = subsQ.data ?? [];
+
+  const heads: Record<string, number> = {};
+  for (const p of people) if (p.company_id) heads[p.company_id] = (heads[p.company_id] ?? 0) + 1;
+
+  const rolesOf = (userId: string) => roleRows.filter((r) => r.user_id === userId).map((r) => r.role);
+  const emailOf = (companyId: string) =>
+    billingQ.data?.find((r) => r.company_id === companyId)?.admin_email ?? null;
+  /** The people a company holds, its admins first — whoever registered it is one. */
+  const membersOf = (companyId: string) =>
+    people
+      .filter((p) => p.company_id === companyId)
+      .sort((a, b) => {
+        const rank = (id: string) => (rolesOf(id).includes("company_admin") ? 0 : 1);
+        return rank(a.id) - rank(b.id) || a.full_name.localeCompare(b.full_name);
+      });
+
+  // Signed-up accounts attached to nothing: a registration whose company was
+  // never created (see `JoinCompanyGate`), or an employee who never entered a
+  // code. Invisible until now, which is exactly how a lost registration looked
+  // from this page.
+  const stranded = people.filter((p) => !p.company_id && !p.pending_company_id);
 
   const companies = all
     .filter((c) => filter === "all" || c.status === filter)
@@ -188,27 +254,57 @@ function CompaniesPage() {
           <p className="mb-3 text-sm font-medium text-warning-foreground">
             {pending.length} company{pending.length === 1 ? "" : "ies"} awaiting approval
           </p>
+          {/* Everything the decision needs, on the screen where it is made: who
+              registered, how to reach them, and what they registered. Sending a
+              platform admin hunting through another page first is how a real
+              business ends up waiting on a rubber stamp. */}
           <ul className="space-y-2">
             {pending.map((c) => (
-              <li
-                key={c.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-card px-3 py-2"
-              >
-                <div>
-                  <p className="text-sm font-medium text-foreground">{c.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    Requested {new Date(c.created_at).toLocaleDateString()} · {heads[c.id] ?? 0}{" "}
-                    member{(heads[c.id] ?? 0) === 1 ? "" : "s"}
-                  </p>
+              <li key={c.id} className="rounded-lg bg-card px-3 py-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground">{c.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Requested{" "}
+                      {new Date(c.created_at).toLocaleString([], {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      })}{" "}
+                      · {c.plan} plan · {heads[c.id] ?? 0} member
+                      {(heads[c.id] ?? 0) === 1 ? "" : "s"}
+                    </p>
+                    {emailOf(c.id) && (
+                      <p className="truncate text-xs text-muted-foreground">
+                        Account{" "}
+                        <a
+                          href={`mailto:${emailOf(c.id)}`}
+                          className="font-medium text-primary hover:underline"
+                        >
+                          {emailOf(c.id)}
+                        </a>
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setSelected(c.id)}>
+                      Open
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={updateMut.isPending}
+                      onClick={() => updateMut.mutate({ id: c.id, patch: { status: "active" } })}
+                    >
+                      <CheckCircle2 className="mr-2 h-3.5 w-3.5" />
+                      Approve
+                    </Button>
+                  </div>
                 </div>
-                <Button
-                  size="sm"
-                  disabled={updateMut.isPending}
-                  onClick={() => updateMut.mutate({ id: c.id, patch: { status: "active" } })}
-                >
-                  <CheckCircle2 className="mr-2 h-3.5 w-3.5" />
-                  Approve
-                </Button>
+
+                <PeopleTable
+                  people={membersOf(c.id)}
+                  rolesOf={rolesOf}
+                  empty="Nobody is attached to this company yet — see the accounts with no company below."
+                />
               </li>
             ))}
           </ul>
@@ -216,6 +312,20 @@ function CompaniesPage() {
             Approving activates the account and generates its join code so employees can request
             access.
           </p>
+        </div>
+      )}
+
+      {stranded.length > 0 && (
+        <div className="rounded-2xl border border-border bg-card p-4">
+          <p className="text-sm font-medium text-foreground">
+            {stranded.length} signed-up account{stranded.length === 1 ? "" : "s"} with no company
+          </p>
+          <p className="mb-3 mt-0.5 text-xs text-muted-foreground">
+            Someone registered and never landed anywhere: a business whose company was never
+            created, or an employee who has not entered a join code. They can finish it themselves
+            from the "Add your company" screen — this is only so they stop being invisible.
+          </p>
+          <PeopleTable people={stranded} rolesOf={rolesOf} empty="" />
         </div>
       )}
 
@@ -335,18 +445,23 @@ function CompanyDetail({
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["companies-admin"] });
     qc.invalidateQueries({ queryKey: ["companies-subs"] });
-    qc.invalidateQueries({ queryKey: ["companies-headcount"] });
+    qc.invalidateQueries({ queryKey: ["companies-people"] });
     qc.invalidateQueries({ queryKey: ["platform-companies"] });
     qc.invalidateQueries({ queryKey: ["platform-subs"] });
   };
 
+  // Every column, not a name and a flag: once a company is approved this drawer
+  // is the only place a platform admin can look up who is in it, and it should
+  // hold what the approval queue showed before the decision.
   const membersQ = useQuery({
     queryKey: ["company-members-admin", company.id],
     queryFn: async () => {
       const [{ data: profiles, error: pErr }, { data: roles, error: rErr }] = await Promise.all([
         supabase
           .from("profiles")
-          .select("id, full_name, is_active")
+          .select(
+            "id, full_name, company_id, pending_company_id, position, phone, employee_code, is_active, created_at",
+          )
           .eq("company_id", company.id)
           .order("full_name"),
         supabase.from("user_roles").select("user_id, role").eq("company_id", company.id),
@@ -355,7 +470,13 @@ function CompanyDetail({
       if (rErr) throw rErr;
       const roleBy: Record<string, AppRole[]> = {};
       for (const r of roles ?? []) (roleBy[r.user_id] ??= []).push(r.role as AppRole);
-      return (profiles ?? []).map((p) => ({ ...p, roles: roleBy[p.id] ?? [] }));
+      const rows = (profiles ?? []) as PersonRow[];
+      // Admins first — the account that registered the company is one of them.
+      rows.sort((a, b) => {
+        const rank = (id: string) => ((roleBy[id] ?? []).includes("company_admin") ? 0 : 1);
+        return rank(a.id) - rank(b.id) || a.full_name.localeCompare(b.full_name);
+      });
+      return { rows, roleBy };
     },
   });
 
@@ -444,7 +565,8 @@ function CompanyDetail({
     onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
   });
 
-  const members = membersQ.data ?? [];
+  const members = membersQ.data?.rows ?? [];
+  const roleBy = membersQ.data?.roleBy ?? {};
   const plans = plansQ.data ?? [];
 
   return (
@@ -462,6 +584,14 @@ function CompanyDetail({
               </>
             )}
           </p>
+          {adminEmail && (
+            <p className="text-xs text-muted-foreground">
+              Account{" "}
+              <a href={`mailto:${adminEmail}`} className="text-primary hover:underline">
+                {adminEmail}
+              </a>
+            </p>
+          )}
         </div>
         <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close detail">
           <X className="h-4 w-4" />
@@ -641,26 +771,14 @@ function CompanyDetail({
           </h3>
           {membersQ.isLoading ? (
             <p className="py-6 text-center text-sm text-muted-foreground">Loading…</p>
-          ) : members.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">Nobody has joined yet.</p>
           ) : (
-            <ul className="max-h-80 divide-y divide-border overflow-y-auto rounded-xl border border-border">
-              {members.map((m) => (
-                <li key={m.id} className="flex items-center justify-between gap-3 px-3 py-2">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm text-foreground">{m.full_name || "Unnamed"}</p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {m.roles.length ? m.roles.map((r) => ROLE_LABEL[r]).join(", ") : "No role"}
-                    </p>
-                  </div>
-                  {!m.is_active && (
-                    <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-[11px] text-muted-foreground">
-                      inactive
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ul>
+            <div className="max-h-96 overflow-y-auto">
+              <PeopleTable
+                people={members}
+                rolesOf={(id) => roleBy[id] ?? []}
+                empty="Nobody has joined yet."
+              />
+            </div>
           )}
         </div>
       </div>
@@ -885,5 +1003,70 @@ function DeleteCompanyDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * Every column a profile carries, laid out for a platform admin.
+ *
+ * The same block serves the approval queue and the company drawer on purpose:
+ * what you are shown before you approve a company should be what you can still
+ * look up afterwards, or the decision and the record disagree.
+ *
+ * No email column, deliberately. `billing_overview` resolves one address per
+ * company — the account it is billed to — not one per person, and printing it
+ * against four admin rows says four things that are not true. It belongs beside
+ * the company, which is where it is shown.
+ */
+function PeopleTable({
+  people,
+  rolesOf,
+  empty,
+}: {
+  people: PersonRow[];
+  rolesOf: (userId: string) => AppRole[];
+  empty: string;
+}) {
+  if (people.length === 0) {
+    return empty ? <p className="mt-3 text-xs text-muted-foreground">{empty}</p> : null;
+  }
+  return (
+    <ul className="mt-3 divide-y divide-border overflow-hidden rounded-lg border border-border">
+      {people.map((p) => {
+        const roles = rolesOf(p.id);
+        return (
+          <li key={p.id} className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 px-3 py-2">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-foreground">
+                {p.full_name || "Unnamed"}
+                {!p.is_active && (
+                  <span className="ml-2 rounded-full bg-secondary px-2 py-0.5 text-[11px] font-normal text-muted-foreground">
+                    inactive
+                  </span>
+                )}
+              </p>
+              <p className="truncate text-xs text-muted-foreground">
+                {roles.length ? roles.map((r) => ROLE_LABEL[r]).join(", ") : "No role"}
+                {p.position && <> · {p.position}</>}
+                {p.employee_code && <> · #{p.employee_code}</>}
+              </p>
+            </div>
+            <div className="min-w-0 text-left sm:text-right">
+              {p.phone && (
+                <a
+                  href={`tel:${p.phone}`}
+                  className="block truncate text-xs text-foreground hover:underline"
+                >
+                  {p.phone}
+                </a>
+              )}
+              <p className="text-[11px] text-muted-foreground">
+                signed up {new Date(p.created_at).toLocaleDateString()}
+              </p>
+            </div>
+          </li>
+        );
+      })}
+    </ul>
   );
 }

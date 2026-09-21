@@ -16,6 +16,7 @@ import {
   Clock,
   FileClock,
   UserCheck,
+  UserCog,
   ShieldCheck,
   SlidersHorizontal,
   Network,
@@ -33,6 +34,9 @@ import { useAppRules } from "@/lib/app-rules";
 import { useCapabilities, CAPABILITY_LABELS, type CapabilityKey } from "@/lib/capabilities";
 import { useTrialStatus, trialCountdown } from "@/lib/trial";
 import { NotificationsBell } from "@/components/notifications-bell";
+import { Toaster } from "@/components/ui/sonner";
+import { useBreakReminder } from "@/lib/break-reminder";
+import { ensureServiceWorker } from "@/lib/notification-prefs";
 import { BrandLogo, BrandMark } from "@/components/brand";
 import { JoinCompanyGate } from "@/components/join-company-gate";
 import { noindexSeo } from "@/lib/seo";
@@ -63,6 +67,7 @@ const NAV: NavItem[] = [
   },
   { to: "/platform", label: "Platform", icon: Gauge, roles: ["super_admin"] },
   { to: "/companies", label: "Companies", icon: Building2, roles: ["super_admin"] },
+  { to: "/accounts", label: "Accounts", icon: UserCog, roles: ["super_admin"] },
   {
     to: "/schedule",
     label: "Schedule",
@@ -208,6 +213,16 @@ function AuthLayout() {
   const rules = useAppRules();
   const { capabilities } = useCapabilities();
   const { trial } = useTrialStatus();
+  // Watches the signed-in person's own break wherever they are in the app, so
+  // the two-minute warning reaches them off the time clock page too.
+  useBreakReminder();
+
+  // The worker that shows the notifications. Registered on the way in rather
+  // than at the moment one is due, because an installed app has no other way
+  // to show one and a worker that is still installing shows nothing.
+  useEffect(() => {
+    void ensureServiceWorker();
+  }, []);
 
   // Restore collapsed preference once on mount.
   useEffect(() => {
@@ -515,6 +530,9 @@ function AuthLayout() {
           )}
         </main>
       </div>
+      {/* Where the break reminder lands, and where the punch-correction toasts
+          have been going all along — nothing was mounted to render them. */}
+      <Toaster position="top-right" richColors closeButton />
     </div>
   );
 }
