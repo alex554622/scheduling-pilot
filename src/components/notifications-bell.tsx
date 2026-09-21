@@ -26,8 +26,12 @@ export function NotificationsBell() {
   const rootRef = useRef<HTMLDivElement>(null);
   // Read inside the realtime handler below. Held in a ref so changing a switch
   // doesn't tear down and rebuild the subscription.
-  const prefsRef = useRef({ wants, desktop: prefs.desktop });
-  prefsRef.current = { wants, desktop: prefs.desktop };
+  const prefsRef = useRef({ wants, popup: prefs.popup, desktop: prefs.desktop });
+  prefsRef.current = { wants, popup: prefs.popup, desktop: prefs.desktop };
+  // What the pop-up's button does. Held in a ref for the same reason the
+  // preferences are: it is defined further down, and the subscription below
+  // must not be torn down and rebuilt on every render to see it.
+  const openRef = useRef<(n: Notification) => void>(() => {});
 
   const notifsQ = useQuery({
     queryKey: ["notifications", user?.id],
@@ -58,9 +62,23 @@ export function NotificationsBell() {
           void qc.invalidateQueries({ queryKey: ["notifications", user.id] });
           if (payload.eventType !== "INSERT") return;
           const row = payload.new as Notification;
-          const { wants: allowed, desktop } = prefsRef.current;
+          const { wants: allowed, popup, desktop } = prefsRef.current;
           if (!allowed(row.type)) return;
-          toast(row.title, { description: row.body ?? undefined, duration: 15_000 });
+          // The pop-up carries the way to act on it. A notification that makes
+          // you go and find the thing it is about is half a notification.
+          if (popup) {
+            toast(row.title, {
+              description: row.body ?? undefined,
+              duration: 20_000,
+              closeButton: true,
+              action: row.link
+                ? {
+                    label: "Open",
+                    onClick: () => openRef.current(row),
+                  }
+                : undefined,
+            });
+          }
           if (desktop) {
             void showAppNotification(
               row.title,
@@ -110,6 +128,7 @@ export function NotificationsBell() {
     setOpen(false);
     if (n.link) navigate({ to: n.link });
   };
+  openRef.current = handleClick;
 
   return (
     <div ref={rootRef} className="relative">

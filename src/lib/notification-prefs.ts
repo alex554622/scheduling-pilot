@@ -41,6 +41,12 @@ export interface NotificationPrefs {
   enabled: boolean;
   /** Per kind. A key that isn't here is on — see `wants_notification()`. */
   types: Record<string, boolean>;
+  /**
+   * Pop one up in the app as it arrives, rather than only counting it on the
+   * bell. On by default: a notification nobody is told about is a notification
+   * that did not happen, which is the complaint this whole feature started on.
+   */
+  popup: boolean;
   /** Also show them as system pop-ups, on devices that have granted it. */
   desktop: boolean;
 }
@@ -48,6 +54,7 @@ export interface NotificationPrefs {
 export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
   enabled: true,
   types: {},
+  popup: true,
   desktop: false,
 };
 
@@ -58,6 +65,8 @@ function parse(raw: unknown): NotificationPrefs {
   return {
     enabled: o.enabled !== false,
     types,
+    // Absent means on, the same way an absent type does.
+    popup: o.popup !== false,
     desktop: o.desktop === true,
   };
 }
@@ -75,6 +84,7 @@ export interface NotificationPrefsHandle {
   wants: (type: NotificationType | string) => boolean;
   setEnabled: (on: boolean) => void;
   setType: (type: NotificationType | string, on: boolean) => void;
+  setPopup: (on: boolean) => void;
   setDesktop: (on: boolean) => void;
 }
 
@@ -140,6 +150,7 @@ export function useNotificationPrefs(): NotificationPrefsHandle {
     wants,
     setEnabled: (on) => save.mutate({ ...prefs, enabled: on }),
     setType: (type, on) => save.mutate({ ...prefs, types: { ...prefs.types, [type]: on } }),
+    setPopup: (on) => save.mutate({ ...prefs, popup: on }),
     setDesktop: (on) => save.mutate({ ...prefs, desktop: on }),
   };
 }

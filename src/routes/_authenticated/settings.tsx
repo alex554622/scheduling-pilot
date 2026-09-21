@@ -308,7 +308,8 @@ function SettingsPage() {
  * for itself.
  */
 function NotificationSettings() {
-  const { prefs, unavailable, isSaving, setEnabled, setType, setDesktop } = useNotificationPrefs();
+  const { prefs, unavailable, isSaving, setEnabled, setType, setPopup, setDesktop } =
+    useNotificationPrefs();
   const [permission, setPermission] = useState<string>("default");
   // Safari only offers notifications to an app that has been added to the Home
   // Screen, so "unsupported" on an iPhone is an instruction, not a dead end.
@@ -385,6 +386,22 @@ function NotificationSettings() {
           ))}
 
           <div className="flex items-start justify-between gap-4 border-t border-border pt-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-foreground">Pop them up in the app</p>
+              <p className="text-xs text-muted-foreground">
+                A pop-up in the corner as it arrives, with a button to open it. Off, it only counts
+                up on the bell and waits for you there.
+              </p>
+            </div>
+            <Switch
+              checked={prefs.popup}
+              disabled={unavailable || isSaving}
+              onCheckedChange={setPopup}
+              aria-label="Pop notifications up in the app"
+            />
+          </div>
+
+          <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <p className="text-sm font-medium text-foreground">Show them on this device</p>
               <p className="text-xs text-muted-foreground">
