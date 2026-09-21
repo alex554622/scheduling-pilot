@@ -37,6 +37,8 @@ import { NotificationsBell } from "@/components/notifications-bell";
 import { Toaster } from "@/components/ui/sonner";
 import { useBreakReminder } from "@/lib/break-reminder";
 import { ensureServiceWorker } from "@/lib/notification-prefs";
+import { useThemeController } from "@/lib/theme";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { BrandLogo, BrandMark } from "@/components/brand";
 import { JoinCompanyGate } from "@/components/join-company-gate";
 import { noindexSeo } from "@/lib/seo";
@@ -216,6 +218,8 @@ function AuthLayout() {
   // Watches the signed-in person's own break wherever they are in the app, so
   // the two-minute warning reaches them off the time clock page too.
   useBreakReminder();
+  // Night mode, while inside the app. Taken off again on the way out.
+  useThemeController();
 
   // The worker that shows the notifications. Registered on the way in rather
   // than at the moment one is due, because an installed app has no other way
@@ -489,7 +493,10 @@ function AuthLayout() {
               </h1>
             </div>
           </div>
-          <NotificationsBell />
+          <div className="flex items-center gap-1">
+            <ThemeToggle />
+            <NotificationsBell />
+          </div>
         </header>
         {(trial.trialing || trial.expired) && (
           <div

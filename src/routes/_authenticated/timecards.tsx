@@ -781,7 +781,7 @@ function TimecardsPage() {
         )}
 
         {isManager && !rosterQ.isLoading && !rosterQ.error && roster.length <= 1 && (
-          <div className="flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+          <div className="flex items-start gap-3 rounded-xl border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-200">
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
             <p>
               You're the only person on this company's roster, so there are no other timecards to
@@ -894,7 +894,7 @@ function TimecardsPage() {
                             {fmtDecimal(r.regularMs)}
                           </td>
                           <td
-                            className={`px-3 py-2 text-right ${r.overtimeMs > 0 ? "font-medium text-amber-700" : "text-muted-foreground"}`}
+                            className={`px-3 py-2 text-right ${r.overtimeMs > 0 ? "font-medium text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`}
                           >
                             {fmtDecimal(r.overtimeMs)}
                           </td>
@@ -1019,15 +1019,15 @@ function TimecardsPage() {
                     {r.pairs.length === 0 && <span className="text-muted-foreground">—</span>}
                     {r.pairs.map((p, i) => (
                       <div key={i} className="flex items-center gap-2">
-                        <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-700">
+                        <span className="rounded bg-emerald-100 dark:bg-emerald-500/15 px-1.5 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">
                           IN {fmtTime(p.in.at, rules.punch_round_minutes)}
                         </span>
                         {p.out ? (
-                          <span className="rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700">
+                          <span className="rounded bg-blue-100 dark:bg-blue-500/15 px-1.5 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">
                             OUT {fmtTime(p.out.at, rules.punch_round_minutes)}
                           </span>
                         ) : (
-                          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700">
+                          <span className="rounded bg-amber-100 dark:bg-amber-500/15 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
                             Still clocked in
                           </span>
                         )}
@@ -1090,7 +1090,7 @@ function TimecardsPage() {
                       Unpaid break: {fmtHours(grouped.weekUnpaid)} · Paid break:{" "}
                       {fmtHours(grouped.weekPaid)}
                       {split.overtimeMs > 0 && (
-                        <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800">
+                        <span className="ml-2 rounded bg-amber-100 dark:bg-amber-500/15 px-1.5 py-0.5 font-medium text-amber-800 dark:text-amber-200">
                           OT {fmtHours(split.overtimeMs)}
                         </span>
                       )}
@@ -1101,7 +1101,7 @@ function TimecardsPage() {
                       )}
                     </div>
                     <div
-                      className={`text-right font-semibold ${isOT ? "text-amber-700" : "text-foreground"}`}
+                      className={`text-right font-semibold ${isOT ? "text-amber-700 dark:text-amber-300" : "text-foreground"}`}
                     >
                       {fmtHours(grouped.weekTotal)}
                     </div>

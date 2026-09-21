@@ -467,7 +467,7 @@ function DashboardPage() {
                 className={`mt-2 text-sm font-medium ${
                   me.breakRemainingMs != null && me.breakRemainingMs <= 0
                     ? "text-destructive"
-                    : "text-amber-700"
+                    : "text-amber-700 dark:text-amber-300"
                 }`}
               >
                 {me.breakRemainingMs == null
@@ -684,14 +684,14 @@ function DashboardPage() {
               )}
             </div>
             <div>
-              {r.status === "working" && <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">● Working</span>}
+              {r.status === "working" && <span className="rounded bg-emerald-100 dark:bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">● Working</span>}
               {r.status === "on_break" && (
-                <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                <span className="rounded bg-amber-100 dark:bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
                   ● On break{r.breakLabel ? ` (${r.breakLabel})` : ""}
                 </span>
               )}
-              {r.status === "clocked_out" && <span className="rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">Clocked out</span>}
-              {r.status === "no_show" && <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">No show</span>}
+              {r.status === "clocked_out" && <span className="rounded bg-blue-100 dark:bg-blue-500/15 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">Clocked out</span>}
+              {r.status === "no_show" && <span className="rounded bg-slate-100 dark:bg-slate-500/15 px-2 py-0.5 text-xs font-medium text-slate-600 dark:text-slate-300">No show</span>}
             </div>
             <div className="text-xs text-muted-foreground">
               {/* What the schedule says, above what the clock says. */}
@@ -714,7 +714,7 @@ function DashboardPage() {
                   className={`font-mono text-sm font-semibold tabular-nums ${
                     r.breakRemainingMs != null && r.breakRemainingMs <= 0
                       ? "text-destructive"
-                      : "text-amber-700"
+                      : "text-amber-700 dark:text-amber-300"
                   }`}
                 >
                   {r.breakRemainingMs == null
@@ -763,29 +763,29 @@ function DashboardPage() {
 function PresencePill({ status }: { status: string }) {
   if (status === "working") {
     return (
-      <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
+      <span className="rounded bg-emerald-100 dark:bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">
         ● Working
       </span>
     );
   }
   if (status === "on_break") {
     return (
-      <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+      <span className="rounded bg-amber-100 dark:bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
         ● On break
       </span>
     );
   }
   return (
-    <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Off</span>
+    <span className="rounded bg-slate-100 dark:bg-slate-500/15 px-2 py-0.5 text-xs font-medium text-slate-600 dark:text-slate-300">Off</span>
   );
 }
 
 function Stat({ label, value, icon, color }: { label: string; value: number; icon: React.ReactNode; color: "emerald" | "amber" | "blue" | "slate" }) {
   const map = {
-    emerald: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    amber: "bg-amber-50 text-amber-700 border-amber-200",
-    blue: "bg-blue-50 text-blue-700 border-blue-200",
-    slate: "bg-slate-50 text-slate-700 border-slate-200",
+    emerald: "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/30",
+    amber: "bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-500/30",
+    blue: "bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-500/30",
+    slate: "bg-slate-50 dark:bg-slate-500/10 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-500/30",
   } as const;
   return (
     <div className={`rounded-xl border p-4 ${map[color]}`}>

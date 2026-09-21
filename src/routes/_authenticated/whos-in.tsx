@@ -161,9 +161,9 @@ function WhosInPage() {
                 {r.position && <div className="text-xs text-muted-foreground">{r.position}</div>}
               </div>
               <div>
-                {r.status === "working" && <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">● Working</span>}
-                {r.status === "on_break" && <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">● On break</span>}
-                {r.status === "off" && <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Off</span>}
+                {r.status === "working" && <span className="rounded bg-emerald-100 dark:bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">● Working</span>}
+                {r.status === "on_break" && <span className="rounded bg-amber-100 dark:bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">● On break</span>}
+                {r.status === "off" && <span className="rounded bg-slate-100 dark:bg-slate-500/15 px-2 py-0.5 text-xs font-medium text-slate-600 dark:text-slate-300">Off</span>}
               </div>
               <div className="text-right text-xs">
                 {r.since ? (
@@ -185,9 +185,9 @@ function WhosInPage() {
 
 function Stat({ label, value, color, icon }: { label: string; value: number; color: "emerald" | "amber" | "slate"; icon: React.ReactNode }) {
   const map = {
-    emerald: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    amber: "bg-amber-50 text-amber-700 border-amber-200",
-    slate: "bg-slate-50 text-slate-700 border-slate-200",
+    emerald: "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/30",
+    amber: "bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-500/30",
+    slate: "bg-slate-50 dark:bg-slate-500/10 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-500/30",
   } as const;
   return (
     <div className={`rounded-xl border p-4 ${map[color]}`}>

@@ -6,7 +6,19 @@ import { useAuth, ROLE_LABEL } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Check, KeyRound, UserCog, Building2, Copy, Bell } from "lucide-react";
+import {
+  Loader2,
+  Check,
+  KeyRound,
+  UserCog,
+  Building2,
+  Copy,
+  Bell,
+  Moon,
+  Sun,
+  MonitorSmartphone,
+} from "lucide-react";
+import { useThemePref, type ThemePref } from "@/lib/theme";
 import { Switch } from "@/components/ui/switch";
 import {
   NOTIFICATION_TYPES,
@@ -258,6 +270,8 @@ function SettingsPage() {
         </div>
       </div>
 
+      <AppearanceSettings />
+
       <NotificationSettings />
 
       <div className="rounded-xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
@@ -422,6 +436,63 @@ function NotificationSettings() {
             />
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Day, night, or whatever the phone is doing. Saved on this device only — see
+ * `@/lib/theme` for why — so the card says so rather than letting someone
+ * wonder why their laptop did not follow their phone.
+ */
+function AppearanceSettings() {
+  const { pref, setPref } = useThemePref();
+  const options: { value: ThemePref; label: string; detail: string; icon: typeof Sun }[] = [
+    { value: "light", label: "Day", detail: "Light, always.", icon: Sun },
+    { value: "dark", label: "Night", detail: "Dark, always.", icon: Moon },
+    {
+      value: "system",
+      label: "Match device",
+      detail: "Follows this phone or computer's own setting.",
+      icon: MonitorSmartphone,
+    },
+  ];
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
+      <div className="mb-1 flex items-center gap-2">
+        <Moon className="h-5 w-5 text-primary" />
+        <h3 className="font-semibold text-foreground">Appearance</h3>
+      </div>
+      <p className="mb-4 text-xs text-muted-foreground">
+        Saved on this device, so your phone and your computer can each have their own.
+      </p>
+      <div role="radiogroup" aria-label="Appearance" className="grid gap-2 sm:grid-cols-3">
+        {options.map((o) => {
+          const active = pref === o.value;
+          const Icon = o.icon;
+          return (
+            <button
+              key={o.value}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              onClick={() => setPref(o.value)}
+              className={`rounded-lg border p-3 text-left transition-colors ${
+                active
+                  ? "border-primary bg-primary-soft/40 ring-1 ring-primary"
+                  : "border-border hover:bg-accent/50"
+              }`}
+            >
+              <span className="flex items-center gap-2 text-sm font-medium text-foreground">
+                <Icon className="h-4 w-4" />
+                {o.label}
+              </span>
+              <span className="mt-0.5 block text-xs text-muted-foreground">{o.detail}</span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );

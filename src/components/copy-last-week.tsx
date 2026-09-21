@@ -262,11 +262,15 @@ export function CopyLastWeekButton({
             </Button>
             <Button onClick={() => copy.mutate()} disabled={!ready || copy.isPending}>
               {copy.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {occupied && mode === null
-                ? "Choose one above"
-                : occupied && mode === "replace"
-                  ? "Replace this week"
-                  : `Copy ${toAdd > 0 ? `${toAdd} shift${toAdd === 1 ? "" : "s"}` : ""}`}
+              {/* Checked first: with nothing to copy there are no choices
+                  either, and asking for one would point at an empty space. */}
+              {!p || p.lastWeek === 0
+                ? "Nothing to copy"
+                : occupied && mode === null
+                  ? "Choose one above"
+                  : occupied && mode === "replace"
+                    ? "Replace this week"
+                    : `Copy ${toAdd > 0 ? `${toAdd} shift${toAdd === 1 ? "" : "s"}` : ""}`}
             </Button>
           </DialogFooter>
         </DialogContent>

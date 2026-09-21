@@ -113,10 +113,21 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   errorComponent: ErrorComponent,
 });
 
+/**
+ * Night mode, decided before the first paint. The app would otherwise draw one
+ * white frame and then turn dark, which at night is the flash of light the
+ * setting exists to avoid. Mirrors `@/lib/theme`, which it cannot import: same
+ * storage key, same light-only paths.
+ */
+const THEME_BOOT = `(function(){try{var p=localStorage.getItem("sp-theme")||"light";var d=p==="dark"||(p==="system"&&window.matchMedia("(prefers-color-scheme: dark)").matches);var path=location.pathname;var light=["/","/about","/login","/join","/forgot-password","/reset-password","/employee-scheduling","/shift-trading","/time-clock","/time-off-management","/workforce-management"];if(d&&light.indexOf(path)<0&&path.indexOf("/clock/")!==0)document.documentElement.classList.add("dark")}catch(e){}})();`;
+
 function RootShell({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    // The boot script may add `dark` before React hydrates, so the class list
+    // is allowed to differ from what the server sent.
+    <html lang="en" suppressHydrationWarning>
       <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
         <HeadContent />
       </head>
       <body>

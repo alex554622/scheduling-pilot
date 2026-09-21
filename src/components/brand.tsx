@@ -9,8 +9,16 @@ export const APP_TAGLINE = "Let the pilot do the work — enjoy the ride";
  * The full lockup: SP mark, wordmark and tagline. It is a wide 3:1 image, so
  * drive it from its height (`h-9`, `h-10`) and let the width follow.
  */
+/*
+ * The artwork is navy lettering on a transparent PNG, so on a dark background it
+ * all but vanishes. In night mode it sits on a light plate instead — the brand
+ * colours are the point of a logo, and no filter lightens the navy without
+ * washing out the blue beside it.
+ */
+const NIGHT_PLATE = "dark:rounded-lg dark:bg-white dark:px-2 dark:py-1";
+
 export function BrandLogo({ className = "h-9" }: { className?: string }) {
-  return <img src={logoUrl} alt={APP_NAME} className={`w-auto ${className}`} />;
+  return <img src={logoUrl} alt={APP_NAME} className={`w-auto ${NIGHT_PLATE} ${className}`} />;
 }
 
 // The SP mark's bounding box inside the artwork, in the PNG's own pixels.
@@ -28,7 +36,7 @@ export function BrandMark({ size = 32, className = "" }: { size?: number; classN
     <div
       role="img"
       aria-label={APP_NAME}
-      className={`shrink-0 bg-no-repeat ${className}`}
+      className={`shrink-0 bg-no-repeat dark:rounded-md dark:bg-white ${className}`}
       style={{
         width: size,
         height: size,

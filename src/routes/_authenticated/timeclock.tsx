@@ -358,7 +358,7 @@ function TimeclockPage() {
       </div>
 
       {locationMissing && (primaryRole === "company_admin" || primaryRole === "super_admin") && (
-        <div className="flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+        <div className="flex items-start gap-3 rounded-xl border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-200">
           <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
           <div>
             <p className="font-medium">No worksite location set</p>
@@ -372,7 +372,7 @@ function TimeclockPage() {
         </div>
       )}
       {locationMissing && primaryRole === "employee" && (
-        <div className="flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+        <div className="flex items-start gap-3 rounded-xl border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-200">
           <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
           <p>Your company hasn't set a worksite yet. Ask a manager to configure it.</p>
         </div>
@@ -474,7 +474,7 @@ function TimeclockPage() {
                     )}
                     <div className="flex items-baseline justify-between pt-1">
                       <span className="font-medium text-foreground">Take-home</span>
-                      <span className="font-mono text-xl font-semibold tabular-nums text-emerald-600">
+                      <span className="font-mono text-xl font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
                         {fmtAmount(earnings.net)}
                       </span>
                     </div>
@@ -495,7 +495,7 @@ function TimeclockPage() {
                 className={`mb-5 rounded-xl border px-3 py-3 text-center ${
                   breakRemainingMs != null && breakRemainingMs <= 0
                     ? "border-destructive/40 bg-destructive/10"
-                    : "border-amber-300 bg-amber-50"
+                    : "border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10"
                 }`}
               >
                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -509,7 +509,7 @@ function TimeclockPage() {
                   className={`mt-0.5 font-mono text-3xl font-semibold tabular-nums ${
                     breakRemainingMs != null && breakRemainingMs <= 0
                       ? "text-destructive"
-                      : "text-amber-900"
+                      : "text-amber-900 dark:text-amber-200"
                   }`}
                 >
                   {fmtCountdown(
@@ -628,7 +628,7 @@ function TimeclockPage() {
             )}
 
             {status === "on_break" && (
-              <p className="mt-3 text-center text-xs text-amber-700">
+              <p className="mt-3 text-center text-xs text-amber-700 dark:text-amber-300">
                 You're on break. End your break before clocking out.
               </p>
             )}
@@ -644,7 +644,7 @@ function TimeclockPage() {
             )}
             {flash && (
               <p
-                className={`mt-3 text-center text-xs ${flash.kind === "ok" ? "text-emerald-600" : "text-destructive"}`}
+                className={`mt-3 text-center text-xs ${flash.kind === "ok" ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}
               >
                 {flash.msg}
               </p>
@@ -663,10 +663,10 @@ function TimeclockPage() {
               )}
               {(recentQ.data ?? []).slice(0, 10).map((p) => {
                 const styles: Record<PunchKind, string> = {
-                  in: "bg-emerald-100 text-emerald-700",
-                  out: "bg-blue-100 text-blue-700",
-                  break_start: "bg-amber-100 text-amber-700",
-                  break_end: "bg-purple-100 text-purple-700",
+                  in: "bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+                  out: "bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300",
+                  break_start: "bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300",
+                  break_end: "bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300",
                 };
                 return (
                   <li key={p.id} className="flex items-center justify-between py-2">

@@ -113,26 +113,49 @@
   --sidebar-ring: oklch(0.704 0.04 256.788);
 }
 
+/*
+ * Night mode. Switched on by the `dark` class on <html>, which only the signed-in
+ * app sets (see `@/lib/theme`) — the marketing pages are designed in light and
+ * stay that way.
+ *
+ * It is the same app at night rather than a different one, so the brand blue is
+ * kept instead of the stock near-white primary, lifted so it still reads on a
+ * dark card. That lift is also why buttons carry dark text here: white on a blue
+ * light enough to see against navy does not reach a readable contrast. Every
+ * token the light theme defines has a value below; one left out falls back to
+ * its light value, which is how a white sidebar ends up in a dark app.
+ */
 .dark {
-  --background: oklch(0.129 0.042 264.695);
-  --foreground: oklch(0.984 0.003 247.858);
-  --card: oklch(0.208 0.042 265.755);
-  --card-foreground: oklch(0.984 0.003 247.858);
-  --popover: oklch(0.208 0.042 265.755);
-  --popover-foreground: oklch(0.984 0.003 247.858);
-  --primary: oklch(0.929 0.013 255.508);
-  --primary-foreground: oklch(0.208 0.042 265.755);
-  --secondary: oklch(0.279 0.041 260.031);
-  --secondary-foreground: oklch(0.984 0.003 247.858);
-  --muted: oklch(0.279 0.041 260.031);
-  --muted-foreground: oklch(0.704 0.04 256.788);
-  --accent: oklch(0.279 0.041 260.031);
-  --accent-foreground: oklch(0.984 0.003 247.858);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.984 0.003 247.858);
+  color-scheme: dark;
+  --background: oklch(0.16 0.03 255);
+  --foreground: oklch(0.96 0.01 250);
+  --card: oklch(0.21 0.035 255);
+  --card-foreground: oklch(0.96 0.01 250);
+  --popover: oklch(0.23 0.035 255);
+  --popover-foreground: oklch(0.96 0.01 250);
+  --primary: oklch(0.72 0.14 255);
+  --primary-foreground: oklch(0.16 0.03 255);
+  --primary-soft: oklch(0.3 0.07 255);
+  --secondary: oklch(0.26 0.03 255);
+  --secondary-foreground: oklch(0.92 0.01 250);
+  --muted: oklch(0.26 0.03 255);
+  --muted-foreground: oklch(0.72 0.03 250);
+  --accent: oklch(0.3 0.05 255);
+  --accent-foreground: oklch(0.96 0.01 250);
+  --success: oklch(0.72 0.15 155);
+  --success-foreground: oklch(0.16 0.03 155);
+  --success-soft: oklch(0.3 0.06 155);
+  --warning: oklch(0.8 0.14 75);
+  /* Only ever text on a warning tint here, so it is the light one. */
+  --warning-foreground: oklch(0.87 0.1 80);
+  --destructive: oklch(0.7 0.19 25);
+  --destructive-foreground: oklch(0.98 0 0);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.551 0.027 264.364);
+  --ring: oklch(0.72 0.14 255);
+  --sidebar-bg: oklch(0.19 0.035 255);
+  --shadow-card: 0 1px 2px oklch(0 0 0 / 0.4), 0 1px 3px oklch(0 0 0 / 0.3);
+  --shadow-elev: 0 8px 24px oklch(0 0 0 / 0.5);
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
