@@ -500,7 +500,11 @@ function CompanyDashboard({ role }: { role: AppRole }) {
 
   if (!companyId || !company) return <NoRoleState />;
 
-  const members = membersQ.data ?? [];
+  // The grid's rows, with the company's "keep the office off the rosters" rule
+  // applied. An admin is either somebody you put on a schedule or they are not,
+  // and that cannot depend on who is looking at it. Their own row stays —
+  // nobody is hidden from themselves.
+  const members = staff.visible(membersQ.data ?? [], (m) => m.id);
   const teams = teamsQ.data ?? [];
   const shifts = shiftsQ.data ?? [];
 

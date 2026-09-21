@@ -255,7 +255,10 @@ function DashboardPage() {
       /** The shift they are due on today, if any. */
       due: { starts_at: string; ends_at: string; published: boolean; more: number } | null;
     };
-    const members = membersQ.data ?? [];
+    // "Keep the office off the rosters" applies here too, not only to what an
+    // employee is shown: a company that has decided its admins are not part of
+    // the roster should not find them on it. Nobody is hidden from themselves.
+    const members = staff.visible(membersQ.data ?? [], (m) => m.id);
     const list: Row[] = members.map((m) => {
       const punches = byUser.get(m.id) ?? [];
       // Hours follow the rounding rule so this roster and the timecard agree.
@@ -373,7 +376,7 @@ function DashboardPage() {
     const order: Record<Status, number> = { working: 0, on_break: 1, clocked_out: 2, no_show: 3 };
     list.sort((a, b) => order[a.status] - order[b.status] || a.name.localeCompare(b.name));
     return list;
-  }, [membersQ.data, punchesQ.data, dismissalsQ.data, dueToday, rules, now]);
+  }, [membersQ.data, punchesQ.data, dismissalsQ.data, dueToday, rules, staff, now]);
 
 
   const overdueCount = rows.filter((r) => r.alerts.length > 0).length;

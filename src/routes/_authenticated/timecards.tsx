@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useAppRules } from "@/lib/app-rules";
+import { useStaffVisibility } from "@/lib/staff-visibility";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -116,6 +117,7 @@ function TimecardsPage() {
   const qc = useQueryClient();
   const { user, profile, company, primaryRole, loading } = useAuth();
   const rules = useAppRules();
+  const staff = useStaffVisibility();
   const isSuperAdmin = primaryRole === "super_admin";
   const isManager = primaryRole === "company_admin" || isSuperAdmin;
   const [period, setPeriod] = useState<Period>("week");
@@ -180,6 +182,18 @@ function TimecardsPage() {
     },
   });
 
+  /**
+   * The roster this screen works from, with the company's "keep the office off
+   * the rosters" rule applied. Everything below reads this rather than the
+   * query: the person picker, the roster-wide table, and which card opens by
+   * default. A name hidden from the list but still reachable from the picker is
+   * not hidden, it is just harder to find.
+   */
+  const roster = useMemo(
+    () => staff.visible(rosterQ.data ?? [], (m) => m.id),
+    [rosterQ.data, staff],
+  );
+
   // Company names for the roster and the printed header. A company admin only
   // ever sees their own; a super admin spans several.
   const companiesQ = useQuery({
@@ -204,7 +218,7 @@ function TimecardsPage() {
     : !isManager || (selectedUser === "me" && !isSuperAdmin)
       ? user?.id
       : selectedUser === "me"
-        ? rosterQ.data?.[0]?.id
+        ? roster[0]?.id
         : selectedUser;
 
   const punchesQ = useQuery<Punch[]>({
@@ -251,7 +265,7 @@ function TimecardsPage() {
       rules.punch_round_minutes,
       rules.cap_break_to_length,
     );
-    return (rosterQ.data ?? [])
+    return roster
       .map((m) => {
         const t = totals.get(m.id) ?? {
           grossMs: 0,
@@ -276,12 +290,12 @@ function TimecardsPage() {
         };
       })
       .sort((a, b) => b.workedMs - a.workedMs || a.name.localeCompare(b.name));
-  }, [viewingAll, allQ.data, rosterQ.data, rules, period]);
+  }, [viewingAll, allQ.data, roster, rules, period]);
 
   /** Every punch on screen for this person, deleted in one go. */
   /** Whose punches are being cleared — a super admin has no company of their own. */
   const wipeCompanyId =
-    company?.id ?? (rosterQ.data ?? []).find((m) => m.id === targetUserId)?.company_id ?? null;
+    company?.id ?? roster.find((m) => m.id === targetUserId)?.company_id ?? null;
 
   /** Start and end of whatever the delete dialog is pointed at. */
   const wipeRange = useMemo(() => {
@@ -576,7 +590,7 @@ function TimecardsPage() {
 
   // Whose card is on screen — the roster row when a manager has picked someone,
   // otherwise the signed-in user's own profile.
-  const viewing = (rosterQ.data ?? []).find((m) => m.id === targetUserId);
+  const viewing = roster.find((m) => m.id === targetUserId);
   const isSelf = targetUserId === user?.id;
   const employeeName =
     (isSelf ? profile?.full_name : viewing?.full_name) ||
@@ -742,7 +756,7 @@ function TimecardsPage() {
                 {!isSuperAdmin && (
                   <option value="me">Me ({profile?.full_name || user?.email})</option>
                 )}
-                {(rosterQ.data ?? [])
+                {roster
                   .filter((m) => m.id !== user?.id)
                   .map((m) => (
                     <option key={m.id} value={m.id}>
@@ -766,7 +780,7 @@ function TimecardsPage() {
           </div>
         )}
 
-        {isManager && !rosterQ.isLoading && !rosterQ.error && (rosterQ.data ?? []).length <= 1 && (
+        {isManager && !rosterQ.isLoading && !rosterQ.error && roster.length <= 1 && (
           <div className="flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
             <p>
