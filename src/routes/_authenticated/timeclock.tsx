@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useAppRules } from "@/lib/app-rules";
+import { readBreak } from "@/lib/timecard-totals";
 import { Button } from "@/components/ui/button";
 import { LeafletMap } from "@/components/leaflet-map";
 import { PaySettingsCard } from "@/components/pay-settings-card";
@@ -47,8 +48,15 @@ const PUNCH_LABEL: Record<PunchKind, string> = {
   break_end: "BREAK END",
 };
 
-/** A paid 10-minute break still counts as time worked; 30 and 60 do not. */
-const PAID_BREAK_MINUTES = 10;
+/**
+ * What one break takes off this shift. The card has to agree with the timecard
+ * to the minute, so it asks the same function payroll does — including the rule
+ * that a break is recorded as the length that was picked, however long it ran.
+ */
+function breakDeduction(elapsedMs: number, minutes: number | null, cap: boolean): number {
+  const read = readBreak(elapsedMs, minutes, cap);
+  return read.paid ? 0 : read.countedMs;
+}
 
 /** "3h 42m" — the shape used for worked time everywhere in the app. */
 function fmtWorked(ms: number): string {
@@ -84,6 +92,7 @@ type Company = {
 function TimeclockPage() {
   const { user, company, primaryRole, loading } = useAuth();
   const rules = useAppRules();
+  const capBreaks = rules.cap_break_to_length;
   const qc = useQueryClient();
   const [coords, setCoords] = useState<{ lat: number; lng: number; acc: number } | null>(null);
   const [geoErr, setGeoErr] = useState<string | null>(null);
@@ -176,17 +185,19 @@ function TimeclockPage() {
           openBreakMinutes = p.break_minutes;
         }
       } else if (p.kind === "break_end" && openBreakAt != null) {
-        if (openBreakMinutes !== PAID_BREAK_MINUTES) closedUnpaidMs += at - openBreakAt;
+        closedUnpaidMs += breakDeduction(at - openBreakAt, openBreakMinutes, capBreaks);
         openBreakAt = null;
         openBreakMinutes = null;
       }
     }
     return { startedAt, closedUnpaidMs, openBreakAt, openBreakMinutes };
-  }, [recentQ.data]);
+  }, [recentQ.data, capBreaks]);
 
+  // A break still running is capped too: once they pass the length they picked,
+  // the worked total stops falling and the overrun shows on the countdown above.
   const liveUnpaidMs =
-    shift.openBreakAt != null && shift.openBreakMinutes !== PAID_BREAK_MINUTES
-      ? Math.max(0, now - shift.openBreakAt)
+    shift.openBreakAt != null
+      ? breakDeduction(now - shift.openBreakAt, shift.openBreakMinutes, capBreaks)
       : 0;
   const workedMs =
     shift.startedAt == null

@@ -14,6 +14,13 @@ export type AppRules = {
   allow_break_10: boolean;
   allow_break_30: boolean;
   allow_break_60: boolean;
+  /**
+   * Record a break as the length the employee picked, not the clock time it
+   * actually took. A 30 that ran 37 comes off the shift as 30. A break cut
+   * short still counts as what it was, and is flagged either way — see
+   * `readBreak` in `@/lib/timecard-totals`.
+   */
+  cap_break_to_length: boolean;
   /** Flag an employee who has worked this long with no break. 0 turns it off. */
   break_reminder_hours: number;
   /** Same, for a proper meal break (a 30 or 60). 0 turns it off. */
@@ -43,6 +50,7 @@ export const DEFAULT_APP_RULES: AppRules = {
   allow_break_10: true,
   allow_break_30: true,
   allow_break_60: true,
+  cap_break_to_length: true,
   break_reminder_hours: 2,
   lunch_reminder_hours: 5,
   auto_clockout_hours: 0,

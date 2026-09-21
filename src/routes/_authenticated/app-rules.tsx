@@ -249,6 +249,23 @@ function AppRulesPage() {
                   onChange={(v) => set("allow_break_60", v)}
                 />
               </div>
+
+              <div className="rounded-lg border border-border bg-muted/30 p-3">
+                <ToggleRow
+                  label="Count breaks as the length that was picked"
+                  checked={rules.cap_break_to_length}
+                  onChange={(v) => set("cap_break_to_length", v)}
+                />
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  A 30-minute break that ran 37 comes off the shift as 30, so an overrun is yours
+                  to manage rather than theirs to pay for. Timecards still show how far over it
+                  went. Switch this off to charge the clock time as it was recorded.
+                </p>
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  Coming back early is never rounded up: a 30 taken in 22 counts as 22 and the day
+                  is flagged as an incomplete break, whichever way this is set.
+                </p>
+              </div>
               <Field label="Auto clock-out after (hours, 0 = off)">
                 <Input
                   type="number"

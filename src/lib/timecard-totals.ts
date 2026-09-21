@@ -38,6 +38,63 @@ export function roundPunches<T extends { at: string }>(punches: T[], minutes: nu
   }));
 }
 
+/** A paid 10-minute break still counts as time worked; 30 and 60 do not. */
+export const PAID_BREAK_MINUTES = 10;
+
+export interface BreakReading {
+  /** Clock time actually spent away from the floor. */
+  elapsedMs: number;
+  /** What the break is recorded as, once the company's rules are applied. */
+  countedMs: number;
+  /** How far past the picked length it ran; 0 when it stayed inside. */
+  overMs: number;
+  /** How far short they came back; 0 when they took the whole break. */
+  shortMs: number;
+  /** Back on the clock before the break was up — a break that did not happen. */
+  incomplete: boolean;
+  /** A 10 stays in the paid column; a 30 or a 60 comes off the shift. */
+  paid: boolean;
+}
+
+/**
+ * How one break reads once the company's rules are applied. Both rules are
+ * about the length the employee picked when they started it:
+ *
+ *  - **A break that runs long is recorded as the length that was picked.** A 30
+ *    that ran 37 comes off the shift as 30, not 37, so an overrun is the
+ *    company's to manage rather than the employee's to pay for. The overrun is
+ *    still reported in `overMs` — capped is not hidden.
+ *  - **A break cut short is recorded as what it was, and flagged.** A 30-minute
+ *    meal break taken in 22 minutes is a break that did not happen, so the
+ *    shorter time is what comes off the shift and `incomplete` says why the
+ *    card should be looked at.
+ *
+ * With no length on the punch — an older row, or a break opened before lengths
+ * existed — there is nothing to measure against: the clock time stands and
+ * nothing is flagged.
+ *
+ * @param cap the company's `cap_break_to_length` rule. Off, the clock time is
+ * recorded as it was and only the flag survives.
+ */
+export function readBreak(
+  elapsedMs: number,
+  pickedMinutes: number | null,
+  cap = true,
+): BreakReading {
+  const elapsed = Math.max(0, elapsedMs);
+  const allowance = pickedMinutes && pickedMinutes > 0 ? pickedMinutes * 60_000 : null;
+  const overMs = allowance == null ? 0 : Math.max(0, elapsed - allowance);
+  const shortMs = allowance == null ? 0 : Math.max(0, allowance - elapsed);
+  return {
+    elapsedMs: elapsed,
+    countedMs: cap && allowance != null ? Math.min(elapsed, allowance) : elapsed,
+    overMs,
+    shortMs,
+    incomplete: shortMs > 0,
+    paid: pickedMinutes === PAID_BREAK_MINUTES,
+  };
+}
+
 export type PunchKind = "in" | "out" | "break_start" | "break_end";
 
 export interface SimplePunch {
@@ -68,6 +125,10 @@ export interface DayDetail {
   workedMs: number;
   unpaidMs: number;
   paidMs: number;
+  /** Breaks the person came back from early — see `readBreak`. */
+  incompleteBreaks: number;
+  /** Break time run past the picked length and not charged to them. */
+  overBreakMs: number;
 }
 
 export interface PersonTotals {
@@ -80,14 +141,20 @@ export interface PersonTotals {
   dayTotals: number[];
   /** The same days, with their punch times, oldest first. */
   days: DayDetail[];
+  /** Breaks cut short across the whole period — the number a card is flagged by. */
+  incompleteBreaks: number;
+  /** Break time run past the picked length and not charged to them. */
+  overBreakMs: number;
 }
 
 /**
  * @param roundMinutes the company's punch-rounding rule; 0 counts raw times.
+ * @param capBreaks the company's `cap_break_to_length` rule — see `readBreak`.
  */
 export function totalsByPerson(
   punches: SimplePunch[],
   roundMinutes = 0,
+  capBreaks = true,
 ): Map<string, PersonTotals> {
   const byUser = new Map<string, Map<string, SimplePunch[]>>();
   for (const p of punches) {
@@ -107,6 +174,8 @@ export function totalsByPerson(
       paidMs: 0,
       dayTotals: [],
       days: [],
+      incompleteBreaks: 0,
+      overBreakMs: 0,
     };
     for (const [key, list] of days) {
       // Grouped by the day the punch actually happened, then rounded — a
@@ -124,6 +193,8 @@ export function totalsByPerson(
         workedMs: 0,
         unpaidMs: 0,
         paidMs: 0,
+        incompleteBreaks: 0,
+        overBreakMs: 0,
       };
       let dayMs = 0;
       let openIn: SimplePunch | null = null;
@@ -163,9 +234,19 @@ export function totalsByPerson(
           if (openIn && !openBreak) openBreak = p;
         } else if (p.kind === "break_end") {
           if (openBreak) {
-            const elapsed = new Date(p.at).getTime() - new Date(openBreak.at).getTime();
-            if (openBreak.break_minutes === 10) paid += elapsed;
-            else unpaid += elapsed;
+            const read = readBreak(
+              new Date(p.at).getTime() - new Date(openBreak.at).getTime(),
+              openBreak.break_minutes,
+              capBreaks,
+            );
+            if (read.paid) paid += read.countedMs;
+            else unpaid += read.countedMs;
+            if (read.incomplete) {
+              detail.incompleteBreaks += 1;
+              totals.incompleteBreaks += 1;
+            }
+            detail.overBreakMs += read.overMs;
+            totals.overBreakMs += read.overMs;
             openBreak = null;
           }
         }

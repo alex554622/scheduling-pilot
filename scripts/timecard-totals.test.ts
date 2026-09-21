@@ -1,7 +1,7 @@
 /**
  * Checks for the roster-wide timecard totals. Run with `bun run test:timecards`.
  */
-import { totalsByPerson, type SimplePunch } from "../src/lib/timecard-totals";
+import { readBreak, totalsByPerson, type SimplePunch } from "../src/lib/timecard-totals";
 
 let failures = 0;
 function eq<T>(name: string, actual: T, expected: T) {
@@ -176,6 +176,68 @@ t = totalsByPerson([punch("a", "in", 3, 20), punch("a", "out", 3, 23, 58)], 5).g
 eq("still one day", t.days.length, 1);
 eq("still the 3rd", t.days[0].date.getDate(), 3);
 eq("paid to midnight", t.workedMs / HOUR, 4);
+
+console.log("");
+console.log("a break that runs long counts as the length that was picked");
+// 8:00 to 16:00 with a 30-minute break taken as 37: the shift pays 7.5 hours,
+// not 7h23m, and the 7-minute overrun is reported rather than charged.
+t = totalsByPerson([
+  punch("a", "in", 3, 8),
+  punch("a", "break_start", 3, 12, 0, 30),
+  punch("a", "break_end", 3, 12, 37),
+  punch("a", "out", 3, 16),
+]).get("a")!;
+eq("half an hour off the shift, not 37 minutes", t.unpaidMs / MINUTE, 30);
+eq("seven and a half hours worked", t.workedMs / HOUR, 7.5);
+eq("the overrun is reported", t.overBreakMs / MINUTE, 7);
+eq("and nothing is flagged", t.incompleteBreaks, 0);
+
+console.log("");
+console.log("with the rule off, the clock time stands");
+t = totalsByPerson(
+  [
+    punch("a", "in", 3, 8),
+    punch("a", "break_start", 3, 12, 0, 30),
+    punch("a", "break_end", 3, 12, 37),
+    punch("a", "out", 3, 16),
+  ],
+  0,
+  false,
+).get("a")!;
+eq("all 37 minutes come off", t.unpaidMs / MINUTE, 37);
+eq("the overrun is still reported", t.overBreakMs / MINUTE, 7);
+
+console.log("");
+console.log("a break cut short counts as what it was, and is flagged");
+t = totalsByPerson([
+  punch("a", "in", 3, 8),
+  punch("a", "break_start", 3, 12, 0, 30),
+  punch("a", "break_end", 3, 12, 22),
+  punch("a", "out", 3, 16),
+]).get("a")!;
+eq("only the 22 minutes come off", t.unpaidMs / MINUTE, 22);
+eq("never rounded up to the full break", t.workedMs / MINUTE, 8 * 60 - 22);
+eq("the day is flagged", t.days[0].incompleteBreaks, 1);
+eq("and so is the period", t.incompleteBreaks, 1);
+
+console.log("");
+console.log("a paid ten is capped the same way, and stays paid");
+t = totalsByPerson([
+  punch("a", "in", 3, 8),
+  punch("a", "break_start", 3, 10, 0, 10),
+  punch("a", "break_end", 3, 10, 17),
+  punch("a", "out", 3, 16),
+]).get("a")!;
+eq("ten minutes in the paid column", t.paidMs / MINUTE, 10);
+eq("nothing deducted", t.unpaidMs, 0);
+eq("the full eight hours", t.workedMs / HOUR, 8);
+
+console.log("");
+console.log("a break with no length picked is left alone");
+const noLength = readBreak(37 * MINUTE, null);
+eq("counted as the clock recorded it", noLength.countedMs / MINUTE, 37);
+eq("nothing to be over", noLength.overMs, 0);
+eq("and nothing to flag", noLength.incomplete, false);
 
 console.log(
   failures === 0 ? "\nAll timecard checks passed.\n" : `\n${failures} check(s) failed.\n`,

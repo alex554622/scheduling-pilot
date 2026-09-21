@@ -34,6 +34,7 @@ import { PrintableTimecard } from "@/components/printable-timecard";
 import { TimecardDayEditor, type EditablePunch } from "@/components/timecard-day-editor";
 import { splitPeriod, overtimeNote } from "@/lib/overtime";
 import {
+  readBreak,
   roundPunches,
   roundToMinutes,
   totalsByPerson,
@@ -245,7 +246,11 @@ function TimecardsPage() {
   /** One line per person: their days, breaks, hours and overtime split. */
   const everyone = useMemo(() => {
     if (!viewingAll) return [];
-    const totals = totalsByPerson(allQ.data ?? [], rules.punch_round_minutes);
+    const totals = totalsByPerson(
+      allQ.data ?? [],
+      rules.punch_round_minutes,
+      rules.cap_break_to_length,
+    );
     return (rosterQ.data ?? [])
       .map((m) => {
         const t = totals.get(m.id) ?? {
@@ -255,6 +260,8 @@ function TimecardsPage() {
           paidMs: 0,
           dayTotals: [],
           days: [],
+          incompleteBreaks: 0,
+          overBreakMs: 0,
         };
         const split = splitPeriod(t.dayTotals, rules, period === "week");
         return {
@@ -346,7 +353,16 @@ function TimecardsPage() {
       if (!byDay.has(k)) byDay.set(k, []);
       byDay.get(k)!.push(p);
     }
-    type Pair = { in: Punch; out?: Punch; unpaidBreakMs: number; paidBreakMs: number };
+    type Pair = {
+      in: Punch;
+      out?: Punch;
+      unpaidBreakMs: number;
+      paidBreakMs: number;
+      /** Breaks they came back from early — the shift is flagged, not docked. */
+      incompleteBreaks: number;
+      /** Break time run past the picked length, which the shift was not charged. */
+      overBreakMs: number;
+    };
     const rows: {
       date: Date;
       punches: Punch[];
@@ -354,6 +370,8 @@ function TimecardsPage() {
       totalMs: number;
       unpaidBreakMs: number;
       paidBreakMs: number;
+      incompleteBreaks: number;
+      overBreakMs: number;
     }[] = [];
     let weekTotal = 0;
     let weekUnpaid = 0;
@@ -374,50 +392,73 @@ function TimecardsPage() {
       let openBreak: Punch | null = null;
       let currentUnpaid = 0;
       let currentPaid = 0;
+      let currentShort = 0;
+      let currentOver = 0;
+      let dayShort = 0;
+      let dayOver = 0;
+      const openPair = (i: Punch, o?: Punch): Pair => ({
+        in: i,
+        out: o,
+        unpaidBreakMs: currentUnpaid,
+        paidBreakMs: currentPaid,
+        incompleteBreaks: currentShort,
+        overBreakMs: currentOver,
+      });
       for (const p of counted) {
         if (p.kind === "in") {
-          if (openIn)
-            pairs.push({ in: openIn, unpaidBreakMs: currentUnpaid, paidBreakMs: currentPaid });
+          if (openIn) pairs.push(openPair(openIn));
           openIn = p;
           currentUnpaid = 0;
           currentPaid = 0;
+          currentShort = 0;
+          currentOver = 0;
           openBreak = null;
         } else if (p.kind === "out") {
           if (openIn) {
             const gross = new Date(p.at).getTime() - new Date(openIn.at).getTime();
             const net = Math.max(0, gross - currentUnpaid);
-            pairs.push({
-              in: openIn,
-              out: p,
-              unpaidBreakMs: currentUnpaid,
-              paidBreakMs: currentPaid,
-            });
+            pairs.push(openPair(openIn, p));
             totalMs += net;
             dayUnpaidMs += currentUnpaid;
             dayPaidMs += currentPaid;
+            dayShort += currentShort;
+            dayOver += currentOver;
             openIn = null;
             currentUnpaid = 0;
             currentPaid = 0;
+            currentShort = 0;
+            currentOver = 0;
             openBreak = null;
           }
         } else if (p.kind === "break_start") {
           if (openIn && !openBreak) openBreak = p;
         } else if (p.kind === "break_end") {
           if (openBreak) {
-            const elapsed = new Date(p.at).getTime() - new Date(openBreak.at).getTime();
-            const isPaid = openBreak.break_minutes === 10;
-            if (isPaid) currentPaid += elapsed;
-            else currentUnpaid += elapsed;
+            // One rule, one place: the same reading the roster-wide totals use.
+            const read = readBreak(
+              new Date(p.at).getTime() - new Date(openBreak.at).getTime(),
+              openBreak.break_minutes,
+              rules.cap_break_to_length,
+            );
+            if (read.paid) currentPaid += read.countedMs;
+            else currentUnpaid += read.countedMs;
+            if (read.incomplete) currentShort += 1;
+            currentOver += read.overMs;
             openBreak = null;
           }
         }
       }
-      if (openIn)
-        pairs.push({ in: openIn, unpaidBreakMs: currentUnpaid, paidBreakMs: currentPaid });
+      if (openIn) {
+        pairs.push(openPair(openIn));
+        dayShort += currentShort;
+        dayOver += currentOver;
+      }
       rows.push({
         date: d,
         punches: list,
         pairs,
+        incompleteBreaks: dayShort,
+        overBreakMs: dayOver,
         totalMs,
         unpaidBreakMs: dayUnpaidMs,
         paidBreakMs: dayPaidMs,
@@ -427,7 +468,7 @@ function TimecardsPage() {
       weekPaid += dayPaidMs;
     }
     return { rows, weekTotal, weekUnpaid, weekPaid };
-  }, [punchesQ.data, rangeStart, days, rules.punch_round_minutes]);
+  }, [punchesQ.data, rangeStart, days, rules.punch_round_minutes, rules.cap_break_to_length]);
 
   // Managers only: every punch in view that carries coordinates, newest first.
   const locationRows = useMemo(
@@ -989,6 +1030,20 @@ function TimecardsPage() {
                         {r.unpaidBreakMs > 0 && <>unpaid {fmtHours(r.unpaidBreakMs)}</>}
                         {r.unpaidBreakMs > 0 && r.paidBreakMs > 0 && " · "}
                         {r.paidBreakMs > 0 && <>paid {fmtHours(r.paidBreakMs)}</>}
+                      </div>
+                    )}
+                    {/* Back on the clock before the break was up. The day is
+                        flagged rather than docked — what they took is what
+                        came off the shift. */}
+                    {r.incompleteBreaks > 0 && (
+                      <div className="text-[10px] font-normal text-destructive">
+                        ⚠ {r.incompleteBreaks === 1 ? "incomplete break" : `${r.incompleteBreaks} incomplete breaks`}
+                      </div>
+                    )}
+                    {/* Time they ran over and were not charged for. */}
+                    {r.overBreakMs > 0 && (
+                      <div className="text-[10px] font-normal text-muted-foreground">
+                        {fmtHours(r.overBreakMs)} over, not counted
                       </div>
                     )}
                   </div>
