@@ -19,6 +19,7 @@ import {
   MonitorSmartphone,
 } from "lucide-react";
 import { useThemePref, type ThemePref } from "@/lib/theme";
+import { playChime } from "@/lib/notify-sound";
 import { Switch } from "@/components/ui/switch";
 import {
   NOTIFICATION_TYPES,
@@ -322,7 +323,7 @@ function SettingsPage() {
  * for itself.
  */
 function NotificationSettings() {
-  const { prefs, unavailable, isSaving, setEnabled, setType, setPopup, setDesktop } =
+  const { prefs, unavailable, isSaving, setEnabled, setType, setPopup, setSound, setDesktop } =
     useNotificationPrefs();
   const [permission, setPermission] = useState<string>("default");
   // Safari only offers notifications to an app that has been added to the Home
@@ -413,6 +414,32 @@ function NotificationSettings() {
               onCheckedChange={setPopup}
               aria-label="Pop notifications up in the app"
             />
+          </div>
+
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-foreground">Play a sound</p>
+              <p className="text-xs text-muted-foreground">
+                A short chime when something pops up — a new message, an announcement, your
+                schedule, or your break running out.
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              {/* Hearing it is the only way to know what "a chime" means. */}
+              <button
+                type="button"
+                onClick={() => playChime()}
+                className="text-xs font-medium text-primary hover:underline"
+              >
+                Test
+              </button>
+              <Switch
+                checked={prefs.sound}
+                disabled={unavailable || isSaving}
+                onCheckedChange={setSound}
+                aria-label="Play a sound"
+              />
+            </div>
           </div>
 
           <div className="flex items-start justify-between gap-4">

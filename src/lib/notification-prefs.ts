@@ -37,6 +37,14 @@ export const NOTIFICATION_TYPES = [
     label: "Announcements",
     detail: "When an admin posts an announcement on Messages.",
   },
+  {
+    // Client-side only: a board message never writes a notification row —
+    // one per post per person would bury the bell — so this switch is read in
+    // the browser rather than by `wants_notification()`.
+    key: "board_message",
+    label: "New messages",
+    detail: "A pop-up when someone posts on Messages.",
+  },
 ] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number]["key"];
@@ -52,6 +60,8 @@ export interface NotificationPrefs {
    * that did not happen, which is the complaint this whole feature started on.
    */
   popup: boolean;
+  /** A chime when something pops up. On by default, and one switch to silence. */
+  sound: boolean;
   /** Also show them as system pop-ups, on devices that have granted it. */
   desktop: boolean;
 }
@@ -60,6 +70,7 @@ export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
   enabled: true,
   types: {},
   popup: true,
+  sound: true,
   desktop: false,
 };
 
@@ -72,6 +83,7 @@ function parse(raw: unknown): NotificationPrefs {
     types,
     // Absent means on, the same way an absent type does.
     popup: o.popup !== false,
+    sound: o.sound !== false,
     desktop: o.desktop === true,
   };
 }
@@ -90,6 +102,7 @@ export interface NotificationPrefsHandle {
   setEnabled: (on: boolean) => void;
   setType: (type: NotificationType | string, on: boolean) => void;
   setPopup: (on: boolean) => void;
+  setSound: (on: boolean) => void;
   setDesktop: (on: boolean) => void;
 }
 
@@ -156,6 +169,7 @@ export function useNotificationPrefs(): NotificationPrefsHandle {
     setEnabled: (on) => save.mutate({ ...prefs, enabled: on }),
     setType: (type, on) => save.mutate({ ...prefs, types: { ...prefs.types, [type]: on } }),
     setPopup: (on) => save.mutate({ ...prefs, popup: on }),
+    setSound: (on) => save.mutate({ ...prefs, sound: on }),
     setDesktop: (on) => save.mutate({ ...prefs, desktop: on }),
   };
 }

@@ -39,6 +39,8 @@ import { Toaster } from "@/components/ui/sonner";
 import { useBreakReminder } from "@/lib/break-reminder";
 import { ensureServiceWorker } from "@/lib/notification-prefs";
 import { useThemeController } from "@/lib/theme";
+import { useMessageAlerts } from "@/lib/message-alerts";
+import { unlockSound } from "@/lib/notify-sound";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { BrandLogo, BrandMark } from "@/components/brand";
 import { JoinCompanyGate } from "@/components/join-company-gate";
@@ -229,6 +231,11 @@ function AuthLayout() {
   useBreakReminder();
   // Night mode, while inside the app. Taken off again on the way out.
   useThemeController();
+  // A pop-up and a chime when someone posts on Messages, on any page.
+  useMessageAlerts();
+  // Browsers only play sound after someone has touched the page; the first
+  // click or key press anywhere in the app is what lets the chime be heard.
+  useEffect(() => unlockSound(), []);
 
   // The worker that shows the notifications. Registered on the way in rather
   // than at the moment one is due, because an installed app has no other way

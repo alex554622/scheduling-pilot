@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { showAppNotification, useNotificationPrefs } from "@/lib/notification-prefs";
+import { playChime } from "@/lib/notify-sound";
 
 /**
  * "Two minutes left on your break."
@@ -87,6 +88,7 @@ export function useBreakReminder(): void {
   const punchId = onBreak ? last!.id : null;
   const muted = !wants("break_ending");
   const desktop = prefs.desktop;
+  const sound = prefs.sound;
 
   useEffect(() => {
     if (!punchId || startedAt == null || minutes == null || muted) return;
@@ -106,9 +108,10 @@ export function useBreakReminder(): void {
       const title = "Break almost over";
       const body = `Two minutes left on your ${minutes}-minute break.`;
       toast.warning(title, { description: body, duration: 30_000 });
+      if (sound) playChime();
       if (desktop) void showAppNotification(title, body, `break-${punchId}`, "/timeclock");
     }, wait);
 
     return () => clearTimeout(id);
-  }, [punchId, startedAt, minutes, muted, desktop]);
+  }, [punchId, startedAt, minutes, muted, desktop, sound]);
 }
