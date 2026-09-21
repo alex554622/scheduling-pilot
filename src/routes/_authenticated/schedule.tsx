@@ -117,6 +117,9 @@ type TeamGroup = { id: string; name: string; members: MemberRow[] };
 
 const NO_TEAM = "__none__";
 
+/** How far ahead an employee's "everything published" list reaches. */
+const POSTED_WEEKS_AHEAD = 12;
+
 /**
  * Employees divided under their team, teams in the order the company set,
  * everyone without one last. A team nobody is on is left out rather than
@@ -460,13 +463,24 @@ function CompanyDashboard({ role }: { role: AppRole }) {
     },
   });
 
-  // The posted roster: every *published* shift of the week, whoever works it.
-  // Employees get this beside their own week so a schedule the company put up
-  // reads the way it does on the wall. Drafts never leave the builder, so the
-  // database is asked for published rows rather than a week being filtered
-  // down in the browser.
-  const rosterQ = useQuery({
-    queryKey: ["published-shifts", companyId, rangeStart.toISOString(), rangeEnd.toISOString()],
+  /**
+   * The posted roster: every published shift the company has put up, from the
+   * start of this week onwards.
+   *
+   * Deliberately not tied to the week the arrows are on. A schedule is
+   * published ahead of time, so the week an employee opens the page to is
+   * usually the one week that has nothing new in it — and a page that shows
+   * only that week reads as "nothing was published", whatever the notification
+   * said. Everything published is on the page; the weeks are sections in it.
+   *
+   * Drafts never leave the builder, so the database is asked for published rows
+   * rather than a week being filtered down in the browser.
+   */
+  const postedFrom = useMemo(() => startOfWeek(new Date()), []);
+  const postedTo = useMemo(() => addDays(postedFrom, POSTED_WEEKS_AHEAD * 7), [postedFrom]);
+
+  const postedQ = useQuery({
+    queryKey: ["published-shifts", companyId, postedFrom.toISOString()],
     enabled: !!companyId && !isBuilder,
     queryFn: async () => {
       const { data, error } = await supabase
@@ -474,8 +488,8 @@ function CompanyDashboard({ role }: { role: AppRole }) {
         .select("*")
         .eq("company_id", companyId!)
         .eq("published", true)
-        .gte("starts_at", rangeStart.toISOString())
-        .lt("starts_at", rangeEnd.toISOString())
+        .gte("starts_at", postedFrom.toISOString())
+        .lt("starts_at", postedTo.toISOString())
         .order("starts_at");
       if (error) throw error;
       return data as ShiftRow[];
@@ -517,17 +531,17 @@ function CompanyDashboard({ role }: { role: AppRole }) {
     // An open shift has no employee_id, so it is nobody's to hide. Until the
     // admin list lands nothing is hidden yet, so hold the roster back rather
     // than flash a name the rule is about to take away.
-    const roster = staff.isLoading
+    const posted = staff.isLoading
       ? []
-      : staff.visible(rosterQ.data ?? [], (s) => s.employee_id ?? "");
+      : staff.visible(postedQ.data ?? [], (s) => s.employee_id ?? "");
     return (
       <EmployeeView
         days={days}
         shifts={shifts}
-        roster={roster}
+        posted={posted}
         nameOf={(id) => (id ? (names.get(id) ?? "Unknown") : "Open shift")}
         selfId={user!.id}
-        isLoading={shiftsQ.isLoading || rosterQ.isLoading || staff.isLoading}
+        isLoading={shiftsQ.isLoading || postedQ.isLoading || staff.isLoading}
         isThisWeek={startOfWeek(anchor).getTime() === startOfWeek(new Date()).getTime()}
         onWeek={(dir) => setAnchor((a) => (dir === 0 ? new Date() : addDays(a, dir * 7)))}
       />
@@ -570,7 +584,7 @@ function CompanyDashboard({ role }: { role: AppRole }) {
 function EmployeeView({
   days,
   shifts,
-  roster,
+  posted,
   nameOf,
   selfId,
   isLoading,
@@ -579,8 +593,11 @@ function EmployeeView({
 }: {
   days: Date[];
   shifts: ShiftRow[];
-  /** Every published shift of the week, everyone's, already filtered for privacy. */
-  roster: ShiftRow[];
+  /**
+   * Every published shift the company has put up from this week on, everyone's,
+   * already filtered for privacy. Not just the week the arrows are on.
+   */
+  posted: ShiftRow[];
   nameOf: (id: string | null) => string;
   selfId: string;
   isLoading: boolean;
@@ -592,13 +609,37 @@ function EmployeeView({
     (s, sh) => s + (new Date(sh.ends_at).getTime() - new Date(sh.starts_at).getTime()) / 60000,
     0,
   );
-  // The roster reads like the sheet on the wall: a day, then who works it.
-  const rosterDays = days
-    .map((d) => ({
-      day: d,
-      rows: roster.filter((s) => new Date(s.starts_at).toDateString() === d.toDateString()),
-    }))
-    .filter((d) => d.rows.length > 0);
+  /**
+   * The posted schedule, as weeks of days. Reads like the sheet on the wall,
+   * except the wall holds every week that has been put up rather than the one
+   * the arrows happen to be on.
+   */
+  const postedWeeks = useMemo(() => {
+    const byWeek = new Map<number, Map<string, ShiftRow[]>>();
+    for (const s of posted) {
+      const start = new Date(s.starts_at);
+      const weekKey = startOfWeek(start).getTime();
+      const dayKey = start.toDateString();
+      let week = byWeek.get(weekKey);
+      if (!week) byWeek.set(weekKey, (week = new Map()));
+      const day = week.get(dayKey);
+      if (day) day.push(s);
+      else week.set(dayKey, [s]);
+    }
+    return [...byWeek.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([weekStart, week]) => ({
+        weekStart: new Date(weekStart),
+        days: [...week.entries()]
+          .map(([key, rows]) => ({ day: new Date(key), rows }))
+          .sort((a, b) => a.day.getTime() - b.day.getTime()),
+      }));
+  }, [posted]);
+
+  const thisWeekStart = startOfWeek(new Date()).getTime();
+  // Every week is open. Somebody checking when they work next should not have
+  // to guess which heading is hiding it.
+  const [collapsedWeeks, setCollapsedWeeks] = useState<Set<number>>(new Set());
   return (
     <div className="space-y-6">
       <div>
@@ -665,49 +706,100 @@ function EmployeeView({
         )}
       </SectionCard>
 
-      {/* The published week for the whole team — the sheet on the wall. Only
-          published shifts reach here, so a week still being drafted upstairs
-          shows nothing. */}
-      <SectionCard title="Published schedule">
-        {rosterDays.length === 0 ? (
+      {/* Everything the company has put up, week by week — the sheet on the
+          wall, with every week that is on it. Only published shifts reach
+          here, so a week still being drafted upstairs shows nothing. */}
+      <SectionCard
+        title={`Published schedule${postedWeeks.length > 1 ? ` · ${postedWeeks.length} weeks` : ""}`}
+      >
+        {postedWeeks.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
-            {isLoading ? "Loading the schedule…" : "Nothing published for this week yet."}
+            {isLoading
+              ? "Loading the schedule…"
+              : "Nothing has been published yet. It appears here as soon as it is."}
           </p>
         ) : (
           <div className="divide-y divide-border">
-            {rosterDays.map(({ day, rows }) => (
-              <div key={day.toDateString()} className="py-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {fmtDayLabel(day)}
-                </p>
-                <ul className="mt-2 space-y-1.5">
-                  {rows.map((s) => {
-                    const start = new Date(s.starts_at);
-                    const end = new Date(s.ends_at);
-                    const mine = s.employee_id === selfId;
-                    return (
-                      <li
-                        key={s.id}
-                        className={`flex flex-wrap items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 ${mine ? "bg-primary-soft" : "bg-secondary/50"}`}
-                      >
-                        <span
-                          className={`text-sm ${mine ? "font-semibold text-primary" : "text-foreground"}`}
-                        >
-                          {nameOf(s.employee_id)}
-                          {mine && " (you)"}
-                        </span>
-                        <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                          {s.position && <span>{s.position}</span>}
-                          <span className="font-medium text-foreground">
-                            {fmtTime(start)} – {fmtTime(end)}
-                          </span>
-                        </span>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            ))}
+            {postedWeeks.map(({ weekStart, days: weekDays }) => {
+              const key = weekStart.getTime();
+              const open = !collapsedWeeks.has(key);
+              const current = key === thisWeekStart;
+              const shiftCount = weekDays.reduce((n, d) => n + d.rows.length, 0);
+              const mineCount = weekDays.reduce(
+                (n, d) => n + d.rows.filter((s) => s.employee_id === selfId).length,
+                0,
+              );
+              return (
+                <div key={key}>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setCollapsedWeeks((s) => {
+                        const next = new Set(s);
+                        if (next.has(key)) next.delete(key);
+                        else next.add(key);
+                        return next;
+                      })
+                    }
+                    className="flex w-full flex-wrap items-center gap-2 py-3 text-left"
+                  >
+                    <span className="text-sm font-semibold text-foreground">
+                      {current ? "This week" : "Week of"} {fmtDayLabel(weekStart)}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {shiftCount} shift{shiftCount === 1 ? "" : "s"}
+                    </span>
+                    {/* What they came to find out, without opening the week. */}
+                    {mineCount > 0 && (
+                      <span className="rounded-full bg-primary-soft px-2 py-0.5 text-[11px] font-medium text-primary">
+                        {mineCount} yours
+                      </span>
+                    )}
+                    <span className="ml-auto text-xs text-muted-foreground">
+                      {open ? "Hide" : "Show"}
+                    </span>
+                  </button>
+
+                  {open && (
+                    <div className="divide-y divide-border pb-2">
+                      {weekDays.map(({ day, rows }) => (
+                        <div key={day.toDateString()} className="py-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            {fmtDayLabel(day)}
+                          </p>
+                          <ul className="mt-2 space-y-1.5">
+                            {rows.map((s) => {
+                              const start = new Date(s.starts_at);
+                              const end = new Date(s.ends_at);
+                              const mine = s.employee_id === selfId;
+                              return (
+                                <li
+                                  key={s.id}
+                                  className={`flex flex-wrap items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 ${mine ? "bg-primary-soft" : "bg-secondary/50"}`}
+                                >
+                                  <span
+                                    className={`text-sm ${mine ? "font-semibold text-primary" : "text-foreground"}`}
+                                  >
+                                    {nameOf(s.employee_id)}
+                                    {mine && " (you)"}
+                                  </span>
+                                  <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                                    {s.position && <span>{s.position}</span>}
+                                    <span className="font-medium text-foreground">
+                                      {fmtTime(start)} – {fmtTime(end)}
+                                    </span>
+                                  </span>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </SectionCard>
