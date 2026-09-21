@@ -1133,36 +1133,42 @@ function ScheduleBuilder(props: BuilderProps) {
         )}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-3 shadow-[var(--shadow-card)]">
-        <LayoutSwitch layout={layout} onChange={onLayout} disabled={layoutSaving} />
-        {/* Day, week or month is a question for the builder; the weekly grid
+      {/* Two rows: where you are in the calendar, then what you can do to it.
+          Both wrap. As one row the actions could not, so on anything narrower
+          than a wide monitor they ran off the edge of the card and Publish —
+          the one that matters — was the first to go. */}
+      <div className="space-y-3 rounded-xl border border-border bg-card p-3 shadow-[var(--shadow-card)]">
+        <div className="flex flex-wrap items-center gap-2">
+          <LayoutSwitch layout={layout} onChange={onLayout} disabled={layoutSaving} />
+          {/* Day, week or month is a question for the builder; the weekly grid
             is one week by definition. */}
-        {layout !== "grid" && (
-          <div className="inline-flex rounded-lg bg-secondary p-1">
-            {(["day", "week", "twoweek", "month"] as ScheduleView[]).map((v) => (
-              <button
-                key={v}
-                type="button"
-                onClick={() => setView(v)}
-                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${view === v ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
-              >
-                {VIEW_LABEL[v]}
-              </button>
-            ))}
-          </div>
-        )}
-        <div className="hidden h-6 w-px bg-border sm:block" />
-        <Button variant="outline" size="sm" onClick={() => setAnchor(new Date())}>
-          Today
-        </Button>
-        <Button variant="ghost" size="sm" onClick={() => nav(-1)}>
-          ← Prev
-        </Button>
-        <Button variant="ghost" size="sm" onClick={() => nav(1)}>
-          Next →
-        </Button>
-        <span className="ml-1 text-sm text-muted-foreground">{rangeLabel}</span>
-        <div className="ml-auto flex items-center gap-2">
+          {layout !== "grid" && (
+            <div className="inline-flex rounded-lg bg-secondary p-1">
+              {(["day", "week", "twoweek", "month"] as ScheduleView[]).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setView(v)}
+                  className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${view === v ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  {VIEW_LABEL[v]}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="hidden h-6 w-px bg-border sm:block" />
+          <Button variant="outline" size="sm" onClick={() => setAnchor(new Date())}>
+            Today
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => nav(-1)}>
+            ← Prev
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => nav(1)}>
+            Next →
+          </Button>
+          <span className="ml-1 text-sm text-muted-foreground">{rangeLabel}</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
           {teams.length > 0 && (
             <Button
               variant={groupByTeamOn ? "default" : "outline"}
@@ -1257,6 +1263,7 @@ function ScheduleBuilder(props: BuilderProps) {
           </DropdownMenu>
           {canEdit && (
             <Button
+              className="ml-auto"
               onClick={() => publishMutation.mutate()}
               disabled={draftCount === 0 || publishMutation.isPending}
             >

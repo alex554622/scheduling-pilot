@@ -135,14 +135,17 @@ function AuditLogPage() {
                     <span className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold uppercase ${OP_TONE[op] ?? "bg-secondary text-muted-foreground"}`}>
                       {op || "?"}
                     </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm text-foreground">
+                    {/* On a phone the timestamp goes under the entry rather than
+                        beside it: side by side it took the room the name needed,
+                        and "who did this" is the point of an audit log. */}
+                    <span className="min-w-0 flex-1 sm:flex sm:items-center sm:gap-3">
+                      <span className="block truncate text-sm text-foreground sm:flex-1">
                         {ENTITY_LABEL[r.entity_type] ?? r.entity_type}
                         <span className="text-muted-foreground"> · {r.actor_id ? (actors[r.actor_id] ?? "Unknown user") : "System"}</span>
                       </span>
-                    </span>
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {new Date(r.created_at).toLocaleString()}
+                      <span className="block text-xs text-muted-foreground sm:shrink-0">
+                        {new Date(r.created_at).toLocaleString()}
+                      </span>
                     </span>
                   </button>
                   {open && (

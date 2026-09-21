@@ -505,7 +505,17 @@ function AuthLayout() {
                 {company?.name ?? "Platform"}
               </p>
               <h1 className="truncate text-base font-semibold text-foreground">
-                {primaryRole ? `${ROLE_LABEL[primaryRole]} workspace` : "Workspace"}
+                {/* "workspace" is the word that goes on a phone, so the role
+                    itself — the part that tells you which screen you're on —
+                    is never the part that gets cut off. */}
+                {primaryRole ? (
+                  <>
+                    {ROLE_LABEL[primaryRole]}
+                    <span className="hidden sm:inline"> workspace</span>
+                  </>
+                ) : (
+                  "Workspace"
+                )}
               </h1>
             </div>
           </div>
