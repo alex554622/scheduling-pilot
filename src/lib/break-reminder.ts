@@ -5,7 +5,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { showAppNotification, useNotificationPrefs } from "@/lib/notification-prefs";
 import { hasPushSubscription } from "@/lib/push-subscription";
-import { playNotificationSound } from "@/lib/notify-sound";
+import { playBreakAlert, playChime } from "@/lib/notify-sound";
+import { useBreakAlertSound } from "@/lib/break-alert-sound";
 
 /**
  * "Two minutes left on your break."
@@ -49,6 +50,9 @@ export function useBreakReminder(): void {
   const { user } = useAuth();
   const qc = useQueryClient();
   const { wants, prefs } = useNotificationPrefs();
+  // Whether this company is approved for the recorded alert on this one
+  // notification. Everything else in the app chimes either way.
+  const alertSound = useBreakAlertSound();
   // Whichever break has already been announced, so a re-render or a refetch
   // cannot say it twice.
   const announced = useRef<string | null>(null);
@@ -100,7 +104,6 @@ export function useBreakReminder(): void {
   const muted = !wants("break_ending");
   const desktop = prefs.desktop;
   const sound = prefs.sound;
-  const soundName = prefs.soundName;
 
   useEffect(() => {
     if (!punchId || startedAt == null || minutes == null || muted) return;
@@ -135,7 +138,9 @@ export function useBreakReminder(): void {
           : `Under ${mins} minute${mins === 1 ? "" : "s"} left on your ${minutes}-minute break.`;
 
       toast.warning(title, { description: body, duration: 30_000 });
-      if (sound) playNotificationSound(soundName);
+      // The one notification that gets the recorded alert, and only where
+      // this company has been approved for it.
+      if (sound) (alertSound ? playBreakAlert : playChime)();
       // Only where nothing else is going to say it. A device registered for
       // push has already been told by the server, on time, from a queue that
       // no amount of screen-locking can throttle — and because both use the
@@ -150,5 +155,5 @@ export function useBreakReminder(): void {
     }, wait);
 
     return () => clearTimeout(id);
-  }, [punchId, startedAt, minutes, muted, desktop, sound, soundName]);
+  }, [punchId, startedAt, minutes, muted, desktop, sound, alertSound]);
 }

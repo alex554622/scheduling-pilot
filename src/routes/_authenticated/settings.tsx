@@ -14,14 +14,14 @@ import {
   Building2,
   Copy,
   Bell,
-  Play,
   Moon,
   Sun,
   MonitorSmartphone,
 } from "lucide-react";
 import { useThemePref, type ThemePref } from "@/lib/theme";
 import { SCHEDULE_LAYOUTS, useScheduleLayout } from "@/lib/schedule-layout";
-import { NOTIFICATION_SOUNDS, playNotificationSound } from "@/lib/notify-sound";
+import { playBreakAlert, playChime } from "@/lib/notify-sound";
+import { useBreakAlertSound } from "@/lib/break-alert-sound";
 import { Switch } from "@/components/ui/switch";
 import {
   NOTIFICATION_TYPES,
@@ -332,17 +332,9 @@ function SettingsPage() {
  */
 function NotificationSettings() {
   const { user } = useAuth();
-  const {
-    prefs,
-    unavailable,
-    isSaving,
-    setEnabled,
-    setType,
-    setPopup,
-    setSound,
-    setSoundName,
-    setDesktop,
-  } = useNotificationPrefs();
+  const breakAlert = useBreakAlertSound();
+  const { prefs, unavailable, isSaving, setEnabled, setType, setPopup, setSound, setDesktop } =
+    useNotificationPrefs();
   const [permission, setPermission] = useState<string>("default");
   // Whether this device is on the list the server delivers to. Separate from
   // the permission above: permission lets an open page draw a notification,
@@ -467,64 +459,42 @@ function NotificationSettings() {
             <div className="min-w-0">
               <p className="text-sm font-medium text-foreground">Play a sound</p>
               <p className="text-xs text-muted-foreground">
-                When something pops up — a new message, an announcement, your schedule, or your
-                break running out.
+                A short chime when something pops up — a new message, an announcement, your
+                schedule, or your break running out.
               </p>
-            </div>
-            <Switch
-              checked={prefs.sound}
-              disabled={unavailable || isSaving}
-              onCheckedChange={setSound}
-              aria-label="Play a sound"
-            />
-          </div>
-
-          {/* Which one. Hearing it is the only way to choose, so each plays on
-              the spot; picking one also switches sound back on, because
-              choosing a sound and hearing nothing is not an outcome anybody
-              wanted. */}
-          <div className={`space-y-2 ${prefs.sound ? "" : "opacity-50"}`}>
-            {NOTIFICATION_SOUNDS.map((s) => (
-              <div
-                key={s.key}
-                className={`flex items-center justify-between gap-3 rounded-lg border p-3 ${
-                  prefs.soundName === s.key ? "border-primary bg-primary-soft/30" : "border-border"
-                }`}
-              >
-                <button
-                  type="button"
-                  disabled={unavailable || isSaving}
-                  onClick={() => setSoundName(s.key)}
-                  className="flex min-w-0 flex-1 items-center gap-3 text-left disabled:cursor-not-allowed"
-                  aria-pressed={prefs.soundName === s.key}
-                >
-                  <span
-                    className={`grid h-4 w-4 shrink-0 place-items-center rounded-full border ${
-                      prefs.soundName === s.key ? "border-primary" : "border-muted-foreground"
-                    }`}
+              {/* The alert is not a preference, so it is explained rather than
+                  offered. Somebody who hears it once and does not know why it
+                  differs from everything else will think it is a fault. */}
+              {breakAlert && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Your break reminder is the exception: it plays a louder alert, so it carries when
+                  your phone is in a pocket.{" "}
+                  <button
+                    type="button"
+                    onClick={() => playBreakAlert(true)}
+                    className="font-medium text-primary hover:underline"
                   >
-                    {prefs.soundName === s.key && (
-                      <span className="h-2 w-2 rounded-full bg-primary" />
-                    )}
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-sm font-medium text-foreground">{s.label}</span>
-                    <span className="block text-xs text-muted-foreground">{s.detail}</span>
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => playNotificationSound(s.key, true)}
-                  className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-primary hover:underline"
-                >
-                  <Play className="h-3 w-3" /> Play
-                </button>
-              </div>
-            ))}
-            <p className="text-xs text-muted-foreground">
-              This is the sound the app itself makes. A notification that arrives while the app is
-              closed is drawn by your phone, and uses your phone's own notification sound.
-            </p>
+                    Hear it
+                  </button>
+                </p>
+              )}
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              {/* Hearing it is the only way to know what "a chime" means. */}
+              <button
+                type="button"
+                onClick={() => playChime(true)}
+                className="text-xs font-medium text-primary hover:underline"
+              >
+                Test
+              </button>
+              <Switch
+                checked={prefs.sound}
+                disabled={unavailable || isSaving}
+                onCheckedChange={setSound}
+                aria-label="Play a sound"
+              />
+            </div>
           </div>
 
           <div className="flex items-start justify-between gap-4">

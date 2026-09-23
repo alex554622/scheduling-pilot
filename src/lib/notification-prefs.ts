@@ -2,11 +2,6 @@ import { useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
-import {
-  DEFAULT_NOTIFICATION_SOUND,
-  isNotificationSound,
-  type NotificationSound,
-} from "@/lib/notify-sound";
 
 /**
  * What each person wants to be told about, and how.
@@ -68,13 +63,6 @@ export interface NotificationPrefs {
   /** A sound when something pops up. On by default, and one switch to silence. */
   sound: boolean;
   /**
-   * Which sound. Kept on the account rather than the device, so somebody who
-   * has learned to recognise one hears it on their phone as well as at their
-   * desk. Anything unsaid — or saved by a build that predates the choice — is
-   * the default, the same way an absent type is on.
-   */
-  soundName: NotificationSound;
-  /**
    * Also show them as system pop-ups, on devices that have granted it — and,
    * on a device that could be registered for push, when the app is shut. See
    * `@/lib/push-subscription`.
@@ -87,7 +75,6 @@ export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
   types: {},
   popup: true,
   sound: true,
-  soundName: DEFAULT_NOTIFICATION_SOUND,
   desktop: false,
 };
 
@@ -101,7 +88,6 @@ function parse(raw: unknown): NotificationPrefs {
     // Absent means on, the same way an absent type does.
     popup: o.popup !== false,
     sound: o.sound !== false,
-    soundName: isNotificationSound(o.soundName) ? o.soundName : DEFAULT_NOTIFICATION_SOUND,
     desktop: o.desktop === true,
   };
 }
@@ -121,7 +107,6 @@ export interface NotificationPrefsHandle {
   setType: (type: NotificationType | string, on: boolean) => void;
   setPopup: (on: boolean) => void;
   setSound: (on: boolean) => void;
-  setSoundName: (sound: NotificationSound) => void;
   setDesktop: (on: boolean) => void;
 }
 
@@ -189,7 +174,6 @@ export function useNotificationPrefs(): NotificationPrefsHandle {
     setType: (type, on) => save.mutate({ ...prefs, types: { ...prefs.types, [type]: on } }),
     setPopup: (on) => save.mutate({ ...prefs, popup: on }),
     setSound: (on) => save.mutate({ ...prefs, sound: on }),
-    setSoundName: (sound) => save.mutate({ ...prefs, sound: true, soundName: sound }),
     setDesktop: (on) => save.mutate({ ...prefs, desktop: on }),
   };
 }

@@ -6,7 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
 import { showAppNotification, useNotificationPrefs } from "@/lib/notification-prefs";
-import { playNotificationSound } from "@/lib/notify-sound";
+import { playChime } from "@/lib/notify-sound";
 
 interface Notification {
   id: string;
@@ -31,14 +31,12 @@ export function NotificationsBell() {
     wants,
     popup: prefs.popup,
     sound: prefs.sound,
-    soundName: prefs.soundName,
     desktop: prefs.desktop,
   });
   prefsRef.current = {
     wants,
     popup: prefs.popup,
     sound: prefs.sound,
-    soundName: prefs.soundName,
     desktop: prefs.desktop,
   };
   // What the pop-up's button does. Held in a ref for the same reason the
@@ -75,9 +73,9 @@ export function NotificationsBell() {
           void qc.invalidateQueries({ queryKey: ["notifications", user.id] });
           if (payload.eventType !== "INSERT") return;
           const row = payload.new as Notification;
-          const { wants: allowed, popup, sound, soundName, desktop } = prefsRef.current;
+          const { wants: allowed, popup, sound, desktop } = prefsRef.current;
           if (!allowed(row.type)) return;
-          if (sound) playNotificationSound(soundName);
+          if (sound) playChime();
           // The pop-up carries the way to act on it. A notification that makes
           // you go and find the thing it is about is half a notification.
           if (popup) {

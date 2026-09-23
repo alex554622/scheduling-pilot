@@ -516,3 +516,22 @@ Delivery runs inside the app's own Node process (`src/lib/server/`), so there is
 no cron, queue worker or edge function to deploy alongside it. The crypto is
 hand-rolled against RFC 8291 and RFC 8292 rather than pulled from a package;
 `bun run test:push` proves it by decrypting what it encrypts.
+
+### The break alert sound
+
+Every notification makes the same quiet chime, with one exception: the
+two-minute break warning can instead play a loud recorded alert, for crews who
+cannot hear a phone in a pocket. No other notification uses it — a sound used
+for everything is a sound nobody looks up for.
+
+It is an approval, not a company setting. `companies.break_alert_sound` carries
+a trigger that refuses the change from anyone but a platform admin, because
+`company_admin_update` lets a company admin write that row and an approval the
+applicant can grant themselves is not one. Switch it on per company from
+**Companies → (a company) → Break alert sound**; the migration
+`20260922180000_break_alert_sound.sql` adds the column and approves Calexico
+Police Parking/Traffic Enf.
+
+This governs the sound the app makes while it is open. A notification drawn by
+the operating system on a closed app uses the phone's own notification sound,
+and the web platform gives no way to change that.

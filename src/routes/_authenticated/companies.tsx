@@ -7,6 +7,8 @@ import { CompanyBillingSection } from "@/components/company-billing";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { playBreakAlert } from "@/lib/notify-sound";
 import {
   Dialog,
   DialogContent,
@@ -28,6 +30,7 @@ import {
   AlertTriangle,
   KeyRound,
   Clock,
+  Volume2,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/companies")({
@@ -510,6 +513,37 @@ function CompanyDetail({
   const [nameDraft, setNameDraft] = useState(company.name);
   useEffect(() => setNameDraft(company.name), [company.id, company.name]);
 
+  // Read on its own, and tolerant of a database that has not taken the
+  // migration yet: folding it into the company select would take this whole
+  // page down rather than grey out one switch.
+  const breakAlertQ = useQuery({
+    queryKey: ["company-break-alert-sound", company.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("companies")
+        .select("break_alert_sound")
+        .eq("id", company.id)
+        .maybeSingle();
+      if (error) return { value: false, unavailable: true };
+      const row = data as { break_alert_sound?: boolean } | null;
+      return { value: row?.break_alert_sound === true, unavailable: false };
+    },
+  });
+
+  const setBreakAlert = useMutation({
+    mutationFn: async (on: boolean) => {
+      const { error } = await supabase
+        .from("companies")
+        .update({ break_alert_sound: on } as never)
+        .eq("id", company.id);
+      if (error) throw error;
+      return on;
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["company-break-alert-sound", company.id] });
+    },
+  });
+
   const updateCompany = useMutation({
     mutationFn: async (patch: Partial<Company>) => {
       const { error } = await supabase.from("companies").update(patch).eq("id", company.id);
@@ -668,6 +702,47 @@ function CompanyDetail({
                 </option>
               ))}
             </select>
+          </div>
+
+          {/* Approval, not a company setting: the column carries a trigger
+              that refuses this change from anyone but a platform admin, because
+              `company_admin_update` would otherwise let the applicant grant it
+              to themselves. */}
+          <div className="space-y-1.5 rounded-lg border border-border p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <Label className="flex items-center gap-1.5 text-xs">
+                  <Volume2 className="h-3.5 w-3.5 text-primary" />
+                  Break alert sound
+                </Label>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  This company's two-minute break reminder plays a loud recorded alert instead of
+                  the standard chime, for crews who cannot hear a phone in a pocket. No other
+                  notification uses it.
+                </p>
+              </div>
+              <Switch
+                checked={breakAlertQ.data?.value === true}
+                disabled={
+                  breakAlertQ.isLoading || breakAlertQ.data?.unavailable || setBreakAlert.isPending
+                }
+                onCheckedChange={(v) => setBreakAlert.mutate(v)}
+                aria-label="Break alert sound"
+              />
+            </div>
+            {breakAlertQ.data?.unavailable ? (
+              <p className="text-xs text-warning-foreground">
+                Not available yet — this database is still waiting on the migration that adds it.
+              </p>
+            ) : (
+              <button
+                type="button"
+                onClick={() => playBreakAlert(true)}
+                className="text-xs font-medium text-primary hover:underline"
+              >
+                Hear it
+              </button>
+            )}
           </div>
 
           <h3 className="flex items-center gap-2 pt-2 text-sm font-medium text-foreground">
