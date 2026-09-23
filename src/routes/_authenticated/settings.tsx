@@ -14,13 +14,14 @@ import {
   Building2,
   Copy,
   Bell,
+  Play,
   Moon,
   Sun,
   MonitorSmartphone,
 } from "lucide-react";
 import { useThemePref, type ThemePref } from "@/lib/theme";
 import { SCHEDULE_LAYOUTS, useScheduleLayout } from "@/lib/schedule-layout";
-import { playChime } from "@/lib/notify-sound";
+import { NOTIFICATION_SOUNDS, playNotificationSound } from "@/lib/notify-sound";
 import { Switch } from "@/components/ui/switch";
 import {
   NOTIFICATION_TYPES,
@@ -29,6 +30,12 @@ import {
   requestDesktopPermission,
   useNotificationPrefs,
 } from "@/lib/notification-prefs";
+import {
+  pushConfigured,
+  pushSupported,
+  subscribeToPush,
+  unsubscribeFromPush,
+} from "@/lib/push-subscription";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   component: SettingsPage,
@@ -324,9 +331,24 @@ function SettingsPage() {
  * for itself.
  */
 function NotificationSettings() {
-  const { prefs, unavailable, isSaving, setEnabled, setType, setPopup, setSound, setDesktop } =
-    useNotificationPrefs();
+  const { user } = useAuth();
+  const {
+    prefs,
+    unavailable,
+    isSaving,
+    setEnabled,
+    setType,
+    setPopup,
+    setSound,
+    setSoundName,
+    setDesktop,
+  } = useNotificationPrefs();
   const [permission, setPermission] = useState<string>("default");
+  // Whether this device is on the list the server delivers to. Separate from
+  // the permission above: permission lets an open page draw a notification,
+  // a subscription is what reaches a phone with the app shut.
+  const [subscribing, setSubscribing] = useState(false);
+  const [deliversClosed, setDeliversClosed] = useState(false);
   // Safari only offers notifications to an app that has been added to the Home
   // Screen, so "unsupported" on an iPhone is an instruction, not a dead end.
   const [needsInstall, setNeedsInstall] = useState(false);
@@ -334,22 +356,46 @@ function NotificationSettings() {
     const p = desktopPermission();
     setPermission(p);
     setNeedsInstall(
-      p === "unsupported" &&
+      (p === "unsupported" || !pushSupported()) &&
         !isStandalone() &&
         /iPad|iPhone|iPod/.test(window.navigator.userAgent),
     );
+    // Ask the browser itself rather than trusting the saved preference: a
+    // subscription can be retired without the account knowing, and this line
+    // is the only honest answer to "will my phone actually buzz?".
+    if (!pushSupported()) return;
+    void navigator.serviceWorker
+      .getRegistration("/")
+      .then((reg) => reg?.pushManager.getSubscription())
+      .then((sub) => setDeliversClosed(!!sub))
+      .catch(() => setDeliversClosed(false));
   }, []);
 
   async function toggleDesktop(on: boolean) {
     if (!on) {
       setDesktop(false);
+      setDeliversClosed(false);
+      // Taken off the server's list as well, or it would keep delivering to a
+      // device whose switch says it shouldn't.
+      void unsubscribeFromPush();
       return;
     }
-    const result = await requestDesktopPermission();
-    setPermission(result);
-    // A browser that refused is not a preference we can honour, so it is not
-    // one we save — the line below says why instead.
-    setDesktop(result === "granted");
+    setSubscribing(true);
+    try {
+      const result = await requestDesktopPermission();
+      setPermission(result);
+      // A browser that refused is not a preference we can honour, so it is not
+      // one we save — the line below says why instead.
+      const granted = result === "granted";
+      setDesktop(granted);
+      // Registering for push is what makes this work with the app closed. It
+      // can fail on its own — no keys on this deployment, a browser that will
+      // not subscribe — and that is worth saying rather than hiding, because
+      // the difference is invisible until a notification does not arrive.
+      setDeliversClosed(granted && user ? await subscribeToPush(user.id) : false);
+    } finally {
+      setSubscribing(false);
+    }
   }
 
   return (
@@ -421,26 +467,64 @@ function NotificationSettings() {
             <div className="min-w-0">
               <p className="text-sm font-medium text-foreground">Play a sound</p>
               <p className="text-xs text-muted-foreground">
-                A short chime when something pops up — a new message, an announcement, your
-                schedule, or your break running out.
+                When something pops up — a new message, an announcement, your schedule, or your
+                break running out.
               </p>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
-              {/* Hearing it is the only way to know what "a chime" means. */}
-              <button
-                type="button"
-                onClick={() => playChime()}
-                className="text-xs font-medium text-primary hover:underline"
+            <Switch
+              checked={prefs.sound}
+              disabled={unavailable || isSaving}
+              onCheckedChange={setSound}
+              aria-label="Play a sound"
+            />
+          </div>
+
+          {/* Which one. Hearing it is the only way to choose, so each plays on
+              the spot; picking one also switches sound back on, because
+              choosing a sound and hearing nothing is not an outcome anybody
+              wanted. */}
+          <div className={`space-y-2 ${prefs.sound ? "" : "opacity-50"}`}>
+            {NOTIFICATION_SOUNDS.map((s) => (
+              <div
+                key={s.key}
+                className={`flex items-center justify-between gap-3 rounded-lg border p-3 ${
+                  prefs.soundName === s.key ? "border-primary bg-primary-soft/30" : "border-border"
+                }`}
               >
-                Test
-              </button>
-              <Switch
-                checked={prefs.sound}
-                disabled={unavailable || isSaving}
-                onCheckedChange={setSound}
-                aria-label="Play a sound"
-              />
-            </div>
+                <button
+                  type="button"
+                  disabled={unavailable || isSaving}
+                  onClick={() => setSoundName(s.key)}
+                  className="flex min-w-0 flex-1 items-center gap-3 text-left disabled:cursor-not-allowed"
+                  aria-pressed={prefs.soundName === s.key}
+                >
+                  <span
+                    className={`grid h-4 w-4 shrink-0 place-items-center rounded-full border ${
+                      prefs.soundName === s.key ? "border-primary" : "border-muted-foreground"
+                    }`}
+                  >
+                    {prefs.soundName === s.key && (
+                      <span className="h-2 w-2 rounded-full bg-primary" />
+                    )}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium text-foreground">{s.label}</span>
+                    <span className="block text-xs text-muted-foreground">{s.detail}</span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => playNotificationSound(s.key, true)}
+                  className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-primary hover:underline"
+                >
+                  <Play className="h-3 w-3" /> Play
+                </button>
+              </div>
+            ))}
+            <p className="text-xs text-muted-foreground">
+              This is the sound the app itself makes. A notification that arrives while the app is
+              closed is drawn by your phone, and uses your phone's own notification sound.
+            </p>
           </div>
 
           <div className="flex items-start justify-between gap-4">
@@ -455,10 +539,30 @@ function NotificationSettings() {
                       ? "This browser is blocking notifications — allow them in its site settings first."
                       : "A system pop-up as well as the one in the app, on your phone's lock screen too. Each device asks once."}
               </p>
+              {/* The difference between "it pops up while I'm looking" and "it
+                  wakes my phone in my pocket" is the whole point of the
+                  feature, and is invisible until something fails to arrive. */}
+              {prefs.desktop && permission === "granted" && (
+                <p
+                  className={`mt-1 text-xs ${deliversClosed ? "text-muted-foreground" : "text-warning-foreground"}`}
+                >
+                  {deliversClosed
+                    ? "These reach you with the app closed — your break reminder will arrive whether or not it's open."
+                    : !pushConfigured()
+                      ? "This device will only be told while the app is open: delivery to closed apps isn't set up on this server yet."
+                      : "This device will only be told while the app is open — it couldn't be registered for delivery. Switching this off and on again usually fixes it."}
+                </p>
+              )}
             </div>
             <Switch
               checked={prefs.desktop && permission === "granted"}
-              disabled={unavailable || isSaving || permission === "denied" || permission === "unsupported"}
+              disabled={
+                unavailable ||
+                isSaving ||
+                subscribing ||
+                permission === "denied" ||
+                permission === "unsupported"
+              }
               onCheckedChange={(v) => void toggleDesktop(v)}
               aria-label="Show notifications on this device"
             />

@@ -484,3 +484,35 @@ cd <repository-name>
 npm i
 npm run dev
 ```
+
+## Notifications that reach a closed app
+
+Notifications are delivered by Web Push, so a break reminder arrives on a
+locked phone and a published schedule reaches someone who has not opened the
+app since Tuesday. Three things have to be in place:
+
+1. **VAPID keys.** Generate one pair, once, and keep it:
+
+   ```sh
+   bun run vapid:keys
+   ```
+
+   Put `VITE_VAPID_PUBLIC_KEY`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and
+   `VAPID_SUBJECT` in the environment. Regenerating them unsubscribes every
+   device that has already said yes.
+
+2. **`SUPABASE_SERVICE_ROLE_KEY`**, so the app server can read the delivery
+   queue. It is closed to everything else.
+
+3. **The migration** `20260922120000_web_push_notifications.sql`, which adds
+   the queue, the device list, and the triggers that fill them.
+
+Without these the app still runs and still pops notifications up while it is
+open — it simply cannot reach a device that is not. The server says which piece
+is missing in its log at start-up, and Settings › Notifications says the same
+thing to the person looking at the switch.
+
+Delivery runs inside the app's own Node process (`src/lib/server/`), so there is
+no cron, queue worker or edge function to deploy alongside it. The crypto is
+hand-rolled against RFC 8291 and RFC 8292 rather than pulled from a package;
+`bun run test:push` proves it by decrypting what it encrypts.

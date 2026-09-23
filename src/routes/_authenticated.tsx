@@ -38,6 +38,7 @@ import { NotificationsBell } from "@/components/notifications-bell";
 import { Toaster } from "@/components/ui/sonner";
 import { useBreakReminder } from "@/lib/break-reminder";
 import { ensureServiceWorker } from "@/lib/notification-prefs";
+import { usePushRegistration } from "@/lib/push-subscription";
 import { useThemeController } from "@/lib/theme";
 import { useMessageAlerts } from "@/lib/message-alerts";
 import { unlockSound } from "@/lib/notify-sound";
@@ -233,6 +234,9 @@ function AuthLayout() {
   useThemeController();
   // A pop-up and a chime when someone posts on Messages, on any page.
   useMessageAlerts();
+  // Keeps this device on the list the server delivers to, so the notifications
+  // above still arrive once the app is shut.
+  usePushRegistration();
   // Browsers only play sound after someone has touched the page; the first
   // click or key press anywhere in the app is what lets the chime be heard.
   useEffect(() => unlockSound(), []);

@@ -6,7 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
 import { showAppNotification, useNotificationPrefs } from "@/lib/notification-prefs";
-import { playChime } from "@/lib/notify-sound";
+import { playNotificationSound } from "@/lib/notify-sound";
 
 interface Notification {
   id: string;
@@ -27,8 +27,20 @@ export function NotificationsBell() {
   const rootRef = useRef<HTMLDivElement>(null);
   // Read inside the realtime handler below. Held in a ref so changing a switch
   // doesn't tear down and rebuild the subscription.
-  const prefsRef = useRef({ wants, popup: prefs.popup, sound: prefs.sound, desktop: prefs.desktop });
-  prefsRef.current = { wants, popup: prefs.popup, sound: prefs.sound, desktop: prefs.desktop };
+  const prefsRef = useRef({
+    wants,
+    popup: prefs.popup,
+    sound: prefs.sound,
+    soundName: prefs.soundName,
+    desktop: prefs.desktop,
+  });
+  prefsRef.current = {
+    wants,
+    popup: prefs.popup,
+    sound: prefs.sound,
+    soundName: prefs.soundName,
+    desktop: prefs.desktop,
+  };
   // What the pop-up's button does. Held in a ref for the same reason the
   // preferences are: it is defined further down, and the subscription below
   // must not be torn down and rebuilt on every render to see it.
@@ -63,9 +75,9 @@ export function NotificationsBell() {
           void qc.invalidateQueries({ queryKey: ["notifications", user.id] });
           if (payload.eventType !== "INSERT") return;
           const row = payload.new as Notification;
-          const { wants: allowed, popup, sound, desktop } = prefsRef.current;
+          const { wants: allowed, popup, sound, soundName, desktop } = prefsRef.current;
           if (!allowed(row.type)) return;
-          if (sound) playChime();
+          if (sound) playNotificationSound(soundName);
           // The pop-up carries the way to act on it. A notification that makes
           // you go and find the thing it is about is half a notification.
           if (popup) {

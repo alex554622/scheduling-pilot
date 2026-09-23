@@ -14,7 +14,9 @@
     "test:pattern": "bun scripts/schedule-pattern.test.ts",
     "format": "prettier --write .",
     "test:timecards": "bun scripts/timecard-totals.test.ts",
-    "test": "bun scripts/schedule-pattern.test.ts && bun scripts/timecard-totals.test.ts"
+    "test": "bun scripts/schedule-pattern.test.ts && bun scripts/timecard-totals.test.ts && bun scripts/web-push.test.ts",
+    "vapid:keys": "bun scripts/vapid-keys.ts",
+    "test:push": "bun scripts/web-push.test.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

@@ -2,6 +2,14 @@ import "./lib/error-capture";
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
+import { startPushDispatcher } from "./lib/server/push-dispatcher";
+
+// Notifications that fall due while nobody has the app open are sent from here.
+// This is the only long-lived process the deployment has, which makes it the
+// only place a reminder scheduled for eight minutes' time can be waited for.
+// A no-op unless the VAPID and service-role keys are set — see
+// lib/server/push-dispatcher.ts.
+startPushDispatcher();
 
 type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;

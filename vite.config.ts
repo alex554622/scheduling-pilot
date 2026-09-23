@@ -97,7 +97,18 @@ export default defineConfig(({ command, mode }) => {
       }),
       // Production target: a plain Node server in a Docker container on Coolify.
       // Output lands in .output/. Build-only; the plugin is a no-op on serve.
-      ...(command === "build" ? [nitro({ preset: "node-server" })] : []),
+      ...(command === "build"
+        ? [
+            nitro({
+              preset: "node-server",
+              // Runs at server start-up rather than on the first request, which
+              // is when Nitro would otherwise load the SSR entry. The push
+              // dispatcher has to be awake before anyone asks for a page — see
+              // src/lib/server/push-plugin.ts.
+              plugins: ["./src/lib/server/push-plugin.ts"],
+            }),
+          ]
+        : []),
       viteReact(),
     ],
   };

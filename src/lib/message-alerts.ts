@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { showAppNotification, useNotificationPrefs } from "@/lib/notification-prefs";
-import { playChime } from "@/lib/notify-sound";
+import { playNotificationSound } from "@/lib/notify-sound";
 
 /**
  * A pop-up and a chime when someone posts on Messages, wherever you are in the
@@ -75,7 +75,7 @@ export function useMessageAlerts(): void {
           const onBoard = here === "/messages";
           const preview = m.body.length > 120 ? `${m.body.slice(0, 120)}…` : m.body;
 
-          if (p.sound) playChime();
+          if (p.sound) playNotificationSound(p.soundName);
           if (p.popup && !onBoard) {
             toast(`${who} posted a message`, {
               description: preview,

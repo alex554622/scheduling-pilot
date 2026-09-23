@@ -4,7 +4,8 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { showAppNotification, useNotificationPrefs } from "@/lib/notification-prefs";
-import { playChime } from "@/lib/notify-sound";
+import { hasPushSubscription } from "@/lib/push-subscription";
+import { playNotificationSound } from "@/lib/notify-sound";
 
 /**
  * "Two minutes left on your break."
@@ -19,9 +20,19 @@ import { playChime } from "@/lib/notify-sound";
  * until two minutes before the end and wakes up to say so. Realtime re-arms it
  * when the person punches.
  *
- * It lives in the browser, so it only fires while the app is open somewhere.
- * A reminder that survives a closed tab needs a push subscription and a
- * service worker, which is a different piece of work.
+ * It lives in the browser, so it only fires while the app is open somewhere —
+ * and only reliably while somebody is actually looking at it, because a
+ * backgrounded tab has its timers throttled and a locked phone has them
+ * suspended. That is not a defect to work around here; it is the reason the
+ * same reminder is queued by the database the moment the break starts and sent
+ * by the server, which nothing can throttle. See the `push_for_break` trigger
+ * in 20260922120000_web_push_notifications.sql.
+ *
+ * So the two divide the work rather than race: on a device registered for push
+ * the server draws the system notification and this only puts a toast on the
+ * screen in front of you. Without that division a timer that woke up late
+ * would replace the punctual pushed notification — same `break-<punch id>` tag
+ * — and buzz the phone again with seconds left on the break.
  */
 
 /** How far ahead of the end of the break to speak up. */
@@ -89,6 +100,7 @@ export function useBreakReminder(): void {
   const muted = !wants("break_ending");
   const desktop = prefs.desktop;
   const sound = prefs.sound;
+  const soundName = prefs.soundName;
 
   useEffect(() => {
     if (!punchId || startedAt == null || minutes == null || muted) return;
@@ -105,13 +117,38 @@ export function useBreakReminder(): void {
 
     const id = setTimeout(() => {
       announced.current = punchId;
+
+      // A backgrounded tab's timers are throttled, and a locked phone's are
+      // suspended outright — this can fire minutes after it was set for, when
+      // the device wakes. So work out what is actually left rather than
+      // trusting the schedule that armed it.
+      const remaining = endsAt - Date.now();
+      // The break is already over. Whatever this was going to say is no longer
+      // true, and "two minutes left" after the fact is worse than silence.
+      if (remaining <= 0) return;
+
       const title = "Break almost over";
-      const body = `Two minutes left on your ${minutes}-minute break.`;
+      const mins = Math.ceil(remaining / 60_000);
+      const body =
+        remaining > BREAK_WARNING_MS - 30_000
+          ? `Two minutes left on your ${minutes}-minute break.`
+          : `Under ${mins} minute${mins === 1 ? "" : "s"} left on your ${minutes}-minute break.`;
+
       toast.warning(title, { description: body, duration: 30_000 });
-      if (sound) playChime();
-      if (desktop) void showAppNotification(title, body, `break-${punchId}`, "/timeclock");
+      if (sound) playNotificationSound(soundName);
+      // Only where nothing else is going to say it. A device registered for
+      // push has already been told by the server, on time, from a queue that
+      // no amount of screen-locking can throttle — and because both use the
+      // `break-<punch id>` tag, a late one here would replace the punctual one
+      // and buzz the phone again with seconds to go.
+      if (desktop) {
+        void hasPushSubscription().then((subscribed) => {
+          if (subscribed) return;
+          void showAppNotification(title, body, `break-${punchId}`, "/timeclock");
+        });
+      }
     }, wait);
 
     return () => clearTimeout(id);
-  }, [punchId, startedAt, minutes, muted, desktop, sound]);
+  }, [punchId, startedAt, minutes, muted, desktop, sound, soundName]);
 }
