@@ -149,7 +149,7 @@ function AccountsPage() {
     // these lands.
     void qc.invalidateQueries({ queryKey: ["companies-people"] });
     void qc.invalidateQueries({ queryKey: ["companies-roles"] });
-    void qc.invalidateQueries({ queryKey: ["companies-admin"] });
+    void qc.invalidateQueries({ queryKey: ["admin-companies"] });
   };
 
   const fail = (e: unknown) => setErr(e instanceof Error ? e.message : String(e));

@@ -1,7 +1,19 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { z } from "zod";
 import { useEffect, useState } from "react";
-import { Loader2, Mail, Lock, Eye, EyeOff, ShieldCheck } from "lucide-react";
+import {
+  Loader2,
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
+  ShieldCheck,
+  Building2,
+  UserRound,
+  Check,
+  ArrowLeft,
+  ChevronRight,
+} from "lucide-react";
 import { BrandLogo, APP_NAME } from "@/components/brand";
 import { Decorations } from "@/components/showcase";
 import { supabase } from "@/integrations/supabase/client";
@@ -65,6 +77,11 @@ function LoginPage() {
   const { mode: modeParam, kind: kindParam } = Route.useSearch();
   const [mode, setMode] = useState<Mode>(modeParam === "signup" ? "signup" : "signin");
   const [signupKind, setSignupKind] = useState<SignupKind>(kindParam ?? "create");
+  // Which kind of account comes first, on its own screen. The form used to open
+  // on "Business account" with the alternatives as small tabs, and employees
+  // who didn't notice them registered whole businesses by mistake. A link that
+  // already says which kind (`?kind=`) skips the question.
+  const [signupStep, setSignupStep] = useState<"choose" | "form">(kindParam ? "form" : "choose");
 
   const [email, setEmail] = useState("");
   const [emailConfirm, setEmailConfirm] = useState("");
@@ -222,7 +239,11 @@ function LoginPage() {
               <p className="mt-2 text-lg text-muted-foreground">
                 {mode === "signin"
                   ? `Sign in to ${APP_NAME}`
-                  : "Start a business account, join one with a code, or just create your profile"}
+                  : signupStep === "choose"
+                    ? "First, which describes you?"
+                    : signupKind === "create"
+                      ? "Set up your business"
+                      : "Create your employee account"}
               </p>
             </div>
 
@@ -293,27 +314,78 @@ function LoginPage() {
                   New here?{" "}
                   <button
                     type="button"
-                    onClick={() => { setMode("signup"); setError(null); setInfo(null); }}
+                    onClick={() => {
+                      setMode("signup");
+                      setSignupStep("choose");
+                      setError(null);
+                      setInfo(null);
+                    }}
                     className="font-medium text-primary hover:underline"
                   >
                     Create an account
                   </button>
                 </p>
               </form>
+            ) : signupStep === "choose" ? (
+              <AccountTypeChooser
+                onPick={(k) => {
+                  setSignupKind(k);
+                  setSignupStep("form");
+                  setError(null);
+                }}
+                onSignIn={() => {
+                  setMode("signin");
+                  setError(null);
+                  setInfo(null);
+                }}
+              />
             ) : (
               <form className="mt-6 space-y-4" onSubmit={handleSignUp}>
-                <div className="grid grid-cols-3 gap-2">
-                  {(["create", "join", "solo"] as const).map((k) => (
-                    <button
-                      key={k}
-                      type="button"
-                      onClick={() => setSignupKind(k)}
-                      className={`rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${signupKind === k ? "border-primary bg-primary-soft text-primary" : "border-border text-muted-foreground hover:bg-accent"}`}
-                    >
-                      {k === "create" ? "Business account" : k === "join" ? "Join with a code" : "Employee only"}
-                    </button>
-                  ))}
+                {/* What they picked, and the way back. */}
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-secondary/40 px-3 py-2.5">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    {signupKind === "create" ? (
+                      <Building2 className="h-5 w-5 shrink-0 text-primary" />
+                    ) : (
+                      <UserRound className="h-5 w-5 shrink-0 text-primary" />
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-foreground">
+                        {signupKind === "create" ? "Business account" : "Employee account"}
+                      </p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {signupKind === "create"
+                          ? "For owners and managers"
+                          : "For people who work at a business"}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSignupStep("choose");
+                      setError(null);
+                    }}
+                    className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-primary hover:underline"
+                  >
+                    <ArrowLeft className="h-3.5 w-3.5" /> Change
+                  </button>
                 </div>
+
+                {signupKind !== "create" && (
+                  <div className="grid grid-cols-2 gap-2">
+                    {(["join", "solo"] as const).map((k) => (
+                      <button
+                        key={k}
+                        type="button"
+                        onClick={() => setSignupKind(k)}
+                        className={`rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${signupKind === k ? "border-primary bg-primary-soft text-primary" : "border-border text-muted-foreground hover:bg-accent"}`}
+                      >
+                        {k === "join" ? "I have a company code" : "I don't have a code yet"}
+                      </button>
+                    ))}
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
@@ -397,6 +469,108 @@ function LoginPage() {
             </Link>
           </p>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The first question of sign-up: running a business, or working at one.
+ *
+ * Each card says what that account can do and what happens after the form,
+ * because the two differ in ways people only discover later — a business waits
+ * for our approval, an employee waits for their manager's.
+ */
+function AccountTypeChooser({
+  onPick,
+  onSignIn,
+}: {
+  onPick: (kind: SignupKind) => void;
+  onSignIn: () => void;
+}) {
+  const cards: {
+    kind: SignupKind;
+    icon: typeof Building2;
+    title: string;
+    who: string;
+    points: string[];
+    next: string;
+    cta: string;
+  }[] = [
+    {
+      kind: "create",
+      icon: Building2,
+      title: "I run a business",
+      who: "Owners and managers setting up their team",
+      points: [
+        "Build and publish schedules",
+        "Approve time off, shift trades and timecards",
+        "Invite employees with your company code",
+        "Billing and company settings",
+      ],
+      next: "We review every new business before it goes live, and notify you the moment it's approved. Your free trial starts then.",
+      cta: "Create a business account",
+    },
+    {
+      kind: "join",
+      icon: UserRound,
+      title: "I work for a business",
+      who: "Employees whose workplace uses Scheduling Pilot",
+      points: [
+        "See your schedule on any device",
+        "Clock in and out",
+        "Request time off and trade shifts",
+        "Get notified when your shifts change",
+      ],
+      next: "You'll need the company code from your manager — they approve you before you can see the schedule. No code yet? You can add it later.",
+      cta: "Create an employee account",
+    },
+  ];
+
+  return (
+    <div className="mt-6 space-y-4">
+      {cards.map((c) => (
+        <button
+          key={c.kind}
+          type="button"
+          onClick={() => onPick(c.kind)}
+          className="group w-full rounded-2xl border border-border bg-background p-5 text-left transition-colors hover:border-primary hover:bg-primary-soft/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <div className="flex items-start gap-3">
+            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary-soft text-primary">
+              <c.icon className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-base font-semibold text-foreground">{c.title}</p>
+              <p className="text-sm text-muted-foreground">{c.who}</p>
+            </div>
+            <ChevronRight className="mt-2 h-5 w-5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
+          </div>
+          <ul className="mt-3 grid gap-1.5 sm:grid-cols-2">
+            {c.points.map((p) => (
+              <li key={p} className="flex items-start gap-1.5 text-sm text-foreground">
+                <Check className="mt-0.5 h-4 w-4 shrink-0 text-success" />
+                {p}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-3 rounded-lg bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">What happens next: </span>
+            {c.next}
+          </p>
+          <p className="mt-3 text-sm font-medium text-primary">{c.cta} →</p>
+        </button>
+      ))}
+
+      <p className="text-center text-xs text-muted-foreground">
+        Not sure? If someone else pays for the app at your job, you're an employee.
+      </p>
+
+      <p className="text-center text-sm text-muted-foreground">
+        Already have an account?{" "}
+        <button type="button" onClick={onSignIn} className="font-medium text-primary hover:underline">
+          Sign in
+        </button>
+      </p>
     </div>
   );
 }

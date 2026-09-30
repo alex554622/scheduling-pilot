@@ -1,5 +1,7 @@
 import { createFileRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import {
   Calendar,
   LayoutDashboard,
@@ -215,6 +217,32 @@ function PlanLocked({ capability, isAdmin }: { capability: CapabilityKey; isAdmi
   );
 }
 
+/**
+ * Why a registration was turned down, on the screen that locks the business
+ * out — the notifications bell is behind that screen. Read on its own and
+ * allowed to fail, so a database without the column still lets people sign in.
+ */
+function RejectionReason({ companyId }: { companyId: string }) {
+  const q = useQuery({
+    queryKey: ["company-review-note", companyId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("companies")
+        .select("review_note")
+        .eq("id", companyId)
+        .maybeSingle();
+      if (error) return null;
+      return (data as { review_note?: string | null } | null)?.review_note ?? null;
+    },
+  });
+  if (!q.data) return null;
+  return (
+    <p className="mt-4 rounded-lg bg-muted/40 px-4 py-3 text-left text-sm text-foreground">
+      {q.data}
+    </p>
+  );
+}
+
 function AuthLayout() {
   const { user, loading, primaryRole, profile, company, signOut } = useAuth();
   const navigate = useNavigate();
@@ -237,6 +265,23 @@ function AuthLayout() {
   // Keeps this device on the list the server delivers to, so the notifications
   // above still arrive once the app is shut.
   usePushRegistration();
+  // Businesses waiting on a platform admin, for the badge on Companies. The
+  // notification that announces one can be read and dismissed anywhere; the
+  // badge stays until somebody has actually decided.
+  const pendingCompaniesQ = useQuery({
+    queryKey: ["pending-companies-count"],
+    enabled: primaryRole === "super_admin",
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from("companies")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "pending");
+      if (error) throw error;
+      return count ?? 0;
+    },
+  });
+  const pendingCompanies = pendingCompaniesQ.data ?? 0;
   // Browsers only play sound after someone has touched the page; the first
   // click or key press anywhere in the app is what lets the chime be heard.
   useEffect(() => unlockSound(), []);
@@ -288,17 +333,25 @@ function AuthLayout() {
   // so they can still reach /companies and approve / unsuspend accounts.
   if (primaryRole && primaryRole !== "super_admin" && company && company.status !== "active") {
     const isPending = company.status === "pending";
+    const isRejected = company.status === "rejected";
     return (
       <div className="grid min-h-screen place-items-center bg-secondary/30 px-4">
         <div className="w-full max-w-md rounded-2xl border border-border bg-card p-8 text-center shadow-[var(--shadow-card)]">
           <h2 className="text-xl font-semibold text-foreground">
-            {isPending ? "Awaiting approval" : `Account ${company.status.replace("_", " ")}`}
+            {isPending
+              ? "Awaiting approval"
+              : isRejected
+                ? "Registration not approved"
+                : `Account ${company.status.replace("_", " ")}`}
           </h2>
           <p className="mt-2 text-sm text-muted-foreground">
             {isPending
               ? `${company.name} is pending review by a platform administrator. You'll get access as soon as it's approved.`
-              : `${company.name} is currently ${company.status.replace("_", " ")}. Please contact support to restore access.`}
+              : isRejected
+                ? `${company.name} was not approved. Contact support if you think this is a mistake.`
+                : `${company.name} is currently ${company.status.replace("_", " ")}. Please contact support to restore access.`}
           </p>
+          {isRejected && <RejectionReason companyId={company.id} />}
           <button
             onClick={async () => {
               await signOut();
@@ -408,16 +461,34 @@ function AuthLayout() {
         <nav className={`min-h-0 flex-1 overflow-y-auto ${collapsed ? "px-2 py-4" : "px-3 py-4"}`}>
           {items.map((n, i) => {
             const active = path === n.to;
+            const badge = n.to === "/companies" ? pendingCompanies : 0;
             return (
               <Link
                 key={`${n.label}-${i}`}
                 to={n.to}
                 onClick={() => setOpen(false)}
-                title={collapsed ? n.label : undefined}
-                className={`mb-1 flex items-center gap-3 rounded-lg text-sm font-medium transition-colors ${collapsed ? "justify-center px-2 py-2.5" : "px-3 py-2.5"} ${active ? "bg-primary-soft text-primary" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
+                title={
+                  collapsed
+                    ? badge
+                      ? `${n.label} (${badge} awaiting approval)`
+                      : n.label
+                    : undefined
+                }
+                className={`relative mb-1 flex items-center gap-3 rounded-lg text-sm font-medium transition-colors ${collapsed ? "justify-center px-2 py-2.5" : "px-3 py-2.5"} ${active ? "bg-primary-soft text-primary" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
               >
                 <n.icon className="h-4 w-4 shrink-0" />
                 {!collapsed && <span className="truncate">{n.label}</span>}
+                {badge > 0 &&
+                  (collapsed ? (
+                    <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-warning" />
+                  ) : (
+                    <span
+                      className="ml-auto rounded-full bg-warning px-1.5 text-[11px] font-semibold text-warning-foreground"
+                      aria-label={`${badge} awaiting approval`}
+                    >
+                      {badge}
+                    </span>
+                  ))}
               </Link>
             );
           })}

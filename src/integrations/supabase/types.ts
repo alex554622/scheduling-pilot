@@ -240,6 +240,7 @@ export type Database = {
         Row: {
           billing_mode: string
           created_at: string
+          created_by: string | null
           data_retention_months: number | null
           geofence_radius_m: number
           id: string
@@ -248,6 +249,9 @@ export type Database = {
           longitude: number | null
           name: string
           plan: string
+          review_note: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
           settings: Json
           status: string
           timezone: string
@@ -255,6 +259,7 @@ export type Database = {
         Insert: {
           billing_mode?: string
           created_at?: string
+          created_by?: string | null
           data_retention_months?: number | null
           geofence_radius_m?: number
           id?: string
@@ -263,6 +268,9 @@ export type Database = {
           longitude?: number | null
           name: string
           plan?: string
+          review_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
           settings?: Json
           status?: string
           timezone?: string
@@ -270,6 +278,7 @@ export type Database = {
         Update: {
           billing_mode?: string
           created_at?: string
+          created_by?: string | null
           data_retention_months?: number | null
           geofence_radius_m?: number
           id?: string
@@ -278,6 +287,9 @@ export type Database = {
           longitude?: number | null
           name?: string
           plan?: string
+          review_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
           settings?: Json
           status?: string
           timezone?: string
@@ -1447,6 +1459,43 @@ export type Database = {
         Returns: undefined
       }
       admin_delete_user: { Args: { _user: string }; Returns: undefined }
+      admin_review_company: {
+        Args: { _company: string; _approve: boolean; _note?: string | null }
+        Returns: undefined
+      }
+      admin_companies: {
+        Args: never
+        Returns: {
+          id: string
+          name: string
+          status: string
+          plan: string
+          billing_mode: string
+          join_code: string | null
+          created_at: string
+          timezone: string
+          data_retention_months: number | null
+          business_phone: string | null
+          business_address: string | null
+          created_by: string | null
+          creator_name: string | null
+          creator_email: string | null
+          creator_email_confirmed: boolean
+          creator_phone: string | null
+          creator_last_sign_in_at: string | null
+          reviewed_at: string | null
+          reviewed_by_name: string | null
+          review_note: string | null
+          member_count: number
+          admin_count: number
+          inactive_count: number
+          pending_join_count: number
+          sub_status: string
+          plan_name: string | null
+          period_end: string | null
+          last_punch_at: string | null
+        }[]
+      }
       billing_overview: {
         Args: never
         Returns: {

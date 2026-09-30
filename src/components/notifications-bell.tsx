@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
 import { showAppNotification, useNotificationPrefs } from "@/lib/notification-prefs";
 import { playChime } from "@/lib/notify-sound";
+import { readCutoff } from "@/lib/notification-retention";
 
 interface Notification {
   id: string;
@@ -48,9 +49,21 @@ export function NotificationsBell() {
     queryKey: ["notifications", user?.id],
     enabled: !!user,
     queryFn: async () => {
+      const cutoff = readCutoff();
+      // Read a day ago means gone. The server sweeps these hourly; clearing our
+      // own here as well means the bell is right the moment it opens, even on a
+      // deployment where the sweep is not running. Best effort — a failure
+      // still leaves them filtered out below.
+      await supabase
+        .from("notifications")
+        .delete()
+        .eq("user_id", user!.id)
+        .not("read_at", "is", null)
+        .lt("read_at", cutoff);
       const { data, error } = await supabase
         .from("notifications")
         .select("id, type, title, body, link, read_at, created_at")
+        .or(`read_at.is.null,read_at.gte.${cutoff}`)
         .order("created_at", { ascending: false })
         .limit(20);
       if (error) throw error;
@@ -138,7 +151,12 @@ export function NotificationsBell() {
   const handleClick = (n: Notification) => {
     if (!n.read_at) markRead.mutate([n.id]);
     setOpen(false);
-    if (n.link) navigate({ to: n.link });
+    if (n.link) {
+      // A link can point inside a page ("/companies?company=…"). The router
+      // takes the path and the query separately, so hand it them that way.
+      const [to, qs = ""] = n.link.split("?", 2);
+      navigate({ to, search: Object.fromEntries(new URLSearchParams(qs)) as never });
+    }
   };
   openRef.current = handleClick;
 
@@ -177,24 +195,58 @@ export function NotificationsBell() {
               <p className="px-4 py-6 text-center text-sm text-muted-foreground">You're all caught up.</p>
             ) : (
               items.map((n) => (
-                <button
+                // A row, not one big button: marking read is its own control,
+                // and a button cannot hold another button.
+                <div
                   key={n.id}
-                  onClick={() => handleClick(n)}
-                  className={`flex w-full items-start gap-3 border-b border-border px-4 py-3 text-left transition-colors hover:bg-accent ${n.read_at ? "" : "bg-primary-soft/30"}`}
+                  className={`flex w-full items-start gap-1 border-b border-border transition-colors hover:bg-accent ${n.read_at ? "" : "bg-primary-soft/30"}`}
                 >
-                  <div className={`mt-1 h-2 w-2 flex-shrink-0 rounded-full ${n.read_at ? "bg-transparent" : "bg-primary"}`} />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-foreground">{n.title}</p>
-                    {n.body && <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{n.body}</p>}
-                    <p className="mt-1 text-[11px] text-muted-foreground">
-                      {new Date(n.created_at).toLocaleString()}
-                    </p>
-                  </div>
-                  {n.read_at && <Check className="mt-1 h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />}
-                </button>
+                  <button
+                    onClick={() => handleClick(n)}
+                    className="flex min-w-0 flex-1 items-start gap-3 py-3 pl-4 text-left"
+                  >
+                    <div
+                      className={`mt-1 h-2 w-2 flex-shrink-0 rounded-full ${n.read_at ? "bg-transparent" : "bg-primary"}`}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-foreground">{n.title}</p>
+                      {n.body && (
+                        <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                          {n.body}
+                        </p>
+                      )}
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        {new Date(n.created_at).toLocaleString()}
+                      </p>
+                    </div>
+                  </button>
+                  {n.read_at ? (
+                    <span
+                      className="p-3 text-muted-foreground"
+                      title="Read — removed 24 hours after reading"
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => markRead.mutate([n.id])}
+                      disabled={markRead.isPending}
+                      className="m-1.5 rounded-md p-1.5 text-muted-foreground hover:bg-background hover:text-primary"
+                      aria-label={`Mark "${n.title}" as read`}
+                      title="Mark as read"
+                    >
+                      <Check className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
               ))
             )}
           </div>
+          {items.some((n) => n.read_at) && (
+            <p className="px-4 py-2 text-center text-[11px] text-muted-foreground">
+              Read notifications are removed after 24 hours.
+            </p>
+          )}
         </div>
       )}
     </div>

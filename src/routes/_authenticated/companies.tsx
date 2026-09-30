@@ -1,13 +1,24 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { z } from "zod";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth, ROLE_LABEL, type AppRole } from "@/lib/auth";
+import { ago, downloadCsv, slug } from "@/lib/admin-export";
 import { CompanyBillingSection } from "@/components/company-billing";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { playBreakAlert } from "@/lib/notify-sound";
 import {
   Dialog,
@@ -18,35 +29,125 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
+  Activity,
+  AlertTriangle,
+  Ban,
   Building2,
-  Loader2,
-  Search,
   CheckCircle2,
   ChevronRight,
-  X,
-  Users,
-  CreditCard,
-  Trash2,
-  AlertTriangle,
-  KeyRound,
   Clock,
+  Copy,
+  CreditCard,
+  Download,
+  Hourglass,
+  Inbox,
+  KeyRound,
+  Loader2,
+  Mail,
+  MapPin,
+  Phone,
+  Search,
+  ShieldCheck,
+  Trash2,
+  UserCheck,
+  UserX,
+  Users,
   Volume2,
+  XCircle,
 } from "lucide-react";
 
+/**
+ * The platform admin's console for every business on the platform.
+ *
+ * Two jobs, in the order they matter. First the queue: a business that has
+ * registered is locked out until someone here says yes, so it opens on the
+ * decision with everything the decision needs — who registered, how to reach
+ * them, who has already joined. Then the directory: every company, searchable
+ * by its name or by the person behind it, each opening into a panel that holds
+ * all of it — people, billing, settings, and what has happened to it.
+ *
+ * `?company=<id>` opens that company's panel, which is where the "new business"
+ * notification lands.
+ */
+
+const searchSchema = z.object({
+  company: z.string().uuid().optional().catch(undefined),
+  view: z.enum(["queue", "all"]).optional().catch(undefined),
+});
+
 export const Route = createFileRoute("/_authenticated/companies")({
+  validateSearch: (s) => searchSchema.parse(s),
   component: CompaniesPage,
 });
 
-interface Company {
+/** One row of `admin_companies()`. */
+interface CompanyRow {
   id: string;
   name: string;
-  plan: string;
   status: string;
+  plan: string;
   billing_mode: string;
   join_code: string | null;
   created_at: string;
+  timezone: string;
   /** How many months of schedule and timecard history this company keeps. Null = forever. */
   data_retention_months: number | null;
+  business_phone: string | null;
+  business_address: string | null;
+  created_by: string | null;
+  creator_name: string | null;
+  creator_email: string | null;
+  creator_email_confirmed: boolean;
+  creator_phone: string | null;
+  creator_last_sign_in_at: string | null;
+  reviewed_at: string | null;
+  reviewed_by_name: string | null;
+  review_note: string | null;
+  member_count: number;
+  admin_count: number;
+  inactive_count: number;
+  pending_join_count: number;
+  sub_status: string;
+  plan_name: string | null;
+  period_end: string | null;
+  last_punch_at: string | null;
+}
+
+/** One row of `admin_accounts()` — where a person's email comes from. */
+interface AccountRow {
+  user_id: string;
+  email: string | null;
+  email_confirmed: boolean;
+  created_at: string;
+  last_sign_in_at: string | null;
+  full_name: string;
+  company_id: string | null;
+  pending_company_id: string | null;
+  is_active: boolean;
+  roles: string[];
+}
+
+/** The profile columns `admin_accounts()` does not carry. */
+interface ProfileExtra {
+  id: string;
+  position: string | null;
+  phone: string | null;
+  employee_code: string | null;
+}
+
+/** A person as the console shows them: the account and the profile, together. */
+interface Member {
+  id: string;
+  full_name: string;
+  email: string | null;
+  email_confirmed: boolean;
+  last_sign_in_at: string | null;
+  created_at: string;
+  is_active: boolean;
+  roles: AppRole[];
+  position: string | null;
+  phone: string | null;
+  employee_code: string | null;
 }
 
 /** What a company may hold, as a platform admin sets it. */
@@ -76,23 +177,8 @@ type SubRow = {
 };
 type PlanRow = { id: string; name: string; price_cents: number };
 
-/** Everything a platform admin can see about a person, which is every column. */
-interface PersonRow {
-  id: string;
-  full_name: string;
-  company_id: string | null;
-  pending_company_id: string | null;
-  position: string | null;
-  phone: string | null;
-  employee_code: string | null;
-  is_active: boolean;
-  created_at: string;
-}
-
-/** One row of `billing_overview`, which is where an account's email comes from. */
-type BillingRow = { company_id: string; admin_email: string | null };
-
-const STATUSES = ["pending", "active", "past_due", "suspended"] as const;
+/** Statuses a live company moves between. Pending and rejected are decided by review. */
+const LIVE_STATUSES = ["active", "past_due", "suspended"] as const;
 const SUB_STATUSES = ["trialing", "active", "past_due", "inactive", "canceled"] as const;
 const BILLING_MODES = [
   { value: "pending", label: "Pending review" },
@@ -106,16 +192,55 @@ const STATUS_CLS: Record<string, string> = {
   pending: "bg-warning/20 text-warning-foreground",
   past_due: "bg-warning/20 text-warning-foreground",
   suspended: "bg-destructive/10 text-destructive",
+  rejected: "bg-destructive/10 text-destructive",
 };
+
+type StatusFilter = "all" | "pending" | "active" | "attention" | "rejected";
+
+const FILTERS: { key: StatusFilter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "pending", label: "Awaiting approval" },
+  { key: "active", label: "Active" },
+  { key: "attention", label: "Past due / suspended" },
+  { key: "rejected", label: "Rejected" },
+];
+
+function matchesFilter(c: CompanyRow, f: StatusFilter): boolean {
+  if (f === "all") return true;
+  if (f === "attention") return c.status === "past_due" || c.status === "suspended";
+  return c.status === f;
+}
+
+const fmtDateTime = (iso: string) =>
+  new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+const fmtDate = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleDateString([], { dateStyle: "medium" }) : "—";
+const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+function push<K, V>(map: Map<K, V[]>, key: K, value: V) {
+  const list = map.get(key);
+  if (list) list.push(value);
+  else map.set(key, [value]);
+}
+
+/** Admins first — whoever registered the company is one — then by name. */
+function byRank(a: Member, b: Member): number {
+  const rank = (m: Member) => (m.roles.includes("company_admin") ? 0 : 1);
+  return rank(a) - rank(b) || a.full_name.localeCompare(b.full_name);
+}
+
+/* ================================================================== page == */
 
 function CompaniesPage() {
   const { primaryRole, loading } = useAuth();
-  const navigate = useNavigate();
+  const navigate = useNavigate({ from: Route.fullPath });
+  const search = Route.useSearch();
   const qc = useQueryClient();
-  const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<string>("all");
-  const [selected, setSelected] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<StatusFilter>("all");
   const [err, setErr] = useState<string | null>(null);
+  const [rejecting, setRejecting] = useState<CompanyRow | null>(null);
 
   useEffect(() => {
     if (!loading && primaryRole && primaryRole !== "super_admin") navigate({ to: "/dashboard" });
@@ -123,378 +248,1085 @@ function CompaniesPage() {
 
   const isSuper = primaryRole === "super_admin";
 
-  const companiesQ = useQuery({
-    queryKey: ["companies-admin"],
+  const directoryQ = useQuery({
+    queryKey: ["admin-companies"],
     enabled: isSuper,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("companies")
-        .select(
-          "id, name, plan, status, billing_mode, join_code, created_at, data_retention_months",
-        )
-        .order("created_at", { ascending: false });
+      const { data, error } = await supabase.rpc("admin_companies");
       if (error) throw error;
-      return (data ?? []) as Company[];
+      return (data ?? []) as CompanyRow[];
     },
   });
 
-  // Everyone on the platform in one pass rather than a query per company. A
-  // super admin's RLS lets them read every profile, and this page is the one
-  // place that needs all of them: the approval queue has to show who is asking
-  // before anyone decides, not just how many of them there are.
-  const peopleQ = useQuery({
+  // Shared with the Accounts page on purpose: one cache, so a change made on
+  // either screen is the same change on both.
+  const accountsQ = useQuery({
+    queryKey: ["admin-accounts"],
+    enabled: isSuper,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("admin_accounts");
+      if (error) throw error;
+      return (data ?? []) as AccountRow[];
+    },
+  });
+
+  const profilesQ = useQuery({
     queryKey: ["companies-people"],
     enabled: isSuper,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("profiles")
-        .select(
-          "id, full_name, company_id, pending_company_id, position, phone, employee_code, is_active, created_at",
-        )
-        .order("created_at", { ascending: true });
+        .select("id, position, phone, employee_code");
       if (error) throw error;
-      return (data ?? []) as PersonRow[];
+      return (data ?? []) as ProfileExtra[];
     },
   });
 
-  const rolesQ = useQuery({
-    queryKey: ["companies-roles"],
-    enabled: isSuper,
-    queryFn: async () => {
-      const { data, error } = await supabase.from("user_roles").select("user_id, company_id, role");
-      if (error) throw error;
-      return (data ?? []) as { user_id: string; company_id: string | null; role: AppRole }[];
-    },
-  });
+  const invalidate = () => invalidateCompanyViews(qc);
 
-  // Emails live in auth.users, which no client may read. `billing_overview`
-  // already resolves the account email for super admins, so it answers "who
-  // registered this" too rather than adding a second way to ask.
-  const billingQ = useQuery({
-    queryKey: ["billing-overview"],
-    enabled: isSuper,
-    queryFn: async () => {
-      const { data, error } = await supabase.rpc("billing_overview");
-      if (error) throw error;
-      return (data ?? []) as BillingRow[];
-    },
-  });
-
-  const subsQ = useQuery({
-    queryKey: ["companies-subs"],
-    enabled: isSuper,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("company_subscriptions")
-        .select("id, company_id, status, plan_id, seats_limit, current_period_end");
-      if (error) throw error;
-      return (data ?? []) as SubRow[];
-    },
-  });
-
-  const updateMut = useMutation({
-    mutationFn: async ({ id, patch }: { id: string; patch: Partial<Company> }) => {
-      const { error } = await supabase.from("companies").update(patch).eq("id", id);
+  const review = useMutation({
+    mutationFn: async (v: { id: string; approve: boolean; note?: string }) => {
+      const { error } = await supabase.rpc("admin_review_company", {
+        _company: v.id,
+        _approve: v.approve,
+        _note: v.note ?? null,
+      });
       if (error) throw error;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["companies-admin"] });
       setErr(null);
+      setRejecting(null);
+      invalidate();
     },
-    onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
+    onError: (e) => setErr(errText(e)),
   });
+
+  const all = useMemo(() => directoryQ.data ?? [], [directoryQ.data]);
+
+  /** Everyone, filed under the company they are in and the one they asked to join. */
+  const people = useMemo(() => {
+    const extra = new Map((profilesQ.data ?? []).map((p) => [p.id, p]));
+    const members = new Map<string, Member[]>();
+    const joins = new Map<string, Member[]>();
+    const names = new Map<string, string>();
+    let unplaced = 0;
+    for (const a of accountsQ.data ?? []) {
+      const p = extra.get(a.user_id);
+      const m: Member = {
+        id: a.user_id,
+        full_name: a.full_name || "Unnamed",
+        email: a.email,
+        email_confirmed: a.email_confirmed,
+        last_sign_in_at: a.last_sign_in_at,
+        created_at: a.created_at,
+        is_active: a.is_active,
+        roles: a.roles.filter((r): r is AppRole => r in ROLE_LABEL),
+        position: p?.position ?? null,
+        phone: p?.phone ?? null,
+        employee_code: p?.employee_code ?? null,
+      };
+      names.set(a.user_id, a.full_name || a.email || "Unknown");
+      if (a.company_id) push(members, a.company_id, m);
+      if (a.pending_company_id) push(joins, a.pending_company_id, m);
+      if (!a.company_id && !a.pending_company_id && !a.roles.includes("super_admin")) unplaced++;
+    }
+    for (const list of members.values()) list.sort(byRank);
+    return { members, joins, names, unplaced };
+  }, [accountsQ.data, profilesQ.data]);
 
   if (loading || !isSuper) return <div className="text-sm text-muted-foreground">Loading…</div>;
 
-  const all = companiesQ.data ?? [];
-  const people = peopleQ.data ?? [];
-  const roleRows = rolesQ.data ?? [];
-  const subs = subsQ.data ?? [];
-
-  const heads: Record<string, number> = {};
-  for (const p of people) if (p.company_id) heads[p.company_id] = (heads[p.company_id] ?? 0) + 1;
-
-  const rolesOf = (userId: string) => roleRows.filter((r) => r.user_id === userId).map((r) => r.role);
-  const emailOf = (companyId: string) =>
-    billingQ.data?.find((r) => r.company_id === companyId)?.admin_email ?? null;
-  /** The people a company holds, its admins first — whoever registered it is one. */
-  const membersOf = (companyId: string) =>
-    people
-      .filter((p) => p.company_id === companyId)
-      .sort((a, b) => {
-        const rank = (id: string) => (rolesOf(id).includes("company_admin") ? 0 : 1);
-        return rank(a.id) - rank(b.id) || a.full_name.localeCompare(b.full_name);
-      });
-
-  // Signed-up accounts attached to nothing: a registration whose company was
-  // never created (see `JoinCompanyGate`), or an employee who never entered a
-  // code. Invisible until now, which is exactly how a lost registration looked
-  // from this page.
-  const stranded = people.filter((p) => !p.company_id && !p.pending_company_id);
-
-  const companies = all
-    .filter((c) => filter === "all" || c.status === filter)
-    .filter((c) => !search.trim() || c.name.toLowerCase().includes(search.trim().toLowerCase()));
-
   const pending = all.filter((c) => c.status === "pending");
-  const current = selected ? (all.find((c) => c.id === selected) ?? null) : null;
+  const counts: Record<StatusFilter, number> = {
+    all: all.length,
+    pending: pending.length,
+    active: all.filter((c) => c.status === "active").length,
+    attention: all.filter((c) => matchesFilter(c, "attention")).length,
+    rejected: all.filter((c) => c.status === "rejected").length,
+  };
+  const weekAgo = Date.now() - 7 * 86_400_000;
+  const newThisWeek = all.filter((c) => new Date(c.created_at).getTime() > weekAgo).length;
+
+  const q = query.trim().toLowerCase();
+  const rows = all
+    .filter((c) => matchesFilter(c, filter))
+    .filter(
+      (c) =>
+        !q ||
+        [c.name, c.creator_name, c.creator_email, c.join_code, c.business_phone]
+          .filter(Boolean)
+          .some((s) => s!.toLowerCase().includes(q)),
+    );
+
+  const view = search.view ?? (pending.length > 0 ? "queue" : "all");
+  const selected = search.company ? (all.find((c) => c.id === search.company) ?? null) : null;
+
+  const open = (id: string) => navigate({ search: (s) => ({ ...s, company: id }) });
+  const close = () => navigate({ search: (s) => ({ ...s, company: undefined }) });
+  const showAll = (f: StatusFilter) => {
+    setFilter(f);
+    navigate({ search: (s) => ({ ...s, view: "all" }) });
+  };
+
+  const exportDirectory = () =>
+    downloadCsv(
+      `companies-${new Date().toISOString().slice(0, 10)}.csv`,
+      [
+        "Company",
+        "Status",
+        "Registered",
+        "Registered by",
+        "Registered by email",
+        "Registered by phone",
+        "Business phone",
+        "Business address",
+        "Members",
+        "Admins",
+        "Join requests",
+        "Subscription",
+        "Plan",
+        "Period ends",
+        "Join code",
+        "Last clock-in",
+        "Reviewed by",
+        "Reviewed at",
+        "Review note",
+      ],
+      rows.map((c) => [
+        c.name,
+        c.status,
+        c.created_at,
+        c.creator_name,
+        c.creator_email,
+        c.creator_phone,
+        c.business_phone,
+        c.business_address,
+        c.member_count,
+        c.admin_count,
+        c.pending_join_count,
+        c.sub_status,
+        c.plan_name,
+        c.period_end,
+        c.join_code,
+        c.last_punch_at,
+        c.reviewed_by_name,
+        c.reviewed_at,
+        c.review_note,
+      ]),
+    );
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-foreground">Companies</h1>
-        <p className="text-sm text-muted-foreground">
-          Every tenant on the platform. Approve, suspend, adjust billing, or close an account.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold text-foreground">Companies</h1>
+          <p className="text-sm text-muted-foreground">
+            Every business on the platform — approve new ones, and look up anyone behind any of
+            them.
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={exportDirectory} disabled={!rows.length}>
+          <Download className="mr-2 h-4 w-4" />
+          Export CSV
+        </Button>
       </div>
 
       {err && (
         <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{err}</p>
       )}
 
-      {pending.length > 0 && (
-        <div className="rounded-2xl border border-warning/40 bg-warning/10 p-4">
-          <p className="mb-3 text-sm font-medium text-warning-foreground">
-            {pending.length} company{pending.length === 1 ? "" : "ies"} awaiting approval
-          </p>
-          {/* Everything the decision needs, on the screen where it is made: who
-              registered, how to reach them, and what they registered. Sending a
-              platform admin hunting through another page first is how a real
-              business ends up waiting on a rubber stamp. */}
-          <ul className="space-y-2">
-            {pending.map((c) => (
-              <li key={c.id} className="rounded-lg bg-card px-3 py-3">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-foreground">{c.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Requested{" "}
-                      {new Date(c.created_at).toLocaleString([], {
-                        dateStyle: "medium",
-                        timeStyle: "short",
-                      })}{" "}
-                      · {c.plan} plan · {heads[c.id] ?? 0} member
-                      {(heads[c.id] ?? 0) === 1 ? "" : "s"}
-                    </p>
-                    {emailOf(c.id) && (
-                      <p className="truncate text-xs text-muted-foreground">
-                        Account{" "}
-                        <a
-                          href={`mailto:${emailOf(c.id)}`}
-                          className="font-medium text-primary hover:underline"
-                        >
-                          {emailOf(c.id)}
-                        </a>
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={() => setSelected(c.id)}>
-                      Open
-                    </Button>
-                    <Button
-                      size="sm"
-                      disabled={updateMut.isPending}
-                      onClick={() => updateMut.mutate({ id: c.id, patch: { status: "active" } })}
-                    >
-                      <CheckCircle2 className="mr-2 h-3.5 w-3.5" />
-                      Approve
-                    </Button>
-                  </div>
-                </div>
-
-                <PeopleTable
-                  people={membersOf(c.id)}
-                  rolesOf={rolesOf}
-                  empty="Nobody is attached to this company yet — see the accounts with no company below."
-                />
-              </li>
-            ))}
-          </ul>
-          <p className="mt-3 text-xs text-muted-foreground">
-            Approving activates the account and generates its join code so employees can request
-            access.
-          </p>
-        </div>
-      )}
-
-      {stranded.length > 0 && (
-        <div className="rounded-2xl border border-border bg-card p-4">
-          <p className="text-sm font-medium text-foreground">
-            {stranded.length} signed-up account{stranded.length === 1 ? "" : "s"} with no company
-          </p>
-          <p className="mb-3 mt-0.5 text-xs text-muted-foreground">
-            Someone registered and never landed anywhere: a business whose company was never
-            created, or an employee who has not entered a join code. They can finish it themselves
-            from the "Add your company" screen — this is only so they stop being invisible.
-          </p>
-          <PeopleTable people={stranded} rolesOf={rolesOf} empty="" />
-        </div>
-      )}
-
-      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-3 shadow-sm">
-        <div className="relative min-w-48 flex-1">
-          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            className="h-9 pl-8"
-            placeholder="Search companies…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-        {(["all", ...STATUSES] as const).map((s) => (
-          <button
-            key={s}
-            onClick={() => setFilter(s)}
-            className={`rounded-md px-3 py-1.5 text-xs font-semibold capitalize transition-colors ${
-              filter === s
-                ? "bg-primary text-primary-foreground"
-                : "bg-secondary text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {s.replace("_", " ")}
-          </button>
-        ))}
-      </div>
-
-      <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-        <div className="flex items-center gap-2 border-b border-border px-5 py-4">
-          <Building2 className="h-4 w-4 text-muted-foreground" />
-          <h2 className="text-sm font-semibold text-foreground">
-            {companies.length} of {all.length} compan{all.length === 1 ? "y" : "ies"}
-          </h2>
-        </div>
-        {companiesQ.isLoading ? (
-          <p className="py-10 text-center text-sm text-muted-foreground">Loading…</p>
-        ) : companies.length === 0 ? (
-          <p className="py-10 text-center text-sm text-muted-foreground">No companies match.</p>
-        ) : (
-          <ul className="divide-y divide-border">
-            {companies.map((c) => {
-              const sub = subs.find((s) => s.company_id === c.id);
-              return (
-                <li key={c.id}>
-                  <button
-                    onClick={() => setSelected(c.id)}
-                    className="flex w-full items-center gap-3 px-5 py-3 text-left hover:bg-accent/50"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="truncate text-sm font-medium text-foreground">
-                          {c.name}
-                        </span>
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_CLS[c.status] ?? "bg-secondary text-muted-foreground"}`}
-                        >
-                          {c.status.replace("_", " ")}
-                        </span>
-                        {sub && (
-                          <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-                            sub: {sub.status}
-                          </span>
-                        )}
-                      </div>
-                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                        {heads[c.id] ?? 0} member{(heads[c.id] ?? 0) === 1 ? "" : "s"}
-                        {" · "}
-                        {c.plan}
-                        {" · "}joined {new Date(c.created_at).toLocaleDateString()}
-                        {c.join_code && (
-                          <>
-                            {" "}
-                            · code <span className="font-mono">{c.join_code}</span>
-                          </>
-                        )}
-                      </p>
-                    </div>
-                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
-
-      {current && (
-        <CompanyDetail
-          company={current}
-          headcount={heads[current.id] ?? 0}
-          subscription={subs.find((s) => s.company_id === current.id) ?? null}
-          onClose={() => setSelected(null)}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <Stat
+          icon={Hourglass}
+          label="Awaiting approval"
+          value={counts.pending}
+          tone={counts.pending ? "warning" : "muted"}
+          onClick={() => navigate({ search: (s) => ({ ...s, view: "queue" }) })}
         />
+        <Stat
+          icon={CheckCircle2}
+          label="Active"
+          value={counts.active}
+          tone="success"
+          onClick={() => showAll("active")}
+        />
+        <Stat
+          icon={AlertTriangle}
+          label="Past due / suspended"
+          value={counts.attention}
+          tone={counts.attention ? "danger" : "muted"}
+          onClick={() => showAll("attention")}
+        />
+        <Stat
+          icon={XCircle}
+          label="Rejected"
+          value={counts.rejected}
+          tone="muted"
+          onClick={() => showAll("rejected")}
+        />
+        <Stat
+          icon={Building2}
+          label="New this week"
+          value={newThisWeek}
+          tone="primary"
+          onClick={() => showAll("all")}
+        />
+      </div>
+
+      {people.unplaced > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
+          <p className="text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">
+              {plural(people.unplaced, "signed-up account")}
+            </span>{" "}
+            {people.unplaced === 1 ? "belongs" : "belong"} to no company yet.
+          </p>
+          <Button asChild variant="outline" size="sm">
+            <Link to="/accounts">Review in Accounts</Link>
+          </Button>
+        </div>
+      )}
+
+      {directoryQ.error ? (
+        <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-5 text-sm">
+          <p className="font-medium text-destructive">{errText(directoryQ.error)}</p>
+          <p className="mt-1 text-muted-foreground">
+            If this says <span className="font-mono">admin_companies</span> is missing, apply{" "}
+            <span className="font-mono">20260930150000_company_review_and_directory.sql</span> to
+            this database.
+          </p>
+        </div>
+      ) : (
+        <Tabs
+          value={view}
+          onValueChange={(v) => navigate({ search: (s) => ({ ...s, view: v as "queue" | "all" }) })}
+        >
+          <TabsList>
+            <TabsTrigger value="queue" className="gap-2">
+              <Inbox className="h-4 w-4" />
+              Approval queue
+              {pending.length > 0 && (
+                <span className="rounded-full bg-warning px-1.5 text-[11px] font-semibold text-warning-foreground">
+                  {pending.length}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="all" className="gap-2">
+              <Building2 className="h-4 w-4" />
+              All companies
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="queue" className="mt-4 space-y-3">
+            {directoryQ.isLoading ? (
+              <p className="py-10 text-center text-sm text-muted-foreground">Loading…</p>
+            ) : pending.length === 0 ? (
+              <div className="rounded-2xl border border-border bg-card px-5 py-12 text-center">
+                <CheckCircle2 className="mx-auto h-8 w-8 text-success" />
+                <p className="mt-2 text-sm font-medium text-foreground">Nothing waiting</p>
+                <p className="text-xs text-muted-foreground">
+                  New registrations land here, and you get a notification the moment one does.
+                </p>
+              </div>
+            ) : (
+              pending.map((c) => (
+                <ReviewCard
+                  key={c.id}
+                  company={c}
+                  members={people.members.get(c.id) ?? []}
+                  busy={review.isPending}
+                  onOpen={() => open(c.id)}
+                  onApprove={() => review.mutate({ id: c.id, approve: true })}
+                  onReject={() => {
+                    setErr(null);
+                    setRejecting(c);
+                  }}
+                />
+              ))
+            )}
+          </TabsContent>
+
+          <TabsContent value="all" className="mt-4 space-y-3">
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-3 shadow-sm">
+              <div className="relative min-w-48 flex-1">
+                <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  className="h-9 pl-8"
+                  placeholder="Company, owner name or email, join code…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+              </div>
+              {FILTERS.map((f) => (
+                <button
+                  key={f.key}
+                  onClick={() => setFilter(f.key)}
+                  className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    filter === f.key
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-secondary text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {f.label} ({counts[f.key]})
+                </button>
+              ))}
+            </div>
+
+            <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+              <div className="flex items-center gap-2 border-b border-border px-5 py-3">
+                <Building2 className="h-4 w-4 text-muted-foreground" />
+                <h2 className="text-sm font-semibold text-foreground">
+                  {rows.length} of {plural(all.length, "company", "companies")}
+                </h2>
+              </div>
+              {directoryQ.isLoading ? (
+                <p className="py-10 text-center text-sm text-muted-foreground">Loading…</p>
+              ) : rows.length === 0 ? (
+                <p className="py-10 text-center text-sm text-muted-foreground">
+                  No companies match.
+                </p>
+              ) : (
+                <ul className="divide-y divide-border">
+                  {rows.map((c) => (
+                    <li key={c.id}>
+                      <CompanyListRow company={c} onOpen={() => open(c.id)} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </TabsContent>
+        </Tabs>
+      )}
+
+      <Sheet open={!!selected} onOpenChange={(o) => !o && close()}>
+        <SheetContent className="w-full overflow-y-auto p-0 sm:max-w-2xl">
+          {selected && (
+            <CompanyPanel
+              key={selected.id}
+              company={selected}
+              members={people.members.get(selected.id) ?? []}
+              joins={people.joins.get(selected.id) ?? []}
+              nameOf={(id) => people.names.get(id) ?? null}
+              reviewing={review.isPending}
+              onApprove={() => review.mutate({ id: selected.id, approve: true })}
+              onReject={() => {
+                setErr(null);
+                setRejecting(selected);
+              }}
+              onDeleted={close}
+            />
+          )}
+        </SheetContent>
+      </Sheet>
+
+      <RejectDialog
+        company={rejecting}
+        pending={review.isPending}
+        error={rejecting ? err : null}
+        onCancel={() => setRejecting(null)}
+        onConfirm={(note) => rejecting && review.mutate({ id: rejecting.id, approve: false, note })}
+      />
+    </div>
+  );
+}
+
+/** Everything that shows a company or counts its people is stale after any change here. */
+function invalidateCompanyViews(qc: ReturnType<typeof useQueryClient>) {
+  for (const key of [
+    "admin-companies",
+    "admin-accounts",
+    "companies-people",
+    "companies-subs",
+    "company-subscription",
+    "company-activity",
+    "billing-overview",
+    "platform-companies",
+    "platform-subs",
+    "pending-companies-count",
+  ]) {
+    void qc.invalidateQueries({ queryKey: [key] });
+  }
+}
+
+function Stat({
+  icon: Icon,
+  label,
+  value,
+  tone,
+  onClick,
+}: {
+  icon: typeof Building2;
+  label: string;
+  value: number;
+  tone: "primary" | "success" | "warning" | "danger" | "muted";
+  onClick: () => void;
+}) {
+  const toneCls = {
+    primary: "bg-primary-soft text-primary",
+    success: "bg-success/15 text-success",
+    warning: "bg-warning/20 text-warning-foreground",
+    danger: "bg-destructive/10 text-destructive",
+    muted: "bg-secondary text-muted-foreground",
+  }[tone];
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3 text-left shadow-sm transition-colors hover:bg-accent/50"
+    >
+      <div className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${toneCls}`}>
+        <Icon className="h-4 w-4" />
+      </div>
+      <div className="min-w-0">
+        <p className="truncate text-xs text-muted-foreground">{label}</p>
+        <p className="text-xl font-semibold text-foreground">{value}</p>
+      </div>
+    </button>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  return (
+    <span
+      className={`rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ${STATUS_CLS[status] ?? "bg-secondary text-muted-foreground"}`}
+    >
+      {status.replace("_", " ")}
+    </span>
+  );
+}
+
+function Pill({
+  children,
+  tone = "muted",
+}: {
+  children: ReactNode;
+  tone?: "muted" | "warning" | "success" | "primary";
+}) {
+  const cls = {
+    muted: "bg-secondary text-muted-foreground",
+    warning: "bg-warning/20 text-warning-foreground",
+    success: "bg-success/15 text-success",
+    primary: "bg-primary-soft text-primary",
+  }[tone];
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-[11px] font-normal ${cls}`}>{children}</span>
+  );
+}
+
+/** Name, then a mailto — or a plain "unknown" when the account is gone. */
+function Creator({ company }: { company: CompanyRow }) {
+  if (!company.created_by && !company.creator_email) {
+    return <span className="text-muted-foreground">creator unknown</span>;
+  }
+  return (
+    <>
+      {company.creator_name ?? company.creator_email}
+      {company.creator_name && company.creator_email && (
+        <span className="text-muted-foreground"> · {company.creator_email}</span>
+      )}
+    </>
+  );
+}
+
+/* ============================================================ the queue == */
+
+/**
+ * One registration, with everything the decision needs on the card itself.
+ * Sending a platform admin hunting through another page first is how a real
+ * business ends up waiting on a rubber stamp.
+ */
+function ReviewCard({
+  company: c,
+  members,
+  busy,
+  onOpen,
+  onApprove,
+  onReject,
+}: {
+  company: CompanyRow;
+  members: Member[];
+  busy: boolean;
+  onOpen: () => void;
+  onApprove: () => void;
+  onReject: () => void;
+}) {
+  return (
+    <div className="rounded-2xl border border-warning/40 bg-card shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3">
+        <div className="min-w-0">
+          <p className="flex flex-wrap items-center gap-2 text-base font-semibold text-foreground">
+            {c.name}
+            <StatusBadge status={c.status} />
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Registered {fmtDateTime(c.created_at)} ({ago(c.created_at)})
+            {c.plan_name && <> · trial of {c.plan_name}</>}
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={onOpen}>
+            Details
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={busy}
+            onClick={onReject}
+            className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Ban className="mr-2 h-3.5 w-3.5" />
+            Reject
+          </Button>
+          <Button size="sm" disabled={busy} onClick={onApprove}>
+            {busy ? (
+              <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <CheckCircle2 className="mr-2 h-3.5 w-3.5" />
+            )}
+            Approve
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid gap-4 px-4 py-3 sm:grid-cols-2">
+        <OwnerBlock company={c} />
+        <BusinessBlock company={c} />
+      </div>
+
+      <div className="border-t border-border px-4 py-3">
+        <p className="text-xs font-medium text-muted-foreground">
+          People attached so far ({members.length})
+          {c.pending_join_count > 0 && <> · {plural(c.pending_join_count, "join request")}</>}
+        </p>
+        <PeopleList people={members} empty="Nobody is attached to this company yet." compact />
+      </div>
+      <p className="border-t border-border px-4 py-2 text-[11px] text-muted-foreground">
+        Approving unlocks the workspace, starts the free trial and issues a join code. The owner is
+        notified either way.
+      </p>
+    </div>
+  );
+}
+
+function OwnerBlock({ company: c }: { company: CompanyRow }) {
+  return (
+    <div className="min-w-0 space-y-1">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        Registered by
+      </p>
+      {c.creator_email || c.creator_name ? (
+        <>
+          <p className="truncate text-sm font-medium text-foreground">
+            {c.creator_name ?? "No name given"}
+          </p>
+          {c.creator_email && (
+            <p className="flex flex-wrap items-center gap-1.5 text-sm">
+              <Mail className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <a
+                href={`mailto:${c.creator_email}`}
+                className="truncate text-primary hover:underline"
+              >
+                {c.creator_email}
+              </a>
+              {c.creator_email_confirmed ? (
+                <Pill tone="success">confirmed</Pill>
+              ) : (
+                <Pill tone="warning">unconfirmed</Pill>
+              )}
+            </p>
+          )}
+          {c.creator_phone && (
+            <p className="flex items-center gap-1.5 text-sm">
+              <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <a href={`tel:${c.creator_phone}`} className="text-foreground hover:underline">
+                {c.creator_phone}
+              </a>
+            </p>
+          )}
+          <p className="text-xs text-muted-foreground">
+            Last sign-in {ago(c.creator_last_sign_in_at)}
+          </p>
+        </>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          Not recorded — the account that registered it has been deleted.
+        </p>
       )}
     </div>
   );
 }
 
-/* ------------------------------ company detail ----------------------------- */
+function BusinessBlock({ company: c }: { company: CompanyRow }) {
+  return (
+    <div className="min-w-0 space-y-1">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Business</p>
+      {c.business_phone ? (
+        <p className="flex items-center gap-1.5 text-sm">
+          <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <a href={`tel:${c.business_phone}`} className="text-foreground hover:underline">
+            {c.business_phone}
+          </a>
+        </p>
+      ) : (
+        <p className="text-sm text-muted-foreground">No business phone given</p>
+      )}
+      {c.business_address ? (
+        <p className="flex items-start gap-1.5 text-sm text-foreground">
+          <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <span className="whitespace-pre-line">{c.business_address}</span>
+        </p>
+      ) : (
+        <p className="text-sm text-muted-foreground">No address given</p>
+      )}
+      <p className="text-xs text-muted-foreground">Time zone {c.timezone}</p>
+    </div>
+  );
+}
 
-function CompanyDetail({
+/* ======================================================== the directory == */
+
+function CompanyListRow({ company: c, onOpen }: { company: CompanyRow; onOpen: () => void }) {
+  return (
+    <button
+      onClick={onOpen}
+      className="flex w-full items-center gap-3 px-5 py-3 text-left hover:bg-accent/50"
+    >
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="truncate text-sm font-medium text-foreground">{c.name}</span>
+          <StatusBadge status={c.status} />
+          {c.sub_status !== "none" && <Pill>sub: {c.sub_status}</Pill>}
+          {c.pending_join_count > 0 && (
+            <Pill tone="warning">{plural(c.pending_join_count, "join request")}</Pill>
+          )}
+        </div>
+        <p className="mt-0.5 truncate text-xs text-foreground/80">
+          <Creator company={c} />
+        </p>
+        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+          {plural(c.member_count, "member")}
+          {c.plan_name && <> · {c.plan_name}</>}
+          {" · "}registered {fmtDate(c.created_at)}
+          {" · "}last clock-in {ago(c.last_punch_at)}
+        </p>
+      </div>
+      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+    </button>
+  );
+}
+
+/* ============================================================ the panel == */
+
+function CompanyPanel({
   company,
-  headcount,
-  subscription,
-  onClose,
+  members,
+  joins,
+  nameOf,
+  reviewing,
+  onApprove,
+  onReject,
+  onDeleted,
 }: {
-  company: Company;
-  headcount: number;
-  subscription: SubRow | null;
-  onClose: () => void;
+  company: CompanyRow;
+  members: Member[];
+  joins: Member[];
+  nameOf: (userId: string) => string | null;
+  reviewing: boolean;
+  onApprove: () => void;
+  onReject: () => void;
+  onDeleted: () => void;
+}) {
+  const undecided = company.status === "pending" || company.status === "rejected";
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <div className="flex min-h-full flex-col">
+      <SheetHeader className="space-y-1 border-b border-border px-5 py-4 pr-12 text-left">
+        <SheetTitle className="flex flex-wrap items-center gap-2">
+          {company.name}
+          <StatusBadge status={company.status} />
+        </SheetTitle>
+        <SheetDescription className="text-xs">
+          {plural(company.member_count, "member")} · registered {fmtDate(company.created_at)}
+          {company.join_code && (
+            <>
+              {" · "}join code{" "}
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 font-mono text-foreground hover:underline"
+                onClick={() => {
+                  void navigator.clipboard?.writeText(company.join_code!);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1200);
+                }}
+                title="Copy join code"
+              >
+                {company.join_code}
+                <Copy className="h-3 w-3" />
+              </button>
+              {copied && <span className="ml-1 text-success">copied</span>}
+            </>
+          )}
+        </SheetDescription>
+        {undecided && (
+          <div className="flex flex-wrap gap-2 pt-2">
+            <Button size="sm" disabled={reviewing} onClick={onApprove}>
+              {reviewing ? (
+                <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <CheckCircle2 className="mr-2 h-3.5 w-3.5" />
+              )}
+              {company.status === "rejected" ? "Approve after all" : "Approve"}
+            </Button>
+            {company.status === "pending" && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={reviewing}
+                onClick={onReject}
+                className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              >
+                <Ban className="mr-2 h-3.5 w-3.5" />
+                Reject
+              </Button>
+            )}
+          </div>
+        )}
+      </SheetHeader>
+
+      <Tabs defaultValue="overview" className="flex-1 px-5 py-4">
+        <TabsList className="flex h-auto w-full flex-wrap justify-start">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="people">
+            People ({members.length}
+            {joins.length ? ` + ${joins.length}` : ""})
+          </TabsTrigger>
+          <TabsTrigger value="billing">Billing</TabsTrigger>
+          <TabsTrigger value="settings">Settings</TabsTrigger>
+          <TabsTrigger value="activity">Activity</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="mt-4 space-y-4">
+          <OverviewTab company={company} />
+        </TabsContent>
+        <TabsContent value="people" className="mt-4 space-y-4">
+          <PeopleTab company={company} members={members} joins={joins} />
+        </TabsContent>
+        <TabsContent value="billing" className="mt-4 space-y-4">
+          <BillingTab company={company} />
+        </TabsContent>
+        <TabsContent value="settings" className="mt-4 space-y-4">
+          <SettingsTab company={company} onDeleted={onDeleted} />
+        </TabsContent>
+        <TabsContent value="activity" className="mt-4">
+          <ActivityTab company={company} nameOf={nameOf} />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+function Section({
+  title,
+  icon: Icon,
+  children,
+}: {
+  title: string;
+  icon: typeof Building2;
+  children: ReactNode;
+}) {
+  return (
+    <section className="rounded-xl border border-border p-4">
+      <h3 className="mb-3 flex items-center gap-2 text-sm font-medium text-foreground">
+        <Icon className="h-4 w-4 text-primary" />
+        {title}
+      </h3>
+      {children}
+    </section>
+  );
+}
+
+function Fact({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="truncate text-sm font-medium text-foreground">{children}</dd>
+    </div>
+  );
+}
+
+function OverviewTab({ company: c }: { company: CompanyRow }) {
+  return (
+    <>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Section title="Owner" icon={KeyRound}>
+          <OwnerBlock company={c} />
+        </Section>
+        <Section title="Contact" icon={Building2}>
+          <BusinessBlock company={c} />
+        </Section>
+      </div>
+
+      <Section title="At a glance" icon={Activity}>
+        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <Fact label="Members">{c.member_count}</Fact>
+          <Fact label="Admins">{c.admin_count}</Fact>
+          <Fact label="Inactive">{c.inactive_count}</Fact>
+          <Fact label="Join requests">{c.pending_join_count}</Fact>
+          <Fact label="Last clock-in">{ago(c.last_punch_at)}</Fact>
+          <Fact label="Subscription">
+            <span className="capitalize">{c.sub_status}</span>
+            {c.plan_name && <> · {c.plan_name}</>}
+          </Fact>
+          <Fact label="Period ends">{fmtDate(c.period_end)}</Fact>
+          <Fact label="Billing mode">
+            {BILLING_MODES.find((b) => b.value === c.billing_mode)?.label ?? c.billing_mode}
+          </Fact>
+          <Fact label="History kept">
+            {c.data_retention_months ? `${c.data_retention_months} months` : "Unlimited"}
+          </Fact>
+        </dl>
+      </Section>
+
+      <Section title="Review" icon={ShieldCheck}>
+        {c.reviewed_at ? (
+          <div className="space-y-1 text-sm">
+            <p className="text-foreground">
+              {c.status === "rejected" ? "Rejected" : "Approved"} by{" "}
+              <span className="font-medium">{c.reviewed_by_name ?? "a deleted account"}</span> on{" "}
+              {fmtDateTime(c.reviewed_at)}.
+            </p>
+            {c.review_note && (
+              <p className="rounded-md bg-muted/40 px-3 py-2 text-muted-foreground">
+                “{c.review_note}”
+              </p>
+            )}
+          </div>
+        ) : c.status === "pending" ? (
+          <p className="text-sm text-muted-foreground">
+            Waiting for a decision since {fmtDateTime(c.created_at)}.
+          </p>
+        ) : (
+          <p className="text-sm text-muted-foreground">Reviewed before decisions were recorded.</p>
+        )}
+      </Section>
+    </>
+  );
+}
+
+/* ---------------------------------------------------------------- people -- */
+
+function PeopleTab({
+  company,
+  members,
+  joins,
+}: {
+  company: CompanyRow;
+  members: Member[];
+  joins: Member[];
 }) {
   const qc = useQueryClient();
   const [err, setErr] = useState<string | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ["companies-admin"] });
-    qc.invalidateQueries({ queryKey: ["companies-subs"] });
-    qc.invalidateQueries({ queryKey: ["companies-people"] });
-    qc.invalidateQueries({ queryKey: ["platform-companies"] });
-    qc.invalidateQueries({ queryKey: ["platform-subs"] });
-  };
-
-  // Every column, not a name and a flag: once a company is approved this drawer
-  // is the only place a platform admin can look up who is in it, and it should
-  // hold what the approval queue showed before the decision.
-  const membersQ = useQuery({
-    queryKey: ["company-members-admin", company.id],
-    queryFn: async () => {
-      const [{ data: profiles, error: pErr }, { data: roles, error: rErr }] = await Promise.all([
-        supabase
-          .from("profiles")
-          .select(
-            "id, full_name, company_id, pending_company_id, position, phone, employee_code, is_active, created_at",
-          )
-          .eq("company_id", company.id)
-          .order("full_name"),
-        supabase.from("user_roles").select("user_id, role").eq("company_id", company.id),
-      ]);
-      if (pErr) throw pErr;
-      if (rErr) throw rErr;
-      const roleBy: Record<string, AppRole[]> = {};
-      for (const r of roles ?? []) (roleBy[r.user_id] ??= []).push(r.role as AppRole);
-      const rows = (profiles ?? []) as PersonRow[];
-      // Admins first — the account that registered the company is one of them.
-      rows.sort((a, b) => {
-        const rank = (id: string) => ((roleBy[id] ?? []).includes("company_admin") ? 0 : 1);
-        return rank(a.id) - rank(b.id) || a.full_name.localeCompare(b.full_name);
-      });
-      return { rows, roleBy };
-    },
-  });
-
-  // The billing admin's email lives in auth.users, which no client can read.
-  // `billing_overview` already resolves it for super admins, so reuse that
-  // rather than adding a second way to look the same thing up.
-  const billingQ = useQuery({
-    queryKey: ["billing-overview"],
-    queryFn: async () => {
-      const { data, error } = await supabase.rpc("billing_overview");
+  const approveJoin = useMutation({
+    mutationFn: async (userId: string) => {
+      const { error } = await supabase.rpc("approve_membership", { _user: userId });
       if (error) throw error;
-      return (data ?? []) as { company_id: string; admin_email: string | null }[];
+    },
+    onSuccess: () => {
+      setErr(null);
+      invalidateCompanyViews(qc);
+    },
+    onError: (e) => setErr(errText(e)),
+  });
+
+  const exportMembers = () =>
+    downloadCsv(
+      `${slug(company.name)}-people.csv`,
+      [
+        "Name",
+        "Email",
+        "Email confirmed",
+        "Role",
+        "Position",
+        "Employee code",
+        "Phone",
+        "Active",
+        "Signed up",
+        "Last sign-in",
+        "Status",
+      ],
+      [
+        ...members.map((m) => [m, "member"] as const),
+        ...joins.map((m) => [m, "join request"] as const),
+      ].map(([m, kind]) => [
+        m.full_name,
+        m.email,
+        m.email_confirmed ? "yes" : "no",
+        m.roles.map((r) => ROLE_LABEL[r]).join(", "),
+        m.position,
+        m.employee_code,
+        m.phone,
+        m.is_active ? "yes" : "no",
+        m.created_at,
+        m.last_sign_in_at,
+        kind,
+      ]),
+    );
+
+  return (
+    <>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-muted-foreground">
+          {plural(members.length, "member")}, {company.admin_count} admin
+          {company.admin_count === 1 ? "" : "s"}
+          {company.inactive_count > 0 && <>, {company.inactive_count} inactive</>}
+        </p>
+        <div className="flex gap-2">
+          <Button asChild variant="ghost" size="sm">
+            <Link to="/accounts">Manage roles</Link>
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={exportMembers}
+            disabled={!members.length && !joins.length}
+          >
+            <Download className="mr-2 h-3.5 w-3.5" />
+            Export
+          </Button>
+        </div>
+      </div>
+
+      {err && (
+        <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{err}</p>
+      )}
+
+      {joins.length > 0 && (
+        <div className="rounded-xl border border-warning/40 bg-warning/5 p-3">
+          <p className="text-sm font-medium text-warning-foreground">
+            {plural(joins.length, "person", "people")} asking to join
+          </p>
+          <PeopleList
+            people={joins}
+            empty=""
+            action={(m) => (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={approveJoin.isPending || company.status !== "active"}
+                title={company.status !== "active" ? "Approve the company first" : ""}
+                onClick={() => approveJoin.mutate(m.id)}
+              >
+                <UserCheck className="mr-1.5 h-3.5 w-3.5" />
+                Let in
+              </Button>
+            )}
+          />
+        </div>
+      )}
+
+      <PeopleList people={members} empty="Nobody has joined yet." />
+    </>
+  );
+}
+
+/**
+ * Every person in a company, with the email they sign in with.
+ *
+ * The email is per person, from `admin_accounts()` — not the one billing
+ * address per company that `billing_overview` resolves, which is why this list
+ * used to leave it out.
+ */
+function PeopleList({
+  people,
+  empty,
+  compact = false,
+  action,
+}: {
+  people: Member[];
+  empty: string;
+  compact?: boolean;
+  action?: (m: Member) => ReactNode;
+}) {
+  if (people.length === 0) {
+    return empty ? <p className="mt-2 text-xs text-muted-foreground">{empty}</p> : null;
+  }
+  return (
+    <ul className="mt-2 divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+      {people.map((p) => (
+        <li
+          key={p.id}
+          className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 px-3 py-2"
+        >
+          <div className="min-w-0 flex-1">
+            <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-foreground">
+              <span className="truncate">{p.full_name}</span>
+              {p.roles.includes("company_admin") && <Pill tone="primary">admin</Pill>}
+              {!p.is_active && <Pill>inactive</Pill>}
+              {!p.email_confirmed && <Pill tone="warning">email unconfirmed</Pill>}
+            </p>
+            {p.email && (
+              <a
+                href={`mailto:${p.email}`}
+                className="block truncate text-xs text-primary hover:underline"
+              >
+                {p.email}
+              </a>
+            )}
+            {!compact && (
+              <p className="truncate text-xs text-muted-foreground">
+                {p.roles.length ? p.roles.map((r) => ROLE_LABEL[r]).join(", ") : "No role"}
+                {p.position && <> · {p.position}</>}
+                {p.employee_code && <> · #{p.employee_code}</>}
+              </p>
+            )}
+          </div>
+          <div className="flex shrink-0 items-center gap-3">
+            <div className="text-left sm:text-right">
+              {p.phone && (
+                <a
+                  href={`tel:${p.phone}`}
+                  className="block text-xs text-foreground hover:underline"
+                >
+                  {p.phone}
+                </a>
+              )}
+              <p className="text-[11px] text-muted-foreground">
+                {compact
+                  ? `signed up ${fmtDate(p.created_at)}`
+                  : `last sign-in ${ago(p.last_sign_in_at)}`}
+              </p>
+            </div>
+            {action?.(p)}
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/* --------------------------------------------------------------- billing -- */
+
+function BillingTab({ company }: { company: CompanyRow }) {
+  const qc = useQueryClient();
+  const [err, setErr] = useState<string | null>(null);
+
+  const subQ = useQuery({
+    queryKey: ["company-subscription", company.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("company_subscriptions")
+        .select("id, company_id, status, plan_id, seats_limit, current_period_end")
+        .eq("company_id", company.id)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return (data ?? null) as SubRow | null;
     },
   });
-  const adminEmail = billingQ.data?.find((r) => r.company_id === company.id)?.admin_email ?? null;
 
   const plansQ = useQuery({
     queryKey: ["platform-plans-lite"],
@@ -508,14 +1340,120 @@ function CompanyDetail({
     },
   });
 
+  const subscription = subQ.data ?? null;
+  const plans = plansQ.data ?? [];
+
+  // Upsert so a company with no subscription row gets one on first change.
+  const saveSub = useMutation({
+    mutationFn: async (patch: { status?: string; plan_id?: string | null }) => {
+      if (subscription) {
+        const { error } = await supabase
+          .from("company_subscriptions")
+          .update(patch)
+          .eq("id", subscription.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("company_subscriptions").insert({
+          company_id: company.id,
+          status: patch.status ?? "trialing",
+          plan_id: patch.plan_id ?? null,
+        });
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      setErr(null);
+      invalidateCompanyViews(qc);
+    },
+    onError: (e) => setErr(errText(e)),
+  });
+
+  const plan = plans.find((p) => p.id === subscription?.plan_id);
+
+  return (
+    <>
+      <Section title="Subscription" icon={CreditCard}>
+        {!subQ.isLoading && !subscription && (
+          <p className="mb-3 rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+            No subscription record — treated as a trial, so scheduling still works. Setting anything
+            below creates one.
+          </p>
+        )}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Status</Label>
+            <select
+              className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm capitalize shadow-sm"
+              value={subscription?.status ?? "trialing"}
+              disabled={saveSub.isPending || subQ.isLoading}
+              onChange={(e) => saveSub.mutate({ status: e.target.value })}
+            >
+              {SUB_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s.replace("_", " ")}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Plan</Label>
+            <select
+              className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
+              value={subscription?.plan_id ?? ""}
+              disabled={saveSub.isPending || subQ.isLoading}
+              onChange={(e) => saveSub.mutate({ plan_id: e.target.value || null })}
+            >
+              <option value="">— none —</option>
+              {plans.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} (${(p.price_cents / 100).toFixed(0)})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Setting the subscription to inactive or canceled stops new schedules being created;
+          existing ones stay visible to employees.
+        </p>
+        {err && (
+          <p className="mt-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {err}
+          </p>
+        )}
+      </Section>
+
+      <CompanyBillingSection
+        target={{
+          companyId: company.id,
+          companyName: company.name,
+          companyStatus: company.status,
+          subStatus: subscription?.status ?? "none",
+          planName: plan?.name ?? "—",
+          amountCents: plan?.price_cents ?? 0,
+          periodEnd: subscription?.current_period_end ?? null,
+          adminEmail: company.creator_email,
+        }}
+      />
+    </>
+  );
+}
+
+/* -------------------------------------------------------------- settings -- */
+
+function SettingsTab({ company, onDeleted }: { company: CompanyRow; onDeleted: () => void }) {
+  const qc = useQueryClient();
+  const [err, setErr] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
   // A super admin has no company of their own, so the rename on Settings never
   // reaches them. This is where they can rename any organization on the platform.
   const [nameDraft, setNameDraft] = useState(company.name);
   useEffect(() => setNameDraft(company.name), [company.id, company.name]);
 
   // Read on its own, and tolerant of a database that has not taken the
-  // migration yet: folding it into the company select would take this whole
-  // page down rather than grey out one switch.
+  // migration yet: folding it into the directory would take the whole page
+  // down rather than grey out one switch.
   const breakAlertQ = useQuery({
     queryKey: ["company-break-alert-sound", company.id],
     queryFn: async () => {
@@ -537,53 +1475,28 @@ function CompanyDetail({
         .update({ break_alert_sound: on } as never)
         .eq("id", company.id);
       if (error) throw error;
-      return on;
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["company-break-alert-sound", company.id] });
     },
+    onError: (e) => setErr(errText(e)),
   });
 
   const updateCompany = useMutation({
-    mutationFn: async (patch: Partial<Company>) => {
+    mutationFn: async (patch: {
+      name?: string;
+      status?: string;
+      billing_mode?: string;
+      data_retention_months?: number | null;
+    }) => {
       const { error } = await supabase.from("companies").update(patch).eq("id", company.id);
       if (error) throw error;
     },
     onSuccess: () => {
-      invalidate();
       setErr(null);
+      invalidateCompanyViews(qc);
     },
-    onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
-  });
-
-  // Upsert so a company with no subscription row gets one on first change.
-  const saveSub = useMutation({
-    mutationFn: async (patch: {
-      status?: string;
-      plan_id?: string | null;
-      seats_limit?: number | null;
-    }) => {
-      if (subscription) {
-        const { error } = await supabase
-          .from("company_subscriptions")
-          .update(patch)
-          .eq("id", subscription.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from("company_subscriptions").insert({
-          company_id: company.id,
-          status: patch.status ?? "trialing",
-          plan_id: patch.plan_id ?? null,
-          seats_limit: patch.seats_limit ?? null,
-        });
-        if (error) throw error;
-      }
-    },
-    onSuccess: () => {
-      invalidate();
-      setErr(null);
-    },
-    onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
+    onError: (e) => setErr(errText(e)),
   });
 
   const deleteCompany = useMutation({
@@ -592,52 +1505,23 @@ function CompanyDetail({
       if (error) throw error;
     },
     onSuccess: () => {
-      invalidate();
+      invalidateCompanyViews(qc);
       setConfirmDelete(false);
-      onClose();
+      onDeleted();
     },
-    onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
+    onError: (e) => setErr(errText(e)),
   });
 
-  const members = membersQ.data?.rows ?? [];
-  const roleBy = membersQ.data?.roleBy ?? {};
-  const plans = plansQ.data ?? [];
+  const undecided = company.status === "pending" || company.status === "rejected";
 
   return (
-    <div className="rounded-2xl border border-border bg-card shadow-sm">
-      <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-4">
-        <div>
-          <h2 className="text-sm font-semibold text-foreground">{company.name}</h2>
-          <p className="text-xs text-muted-foreground">
-            {headcount} member{headcount === 1 ? "" : "s"} · created{" "}
-            {new Date(company.created_at).toLocaleDateString()}
-            {company.join_code && (
-              <>
-                {" "}
-                · join code <span className="font-mono text-foreground">{company.join_code}</span>
-              </>
-            )}
-          </p>
-          {adminEmail && (
-            <p className="text-xs text-muted-foreground">
-              Account{" "}
-              <a href={`mailto:${adminEmail}`} className="text-primary hover:underline">
-                {adminEmail}
-              </a>
-            </p>
-          )}
-        </div>
-        <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close detail">
-          <X className="h-4 w-4" />
-        </Button>
-      </div>
+    <>
+      {err && (
+        <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{err}</p>
+      )}
 
-      <div className="grid gap-6 p-5 lg:grid-cols-2">
+      <Section title="Account" icon={KeyRound}>
         <div className="space-y-4">
-          <h3 className="flex items-center gap-2 text-sm font-medium text-foreground">
-            <KeyRound className="h-4 w-4 text-primary" />
-            Account
-          </h3>
           <div className="space-y-1.5">
             <Label className="text-xs" htmlFor="org-name">
               Organization name
@@ -666,28 +1550,30 @@ function CompanyDetail({
                 Save
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Shown to everyone in this organization and on anything they print.
-            </p>
           </div>
+
           <div className="space-y-1.5">
             <Label className="text-xs">Account status</Label>
             <select
               className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm capitalize shadow-sm"
               value={company.status}
-              disabled={updateCompany.isPending}
+              disabled={updateCompany.isPending || undecided}
               onChange={(e) => updateCompany.mutate({ status: e.target.value })}
             >
-              {STATUSES.map((s) => (
+              {undecided && <option value={company.status}>{company.status}</option>}
+              {LIVE_STATUSES.map((s) => (
                 <option key={s} value={s}>
                   {s.replace("_", " ")}
                 </option>
               ))}
             </select>
             <p className="text-xs text-muted-foreground">
-              Anything other than active blocks sign-in for this tenant and notifies its members.
+              {undecided
+                ? "A registration is decided with Approve or Reject at the top, so the decision is recorded."
+                : "Anything other than active blocks sign-in for this company and notifies its members."}
             </p>
           </div>
+
           <div className="space-y-1.5">
             <Label className="text-xs">Billing mode</Label>
             <select
@@ -703,159 +1589,73 @@ function CompanyDetail({
               ))}
             </select>
           </div>
+        </div>
+      </Section>
 
-          {/* Approval, not a company setting: the column carries a trigger
-              that refuses this change from anyone but a platform admin, because
-              `company_admin_update` would otherwise let the applicant grant it
-              to themselves. */}
-          <div className="space-y-1.5 rounded-lg border border-border p-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <Label className="flex items-center gap-1.5 text-xs">
-                  <Volume2 className="h-3.5 w-3.5 text-primary" />
-                  Break alert sound
-                </Label>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  This company's two-minute break reminder plays a loud recorded alert instead of
-                  the standard chime, for crews who cannot hear a phone in a pocket. No other
-                  notification uses it.
-                </p>
-              </div>
-              <Switch
-                checked={breakAlertQ.data?.value === true}
-                disabled={
-                  breakAlertQ.isLoading || breakAlertQ.data?.unavailable || setBreakAlert.isPending
-                }
-                onCheckedChange={(v) => setBreakAlert.mutate(v)}
-                aria-label="Break alert sound"
-              />
-            </div>
-            {breakAlertQ.data?.unavailable ? (
-              <p className="text-xs text-warning-foreground">
-                Not available yet — this database is still waiting on the migration that adds it.
-              </p>
-            ) : (
-              <button
-                type="button"
-                onClick={() => playBreakAlert(true)}
-                className="text-xs font-medium text-primary hover:underline"
-              >
-                Hear it
-              </button>
-            )}
-          </div>
-
-          <h3 className="flex items-center gap-2 pt-2 text-sm font-medium text-foreground">
-            <CreditCard className="h-4 w-4 text-primary" />
-            Subscription
-          </h3>
-          {!subscription && (
-            <p className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
-              No subscription record — treated as a trial, so scheduling still works. Setting
-              anything below creates one.
-            </p>
-          )}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Status</Label>
-              <select
-                className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm capitalize shadow-sm"
-                value={subscription?.status ?? "trialing"}
-                disabled={saveSub.isPending}
-                onChange={(e) => saveSub.mutate({ status: e.target.value })}
-              >
-                {SUB_STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {s.replace("_", " ")}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Plan</Label>
-              <select
-                className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
-                value={subscription?.plan_id ?? ""}
-                disabled={saveSub.isPending}
-                onChange={(e) => saveSub.mutate({ plan_id: e.target.value || null })}
-              >
-                <option value="">— none —</option>
-                {plans.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} (${(p.price_cents / 100).toFixed(0)})
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Setting the subscription to inactive or canceled stops new schedules being created;
-            existing ones stay visible to employees.
-          </p>
-
-          <CompanyBillingSection
-            target={{
-              companyId: company.id,
-              companyName: company.name,
-              companyStatus: company.status,
-              subStatus: subscription?.status ?? "none",
-              planName: plans.find((p) => p.id === subscription?.plan_id)?.name ?? "—",
-              amountCents: plans.find((p) => p.id === subscription?.plan_id)?.price_cents ?? 0,
-              periodEnd: subscription?.current_period_end ?? null,
-              adminEmail: adminEmail ?? null,
-            }}
-          />
-
-          <RetentionCard
-            company={company}
-            onChange={(months) => updateCompany.mutate({ data_retention_months: months })}
-          />
-
-          <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3">
-            <p className="flex items-center gap-2 text-sm font-medium text-destructive">
-              <AlertTriangle className="h-4 w-4" />
-              Danger zone
-            </p>
+      {/* Approval, not a company setting: the column carries a trigger that
+          refuses this change from anyone but a platform admin. */}
+      <section className="space-y-1.5 rounded-xl border border-border p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <Label className="flex items-center gap-1.5 text-sm">
+              <Volume2 className="h-4 w-4 text-primary" />
+              Break alert sound
+            </Label>
             <p className="mt-1 text-xs text-muted-foreground">
-              Deleting removes the company and everything scoped to it — schedules, shifts, punches,
-              time off, and role assignments. Sign-in accounts survive but are left with no company.
+              This company's two-minute break reminder plays a loud recorded alert instead of the
+              standard chime, for crews who cannot hear a phone in a pocket.
             </p>
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-2 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
-              onClick={() => {
-                setErr(null);
-                setConfirmDelete(true);
-              }}
-            >
-              <Trash2 className="mr-2 h-3.5 w-3.5" />
-              Delete company
-            </Button>
           </div>
-
-          {err && (
-            <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{err}</p>
-          )}
+          <Switch
+            checked={breakAlertQ.data?.value === true}
+            disabled={
+              breakAlertQ.isLoading || breakAlertQ.data?.unavailable || setBreakAlert.isPending
+            }
+            onCheckedChange={(v) => setBreakAlert.mutate(v)}
+            aria-label="Break alert sound"
+          />
         </div>
+        {breakAlertQ.data?.unavailable ? (
+          <p className="text-xs text-warning-foreground">
+            Not available yet — this database is still waiting on the migration that adds it.
+          </p>
+        ) : (
+          <button
+            type="button"
+            onClick={() => playBreakAlert(true)}
+            className="text-xs font-medium text-primary hover:underline"
+          >
+            Hear it
+          </button>
+        )}
+      </section>
 
-        <div className="space-y-3">
-          <h3 className="flex items-center gap-2 text-sm font-medium text-foreground">
-            <Users className="h-4 w-4 text-primary" />
-            Members ({members.length})
-          </h3>
-          {membersQ.isLoading ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">Loading…</p>
-          ) : (
-            <div className="max-h-96 overflow-y-auto">
-              <PeopleTable
-                people={members}
-                rolesOf={(id) => roleBy[id] ?? []}
-                empty="Nobody has joined yet."
-              />
-            </div>
-          )}
-        </div>
+      <RetentionCard
+        company={company}
+        onChange={(months) => updateCompany.mutate({ data_retention_months: months })}
+      />
+
+      <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4">
+        <p className="flex items-center gap-2 text-sm font-medium text-destructive">
+          <AlertTriangle className="h-4 w-4" />
+          Danger zone
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Deleting removes the company and everything scoped to it — schedules, shifts, punches,
+          time off, and role assignments. Sign-in accounts survive but are left with no company.
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-2 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+          onClick={() => {
+            setErr(null);
+            setConfirmDelete(true);
+          }}
+        >
+          <Trash2 className="mr-2 h-3.5 w-3.5" />
+          Delete company
+        </Button>
       </div>
 
       <DeleteCompanyDialog
@@ -865,7 +1665,154 @@ function CompanyDetail({
         onCancel={() => setConfirmDelete(false)}
         onConfirm={() => deleteCompany.mutate()}
       />
+    </>
+  );
+}
+
+/* -------------------------------------------------------------- activity -- */
+
+type AuditEntry = {
+  id: string;
+  action: string;
+  entity_type: string;
+  actor_id: string | null;
+  created_at: string;
+};
+
+/** Everything the audit trail holds for this company, newest first. */
+function ActivityTab({
+  company,
+  nameOf,
+}: {
+  company: CompanyRow;
+  nameOf: (userId: string) => string | null;
+}) {
+  const q = useQuery({
+    queryKey: ["company-activity", company.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("audit_logs")
+        .select("id, action, entity_type, actor_id, created_at")
+        .eq("company_id", company.id)
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      return (data ?? []) as AuditEntry[];
+    },
+  });
+
+  const entries = q.data ?? [];
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-muted-foreground">
+        The last 100 recorded changes — approvals, billing, schedules, roles and time off.
+      </p>
+      {q.isLoading ? (
+        <p className="py-6 text-center text-sm text-muted-foreground">Loading…</p>
+      ) : q.error ? (
+        <p className="text-sm text-destructive">{errText(q.error)}</p>
+      ) : entries.length === 0 ? (
+        <p className="py-6 text-center text-sm text-muted-foreground">Nothing recorded yet.</p>
+      ) : (
+        <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border">
+          {entries.map((e) => (
+            <li
+              key={e.id}
+              className="flex flex-wrap items-baseline justify-between gap-2 px-3 py-2"
+            >
+              <div className="min-w-0">
+                <p className="truncate font-mono text-xs text-foreground">{e.action}</p>
+                <p className="text-[11px] text-muted-foreground">
+                  {e.actor_id ? (nameOf(e.actor_id) ?? "a deleted account") : "the system"}
+                </p>
+              </div>
+              <span
+                className="shrink-0 text-[11px] text-muted-foreground"
+                title={fmtDateTime(e.created_at)}
+              >
+                <Clock className="mr-1 inline h-3 w-3" />
+                {ago(e.created_at)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
+  );
+}
+
+/* =============================================================== dialogs == */
+
+/**
+ * Saying no, with a reason. The reason is required because it is the only
+ * thing the business is told — "not approved" on its own is a dead end.
+ */
+function RejectDialog({
+  company,
+  pending,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  company: CompanyRow | null;
+  pending: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onConfirm: (note: string) => void;
+}) {
+  const [note, setNote] = useState("");
+  useEffect(() => setNote(""), [company?.id]);
+
+  return (
+    <Dialog open={!!company} onOpenChange={(o) => !o && onCancel()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <UserX className="h-5 w-5 text-destructive" />
+            Reject {company?.name}?
+          </DialogTitle>
+          <DialogDescription>
+            {company?.creator_email ? (
+              <>
+                <span className="font-medium text-foreground">{company.creator_email}</span> and
+                anyone attached
+              </>
+            ) : (
+              "Everyone attached"
+            )}{" "}
+            will be told it was not approved, with the reason below. They stay locked out. You can
+            still approve it later from the company's panel.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-1.5">
+          <Label htmlFor="reject-note">Reason</Label>
+          <Textarea
+            id="reject-note"
+            rows={3}
+            value={note}
+            maxLength={500}
+            placeholder="e.g. We couldn't verify this business. Reply with your business license and we'll take another look."
+            onChange={(e) => setNote(e.target.value)}
+          />
+        </div>
+        {error && (
+          <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={onCancel} disabled={pending}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={!note.trim() || pending}
+            onClick={() => onConfirm(note.trim())}
+          >
+            {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Reject
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -878,7 +1825,7 @@ function RetentionCard({
   company,
   onChange,
 }: {
-  company: Company;
+  company: Pick<CompanyRow, "id" | "name" | "data_retention_months">;
   onChange: (months: number | null) => void;
 }) {
   const qc = useQueryClient();
@@ -906,7 +1853,7 @@ function RetentionCard({
       setConfirming(false);
       void qc.invalidateQueries({ queryKey: ["company-history-stats"] });
     },
-    onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setErr(errText(e)),
   });
 
   const s = statsQ.data;
@@ -915,7 +1862,7 @@ function RetentionCard({
     iso ? new Date(iso).toLocaleDateString(undefined, { month: "short", year: "numeric" }) : "—";
 
   return (
-    <div className="rounded-xl border border-border bg-card p-3">
+    <div className="rounded-xl border border-border bg-card p-4">
       <p className="flex items-center gap-2 text-sm font-medium text-foreground">
         <Clock className="h-4 w-4 text-primary" /> History kept
       </p>
@@ -1039,12 +1986,7 @@ function DeleteCompanyDialog({
   const matches = typed.trim() === companyName;
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(o) => {
-        if (!o) onCancel();
-      }}
-    >
+    <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Delete {companyName}?</DialogTitle>
@@ -1078,70 +2020,5 @@ function DeleteCompanyDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-}
-
-/**
- * Every column a profile carries, laid out for a platform admin.
- *
- * The same block serves the approval queue and the company drawer on purpose:
- * what you are shown before you approve a company should be what you can still
- * look up afterwards, or the decision and the record disagree.
- *
- * No email column, deliberately. `billing_overview` resolves one address per
- * company — the account it is billed to — not one per person, and printing it
- * against four admin rows says four things that are not true. It belongs beside
- * the company, which is where it is shown.
- */
-function PeopleTable({
-  people,
-  rolesOf,
-  empty,
-}: {
-  people: PersonRow[];
-  rolesOf: (userId: string) => AppRole[];
-  empty: string;
-}) {
-  if (people.length === 0) {
-    return empty ? <p className="mt-3 text-xs text-muted-foreground">{empty}</p> : null;
-  }
-  return (
-    <ul className="mt-3 divide-y divide-border overflow-hidden rounded-lg border border-border">
-      {people.map((p) => {
-        const roles = rolesOf(p.id);
-        return (
-          <li key={p.id} className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 px-3 py-2">
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-foreground">
-                {p.full_name || "Unnamed"}
-                {!p.is_active && (
-                  <span className="ml-2 rounded-full bg-secondary px-2 py-0.5 text-[11px] font-normal text-muted-foreground">
-                    inactive
-                  </span>
-                )}
-              </p>
-              <p className="truncate text-xs text-muted-foreground">
-                {roles.length ? roles.map((r) => ROLE_LABEL[r]).join(", ") : "No role"}
-                {p.position && <> · {p.position}</>}
-                {p.employee_code && <> · #{p.employee_code}</>}
-              </p>
-            </div>
-            <div className="min-w-0 text-left sm:text-right">
-              {p.phone && (
-                <a
-                  href={`tel:${p.phone}`}
-                  className="block truncate text-xs text-foreground hover:underline"
-                >
-                  {p.phone}
-                </a>
-              )}
-              <p className="text-[11px] text-muted-foreground">
-                signed up {new Date(p.created_at).toLocaleDateString()}
-              </p>
-            </div>
-          </li>
-        );
-      })}
-    </ul>
   );
 }
