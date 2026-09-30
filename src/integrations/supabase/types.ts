@@ -1424,6 +1424,8 @@ export type Database = {
       }
       approve_trade: { Args: { _trade: string; _approve: boolean }; Returns: Json }
       respond_to_trade: { Args: { _trade: string; _accept: boolean }; Returns: Json }
+      decide_time_off: { Args: { _request: string; _approve: boolean }; Returns: number }
+      cancel_time_off: { Args: { _request: string }; Returns: undefined }
       claim_super_admin: { Args: never; Returns: boolean }
       dismiss_break_reminder: { Args: { _user: string; _kind: string; _stretch_start: string }; Returns: undefined }
       company_presence: {

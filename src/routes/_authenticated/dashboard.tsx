@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { useAppRules } from "@/lib/app-rules";
 import { useStaffVisibility } from "@/lib/staff-visibility";
 import { PAID_BREAK_MINUTES, readBreak, roundPunches } from "@/lib/timecard-totals";
+import { toDayString } from "@/lib/schedule-pattern";
 import { breakAlertsFor, type BreakAlert, type ReminderDismissal, type ReminderKind } from "@/lib/break-reminders";
 import { Button } from "@/components/ui/button";
 import { Clock, Coffee, LogOut, Users, RefreshCw, CalendarDays, FileClock, AlertTriangle, X } from "lucide-react";
@@ -46,6 +47,11 @@ type PresenceRow = { user_id: string; full_name: string; job_title: string | nul
 
 function fmtTime(s: string) {
   return new Date(s).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+/** "Shift started 9:00" once the start has passed, "Shift starts 9:00" before it. */
+function shiftStartLabel(startsAt: string, now: number) {
+  const verb = new Date(startsAt).getTime() <= now ? "started" : "starts";
+  return `Shift ${verb} ${fmtTime(startsAt)}`;
 }
 function fmtHours(ms: number) {
   if (ms <= 0) return "0h 00m";
@@ -396,7 +402,18 @@ function DashboardPage() {
       no_show: 3,
       due: 4,
     };
-    list.sort((a, b) => order[a.status] - order[b.status] || a.name.localeCompare(b.name));
+    // Within each status, earliest first: the shift's start, or the clock-in
+    // for someone working off the schedule. Name only breaks a tie.
+    const startOf = (r: Row) => {
+      const s = r.due?.starts_at ?? r.firstIn;
+      return s ? new Date(s).getTime() : Infinity;
+    };
+    list.sort(
+      (a, b) =>
+        order[a.status] - order[b.status] ||
+        startOf(a) - startOf(b) ||
+        a.name.localeCompare(b.name),
+    );
     return list;
   }, [membersQ.data, punchesQ.data, dismissalsQ.data, dueToday, rules, staff, now]);
 
@@ -450,7 +467,16 @@ function DashboardPage() {
       .visible(presenceQ.data ?? [], (p) => p.user_id)
       .filter(
         (p) => dueToday.has(p.user_id) || p.status === "working" || p.status === "on_break",
-      );
+      )
+      // Earliest shift first, the same as the manager's roster; anyone on the
+      // clock without a shift today goes after.
+      .sort((a, b) => {
+        const ta = dueToday.get(a.user_id)?.starts_at;
+        const tb = dueToday.get(b.user_id)?.starts_at;
+        const diff =
+          (ta ? new Date(ta).getTime() : Infinity) - (tb ? new Date(tb).getTime() : Infinity);
+        return (Number.isNaN(diff) ? 0 : diff) || a.full_name.localeCompare(b.full_name);
+      });
     // Until the admin list has landed, saying "loading" beats showing a roster
     // that is about to lose rows.
     const presenceLoading = presenceQ.isLoading || staff.isLoading;
@@ -481,7 +507,7 @@ function DashboardPage() {
             {/* Scheduled, not clocked: what time they are due in today. */}
             {mine && (
               <p className="mt-1 text-sm font-medium text-primary">
-                You're due in at {fmtTime(mine.starts_at)} — until {fmtTime(mine.ends_at)}
+                Your {shiftStartLabel(mine.starts_at, now).toLowerCase()} — until {fmtTime(mine.ends_at)}
                 {!mine.published && <span className="text-muted-foreground"> (not published yet)</span>}
                 {mine.more > 0 && (
                   <span className="text-muted-foreground">
@@ -600,7 +626,7 @@ function DashboardPage() {
                     builder's business, not the floor's. */}
                 {dueToday.get(p.user_id)?.published && (
                   <div className="truncate text-xs text-muted-foreground">
-                    Due in {fmtTime(dueToday.get(p.user_id)!.starts_at)}
+                    {shiftStartLabel(dueToday.get(p.user_id)!.starts_at, now)}
                   </div>
                 )}
               </div>
@@ -668,7 +694,7 @@ function DashboardPage() {
         <div className="grid grid-cols-[1.6fr_1fr_1fr_1fr_1fr] border-b border-border bg-muted/30 px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
           <div>Employee</div>
           <div>Status</div>
-          <div>Due / In / Out</div>
+          <div>Shift / In / Out</div>
           <div className="text-right">Break</div>
           <div className="text-right">Worked</div>
         </div>
@@ -689,9 +715,22 @@ function DashboardPage() {
             <div>
               {/* An overdue break turns the name red — the thing a manager scans
                   for — with the reason underneath. */}
-              <div className={`font-medium ${r.alerts.length > 0 ? "text-destructive" : "text-foreground"}`}>
-                {r.name}
-              </div>
+              {/* A manager fixes a day from here: the name opens that person's
+                  timecard with today's editor up, breaks and shift times alike. */}
+              {isManager ? (
+                <Link
+                  to="/timecards"
+                  search={{ user: r.id, day: toDayString(dayStart) }}
+                  title={`Edit ${r.name}'s punches for today`}
+                  className={`font-medium underline-offset-2 hover:underline ${r.alerts.length > 0 ? "text-destructive" : "text-foreground hover:text-primary"}`}
+                >
+                  {r.name}
+                </Link>
+              ) : (
+                <div className={`font-medium ${r.alerts.length > 0 ? "text-destructive" : "text-foreground"}`}>
+                  {r.name}
+                </div>
+              )}
               {r.alerts.length > 0 ? (
                 <div className="mt-0.5 space-y-0.5">
                   {r.alerts.map((a) => (
@@ -727,13 +766,13 @@ function DashboardPage() {
               )}
               {r.status === "clocked_out" && <span className="rounded bg-blue-100 dark:bg-blue-500/15 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">Clocked out</span>}
               {r.status === "no_show" && <span className="rounded bg-slate-100 dark:bg-slate-500/15 px-2 py-0.5 text-xs font-medium text-slate-600 dark:text-slate-300">No show</span>}
-              {r.status === "due" && <span className="rounded bg-blue-50 dark:bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">Due later</span>}
+              {r.status === "due" && <span className="rounded bg-blue-50 dark:bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">Starts later</span>}
             </div>
             <div className="text-xs text-muted-foreground">
               {/* What the schedule says, above what the clock says. */}
               {r.due && (
                 <div className="font-medium text-foreground">
-                  Due {fmtTime(r.due.starts_at)}
+                  {shiftStartLabel(r.due.starts_at, now)}
                   {!r.due.published && <span className="font-normal"> · draft</span>}
                   {r.due.more > 0 && <span className="font-normal"> +{r.due.more}</span>}
                 </div>

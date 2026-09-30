@@ -1,4 +1,5 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { z } from "zod";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -35,6 +36,9 @@ import { PrintableTimecard } from "@/components/printable-timecard";
 import { TimecardDayEditor, type EditablePunch } from "@/components/timecard-day-editor";
 import { splitPeriod, overtimeNote } from "@/lib/overtime";
 import {
+  groupByShiftDay,
+  MAX_SHIFT_MS,
+  punchesInPeriod,
   readBreak,
   roundPunches,
   roundToMinutes,
@@ -43,7 +47,20 @@ import {
 } from "@/lib/timecard-totals";
 import { fromDayString, toDayString } from "@/lib/schedule-pattern";
 
+/**
+ * `?user=<id>&day=YYYY-MM-DD` opens that person's card on that day's editor —
+ * how a manager gets here from a name on the dashboard roster.
+ */
+const searchSchema = z.object({
+  user: z.string().uuid().optional(),
+  day: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+});
+
 export const Route = createFileRoute("/_authenticated/timecards")({
+  validateSearch: (s) => searchSchema.parse(s),
   component: TimecardsPage,
 });
 
@@ -135,6 +152,21 @@ function TimecardsPage() {
   const [wipeReason, setWipeReason] = useState("");
   const [wipeDone, setWipeDone] = useState<number | null>(null);
 
+  // Arriving from a name on the dashboard: show that person's card for the week
+  // holding the day, then open the day's editor once its punches are in.
+  const search = Route.useSearch();
+  const navigate = useNavigate();
+  const [openDayOnLoad, setOpenDayOnLoad] = useState<Date | null>(null);
+  useEffect(() => {
+    if (!isManager || !search.user || !search.day) return;
+    const day = fromDayString(search.day);
+    setSelectedUser(search.user);
+    setAnchor(startOfWeek(day, rules.week_start_day));
+    setOpenDayOnLoad(day);
+    // Spent once read, so a refresh or the back button doesn't reopen it.
+    void navigate({ to: "/timecards", search: {}, replace: true });
+  }, [isManager, search.user, search.day, rules.week_start_day, navigate]);
+
   // Keep the anchor aligned to the configured week-start day if it changes.
   useEffect(() => {
     setAnchor((a) => startOfWeek(a, rules.week_start_day));
@@ -166,6 +198,12 @@ function TimecardsPage() {
   const days = period === "week" ? 7 : 14;
   const rangeStart = anchor;
   const rangeEnd = addDays(anchor, days);
+  // A shift counts on the day it was clocked in, so the fetch reaches past both
+  // ends of the period: after it for the clock-out of a shift started on its
+  // last night, before it to recognise the tail of one from the period before.
+  // punchesInPeriod then keeps exactly this period's shifts.
+  const fetchFrom = new Date(rangeStart.getTime() - MAX_SHIFT_MS).toISOString();
+  const fetchTo = new Date(rangeEnd.getTime() + MAX_SHIFT_MS).toISOString();
 
   // Roster (managers only). A super admin belongs to no company but RLS lets
   // them read every profile and punch, so they get the whole platform rather
@@ -231,11 +269,11 @@ function TimecardsPage() {
           "id, user_id, kind, at, distance_m, within_geofence, break_minutes, latitude, longitude",
         )
         .eq("user_id", targetUserId!)
-        .gte("at", rangeStart.toISOString())
-        .lt("at", rangeEnd.toISOString())
+        .gte("at", fetchFrom)
+        .lt("at", fetchTo)
         .order("at", { ascending: true });
       if (error) throw error;
-      return (data ?? []) as Punch[];
+      return punchesInPeriod((data ?? []) as Punch[], rangeStart, rangeEnd);
     },
   });
 
@@ -249,11 +287,11 @@ function TimecardsPage() {
       const { data, error } = await supabase
         .from("time_punches")
         .select("user_id, kind, at, break_minutes")
-        .gte("at", rangeStart.toISOString())
-        .lt("at", rangeEnd.toISOString())
+        .gte("at", fetchFrom)
+        .lt("at", fetchTo)
         .order("at", { ascending: true });
       if (error) throw error;
-      return (data ?? []) as SimplePunch[];
+      return punchesInPeriod((data ?? []) as SimplePunch[], rangeStart, rangeEnd);
     },
   });
 
@@ -361,12 +399,9 @@ function TimecardsPage() {
   });
 
   const grouped = useMemo(() => {
-    const byDay = new Map<string, Punch[]>();
-    for (const p of punchesQ.data ?? []) {
-      const k = new Date(p.at).toDateString();
-      if (!byDay.has(k)) byDay.set(k, []);
-      byDay.get(k)!.push(p);
-    }
+    // By the day each shift was clocked in on: one that runs past midnight is
+    // counted whole on its first day, clock-out and all.
+    const byDay = groupByShiftDay(punchesQ.data ?? []);
     type Pair = {
       in: Punch;
       out?: Punch;
@@ -483,6 +518,15 @@ function TimecardsPage() {
     }
     return { rows, weekTotal, weekUnpaid, weekPaid };
   }, [punchesQ.data, rangeStart, days, rules.punch_round_minutes, rules.cap_break_to_length]);
+
+  // The day asked for from the dashboard, opened once that card has loaded —
+  // before then the editor would show the day as having no punches.
+  useEffect(() => {
+    if (!openDayOnLoad || targetUserId !== selectedUser) return;
+    if (!punchesQ.isSuccess || punchesQ.isFetching) return;
+    setEditingDay(openDayOnLoad);
+    setOpenDayOnLoad(null);
+  }, [openDayOnLoad, targetUserId, selectedUser, punchesQ.isSuccess, punchesQ.isFetching]);
 
   // Managers only: every punch in view that carries coordinates, newest first.
   const locationRows = useMemo(

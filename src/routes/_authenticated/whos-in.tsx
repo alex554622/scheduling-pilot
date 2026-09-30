@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,7 @@ type Punch = {
   kind: "in" | "out" | "break_start" | "break_end";
   at: string;
   distance_m: number | null;
+  break_minutes: number | null;
 };
 
 type Member = { id: string; full_name: string | null; position: string | null };
@@ -63,7 +65,7 @@ function WhosInPage() {
       const since = new Date(Date.now() - 36 * 3600_000).toISOString();
       const { data, error } = await supabase
         .from("time_punches")
-        .select("user_id, kind, at, distance_m")
+        .select("user_id, kind, at, distance_m, break_minutes")
         .eq("company_id", company!.id)
         .gte("at", since)
         .order("at", { ascending: true });
@@ -132,14 +134,28 @@ function WhosInPage() {
       const onClock = !!last && last.kind !== "out";
       return scheduled.has(m.id) || punchedToday.has(m.id) || onClock;
     });
-    type Row = { id: string; name: string; position: string | null; status: "working" | "on_break" | "off"; since: string | null };
+    type Row = {
+      id: string;
+      name: string;
+      position: string | null;
+      status: "working" | "on_break" | "off";
+      since: string | null;
+      breakMinutes: number | null;
+    };
     const list: Row[] = members.map((m) => {
       const last = lastByUser.get(m.id);
       const status: Row["status"] =
         !last || last.kind === "out" ? "off"
         : last.kind === "break_start" ? "on_break"
         : "working";
-      return { id: m.id, name: m.full_name || "Unnamed", position: m.position, status, since: last?.at ?? null };
+      return {
+        id: m.id,
+        name: m.full_name || "Unnamed",
+        position: m.position,
+        status,
+        since: last?.at ?? null,
+        breakMinutes: status === "on_break" ? (last?.break_minutes ?? null) : null,
+      };
     });
     list.sort((a, b) => {
       const order = { working: 0, on_break: 1, off: 2 } as const;
@@ -148,6 +164,28 @@ function WhosInPage() {
     });
     return list;
   }, [membersQ.data, punchesQ.data, scheduledQ.data, todayStart]);
+
+  // Employees can't end a break before its time is up; an admin can, from here.
+  // Recorded like any manager punch, so it shows in the correction audit.
+  const endBreak = useMutation({
+    mutationFn: async (r: { id: string; since: string; breakMinutes: number | null }) => {
+      // Never before the break_start, even if this device's clock runs behind.
+      const at = new Date(Math.max(Date.now(), new Date(r.since).getTime() + 1000));
+      const { error } = await supabase.rpc("manager_insert_punch", {
+        _user_id: r.id,
+        _at: at.toISOString(),
+        _kind: "break_end",
+        _reason: "Break ended early by an admin",
+        ...(r.breakMinutes != null ? { _minutes: r.breakMinutes } : {}),
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Break ended");
+      qc.invalidateQueries({ queryKey: ["whos-in-punches"] });
+    },
+    onError: (e: any) => toast.error(e.message ?? "Could not end the break"),
+  });
 
   const counts = useMemo(() => ({
     working: rows.filter((r) => r.status === "working").length,
@@ -206,7 +244,26 @@ function WhosInPage() {
               </div>
               <div>
                 {r.status === "working" && <span className="rounded bg-emerald-100 dark:bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">● Working</span>}
-                {r.status === "on_break" && <span className="rounded bg-amber-100 dark:bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">● On break</span>}
+                {r.status === "on_break" && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded bg-amber-100 dark:bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
+                      ● On break{r.breakMinutes != null ? ` · ${r.breakMinutes}m` : ""}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2 text-xs"
+                      disabled={endBreak.isPending}
+                      onClick={() => {
+                        if (!r.since) return;
+                        if (!window.confirm(`End ${r.name}'s break now?`)) return;
+                        endBreak.mutate({ id: r.id, since: r.since, breakMinutes: r.breakMinutes });
+                      }}
+                    >
+                      End break
+                    </Button>
+                  </div>
+                )}
                 {r.status === "off" && <span className="rounded bg-slate-100 dark:bg-slate-500/15 px-2 py-0.5 text-xs font-medium text-slate-600 dark:text-slate-300">Off</span>}
               </div>
               <div className="text-right text-xs">

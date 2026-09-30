@@ -37,6 +37,7 @@ import { useAppRules } from "@/lib/app-rules";
 import { useCapabilities, CAPABILITY_LABELS, type CapabilityKey } from "@/lib/capabilities";
 import { useTrialStatus, trialCountdown } from "@/lib/trial";
 import { NotificationsBell } from "@/components/notifications-bell";
+import { NotificationPrompt } from "@/components/notification-prompt";
 import { Toaster } from "@/components/ui/sonner";
 import { useBreakReminder } from "@/lib/break-reminder";
 import { ensureServiceWorker } from "@/lib/notification-prefs";
@@ -640,6 +641,7 @@ function AuthLayout() {
       </div>
       {/* Where the break reminder lands, and where the punch-correction toasts
           have been going all along — nothing was mounted to render them. */}
+      <NotificationPrompt />
       <Toaster position="top-right" richColors closeButton />
     </div>
   );

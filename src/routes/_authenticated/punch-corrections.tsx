@@ -1,25 +1,24 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { useAppRules } from "@/lib/app-rules";
+import {
+  groupByShiftDay,
+  MAX_SHIFT_MS,
+  punchesInPeriod,
+  totalsByPerson,
+} from "@/lib/timecard-totals";
+import { TimecardDayEditor, type EditablePunch } from "@/components/timecard-day-editor";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import { toast } from "sonner";
-import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2, History, Clock } from "lucide-react";
+import { ChevronLeft, ChevronRight, Pencil, History, Clock } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/punch-corrections")({
   component: PunchCorrectionsPage,
 });
 
-type Punch = {
-  id: string;
-  user_id: string;
-  kind: "in" | "out" | "break_start" | "break_end";
-  at: string;
-};
+type Punch = EditablePunch & { user_id: string };
 
 type AuditRow = {
   id: string;
@@ -33,12 +32,20 @@ type AuditRow = {
   created_at: string;
 };
 
-function startOfWeek(d: Date) {
+/** The week holding `d`, starting on the company's week-start day (0 = Sunday). */
+function startOfWeek(d: Date, weekStartDay = 1) {
   const x = new Date(d);
-  const day = (x.getDay() + 6) % 7;
+  const day = (x.getDay() - weekStartDay + 7) % 7;
   x.setHours(0, 0, 0, 0);
   x.setDate(x.getDate() - day);
   return x;
+}
+function fmtTime(s: string) {
+  return new Date(s).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+function fmtHours(ms: number) {
+  const m = Math.round(ms / 60_000);
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
 }
 function addDays(d: Date, n: number) {
   const x = new Date(d);
@@ -56,28 +63,33 @@ function fmtDT(s: string) {
     minute: "2-digit",
   });
 }
-function toLocalInput(s: string) {
-  const d = new Date(s);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
 const KIND_LABEL: Record<string, string> = {
-  in: "Clock IN",
-  out: "Clock OUT",
+  in: "Clock in",
+  out: "Clock out",
   break_start: "Break start",
   break_end: "Break end",
 };
+
+/** One side of an audit entry: "Break start 12:00 PM, Sep 30 (30 min)". */
+function auditPunch(p: { kind: string; at: string; break_minutes?: number | null }) {
+  const len = p.break_minutes ? ` (${p.break_minutes} min)` : "";
+  return `${KIND_LABEL[p.kind] ?? p.kind} · ${fmtDT(p.at)}${len}`;
+}
 
 function PunchCorrectionsPage() {
   const qc = useQueryClient();
   const { user, company, primaryRole, loading } = useAuth();
   const isManager = primaryRole === "company_admin" || primaryRole === "super_admin";
-  const [anchor, setAnchor] = useState<Date>(() => startOfWeek(new Date()));
+  const rules = useAppRules();
+  const [anchor, setAnchor] = useState<Date>(() => startOfWeek(new Date(), rules.week_start_day));
   const [selectedUser, setSelectedUser] = useState<string>("");
-  const [editing, setEditing] = useState<Punch | null>(null);
-  const [adding, setAdding] = useState(false);
+  const [editingDay, setEditingDay] = useState<Date | null>(null);
   const [showAudit, setShowAudit] = useState(false);
+
+  // Same week as the timecards, once the company's week-start day has loaded.
+  useEffect(() => {
+    setAnchor((a) => startOfWeek(a, rules.week_start_day));
+  }, [rules.week_start_day]);
 
   // Realtime: live-refresh punches and audit log for this company.
   useEffect(() => {
@@ -135,13 +147,15 @@ function PunchCorrectionsPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("time_punches")
-        .select("id, user_id, kind, at")
+        .select("id, user_id, kind, at, break_minutes")
         .eq("user_id", targetUserId!)
-        .gte("at", rangeStart.toISOString())
-        .lt("at", rangeEnd.toISOString())
+        // Past both ends of the week, so a shift is shown whole on the day it
+        // was clocked in — the same reading as the timecards.
+        .gte("at", new Date(rangeStart.getTime() - MAX_SHIFT_MS).toISOString())
+        .lt("at", new Date(rangeEnd.getTime() + MAX_SHIFT_MS).toISOString())
         .order("at", { ascending: true });
       if (error) throw error;
-      return (data ?? []) as Punch[];
+      return punchesInPeriod((data ?? []) as Punch[], rangeStart, rangeEnd);
     },
   });
 
@@ -160,60 +174,22 @@ function PunchCorrectionsPage() {
     },
   });
 
-  const updateMut = useMutation({
-    mutationFn: async (v: { id: string; at: string; kind: string; reason: string }) => {
-      const { error } = await supabase.rpc("manager_update_punch", {
-        _id: v.id,
-        _at: v.at,
-        _kind: v.kind as any,
-        _reason: v.reason,
-      });
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      toast.success("Punch updated");
-      setEditing(null);
-      qc.invalidateQueries({ queryKey: ["correct-punches"] });
-      qc.invalidateQueries({ queryKey: ["correct-audit"] });
-    },
-    onError: (e: any) => toast.error(e.message ?? "Update failed"),
-  });
-
-  const insertMut = useMutation({
-    mutationFn: async (v: { user_id: string; at: string; kind: string; reason: string }) => {
-      const { error } = await supabase.rpc("manager_insert_punch", {
-        _user_id: v.user_id,
-        _at: v.at,
-        _kind: v.kind as any,
-        _reason: v.reason,
-      });
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      toast.success("Punch added");
-      setAdding(false);
-      qc.invalidateQueries({ queryKey: ["correct-punches"] });
-      qc.invalidateQueries({ queryKey: ["correct-audit"] });
-    },
-    onError: (e: any) => toast.error(e.message ?? "Insert failed"),
-  });
-
-  const deleteMut = useMutation({
-    mutationFn: async (v: { id: string; reason: string }) => {
-      const { error } = await supabase.rpc("manager_delete_punch", {
-        _id: v.id,
-        _reason: v.reason,
-      });
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      toast.success("Punch deleted");
-      qc.invalidateQueries({ queryKey: ["correct-punches"] });
-      qc.invalidateQueries({ queryKey: ["correct-audit"] });
-    },
-    onError: (e: any) => toast.error(e.message ?? "Delete failed"),
-  });
-
+  /** The week, day by day: that day's punches and what they add up to. */
+  const weekDays = useMemo(() => {
+    const byDay = groupByShiftDay(punchesQ.data ?? []);
+    const totals = targetUserId
+      ? totalsByPerson(punchesQ.data ?? [], rules.punch_round_minutes, rules.cap_break_to_length).get(
+          targetUserId,
+        )
+      : undefined;
+    return Array.from({ length: 7 }, (_, i) => {
+      const date = addDays(rangeStart, i);
+      const key = date.toDateString();
+      const detail = totals?.days.find((d) => d.key === key);
+      return { date, punches: byDay.get(key) ?? [], detail };
+    });
+  }, [punchesQ.data, targetUserId, rangeStart, rules.punch_round_minutes, rules.cap_break_to_length]);
+  const weekTotal = weekDays.reduce((n, d) => n + (d.detail?.workedMs ?? 0), 0);
   const rosterMap = useMemo(() => {
     const m = new Map<string, string>();
     (rosterQ.data ?? []).forEach((r: any) => m.set(r.id, r.full_name || "Unnamed"));
@@ -269,61 +245,84 @@ function PunchCorrectionsPage() {
           <Button variant="outline" size="icon" onClick={() => setAnchor((a) => addDays(a, -7))}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setAnchor(startOfWeek(new Date()))}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setAnchor(startOfWeek(new Date(), rules.week_start_day))}
+          >
             This week
           </Button>
           <Button variant="outline" size="icon" onClick={() => setAnchor((a) => addDays(a, 7))}>
             <ChevronRight className="h-4 w-4" />
           </Button>
-          <Button size="sm" onClick={() => setAdding(true)} disabled={!targetUserId}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add punch
-          </Button>
         </div>
       </div>
 
-      <div className="text-xs text-muted-foreground">
-        Week of {fmtDate(rangeStart)} – {fmtDate(addDays(rangeEnd, -1))}
+      <div className="flex items-baseline justify-between text-xs text-muted-foreground">
+        <span>
+          Week of {fmtDate(rangeStart)} – {fmtDate(addDays(rangeEnd, -1))}
+        </span>
+        <span>
+          Week total{" "}
+          <span className="font-semibold tabular-nums text-foreground">{fmtHours(weekTotal)}</span>
+        </span>
       </div>
 
+      {/* One row per day. Edit opens the day as shifts — clock-in, clock-out,
+          breaks — so a correction is typed the way the day was worked. */}
       <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-        <div className="grid grid-cols-[1fr_1fr_1fr_auto] border-b border-border bg-muted/30 px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          <div>Kind</div>
-          <div>When</div>
-          <div>ID</div>
-          <div className="text-right">Actions</div>
-        </div>
-        {(punchesQ.data ?? []).length === 0 && (
-          <div className="px-4 py-6 text-sm text-muted-foreground">No punches in this week.</div>
-        )}
-        {(punchesQ.data ?? []).map((p) => (
-          <div
-            key={p.id}
-            className="grid grid-cols-[1fr_1fr_1fr_auto] items-center gap-2 border-b border-border px-4 py-3 text-sm last:border-0"
-          >
-            <div className="font-medium text-foreground">{KIND_LABEL[p.kind]}</div>
-            <div className="text-foreground">{fmtDT(p.at)}</div>
-            <div className="truncate font-mono text-xs text-muted-foreground">
-              {p.id.slice(0, 8)}
-            </div>
-            <div className="flex justify-end gap-1">
-              <Button variant="outline" size="sm" onClick={() => setEditing(p)}>
-                <Pencil className="h-3.5 w-3.5" />
-              </Button>
+        {weekDays.map(({ date, punches, detail }) => {
+          const today = date.toDateString() === new Date().toDateString();
+          return (
+            <div
+              key={date.toISOString()}
+              className="flex items-center gap-3 border-b border-border px-4 py-3 text-sm last:border-0"
+            >
+              <div className={`w-28 shrink-0 font-medium ${today ? "text-primary" : "text-foreground"}`}>
+                {fmtDate(date)}
+              </div>
+              <div className="min-w-0 flex-1 text-muted-foreground">
+                {!detail || detail.spans.length === 0 ? (
+                  <span>—</span>
+                ) : (
+                  detail.spans.map((s, i) => (
+                    <div key={i} className="truncate">
+                      <span className="text-foreground">
+                        {fmtTime(s.inAt)} – {s.outAt ? fmtTime(s.outAt) : "still in"}
+                      </span>
+                      {s.outAt && new Date(s.outAt).toDateString() !== date.toDateString() && (
+                        <span className="text-xs"> (next day)</span>
+                      )}
+                    </div>
+                  ))
+                )}
+                {detail && (detail.unpaidMs > 0 || detail.paidMs > 0) && (
+                  <div className="text-xs">
+                    {[
+                      detail.unpaidMs > 0 && `${fmtHours(detail.unpaidMs)} unpaid break`,
+                      detail.paidMs > 0 && `${fmtHours(detail.paidMs)} paid break`,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </div>
+                )}
+              </div>
+              <div className="w-16 shrink-0 text-right font-medium tabular-nums text-foreground">
+                {detail && detail.workedMs > 0 ? fmtHours(detail.workedMs) : ""}
+              </div>
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => {
-                  // The note is optional; the deletion is logged either way.
-                  const reason = window.prompt("Delete this punch? Add a note if it needs one.");
-                  if (reason !== null) deleteMut.mutate({ id: p.id, reason: reason.trim() });
-                }}
+                disabled={!targetUserId || punchesQ.isLoading}
+                onClick={() => setEditingDay(date)}
+                aria-label={`Edit ${fmtDate(date)}`}
               >
-                <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                <Pencil className="h-3.5 w-3.5 sm:mr-1.5" />
+                <span className="hidden sm:inline">{punches.length ? "Edit" : "Add time"}</span>
               </Button>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {showAudit && (
@@ -365,13 +364,13 @@ function PunchCorrectionsPage() {
                   {a.before && (
                     <div>
                       <span className="font-medium">Before:</span>{" "}
-                      {KIND_LABEL[a.before.kind] ?? a.before.kind} @ {fmtDT(a.before.at)}
+                      {auditPunch(a.before)}
                     </div>
                   )}
                   {a.after && (
                     <div>
                       <span className="font-medium">After:</span>{" "}
-                      {KIND_LABEL[a.after.kind] ?? a.after.kind} @ {fmtDT(a.after.at)}
+                      {auditPunch(a.after)}
                     </div>
                   )}
                 </div>
@@ -381,120 +380,19 @@ function PunchCorrectionsPage() {
         </div>
       )}
 
-      {(editing || adding) && (
-        <PunchDialog
-          mode={editing ? "edit" : "add"}
-          initial={editing ?? undefined}
-          targetUserId={targetUserId!}
-          targetUserName={rosterMap.get(targetUserId!) ?? "Employee"}
-          busy={updateMut.isPending || insertMut.isPending}
-          onClose={() => {
-            setEditing(null);
-            setAdding(false);
-          }}
-          onSubmit={(v) => {
-            if (editing)
-              updateMut.mutate({ id: editing.id, at: v.at, kind: v.kind, reason: v.reason });
-            else
-              insertMut.mutate({
-                user_id: targetUserId!,
-                at: v.at,
-                kind: v.kind,
-                reason: v.reason,
-              });
-          }}
+      {editingDay && targetUserId && (
+        <TimecardDayEditor
+          open
+          onOpenChange={(next) => !next && setEditingDay(null)}
+          day={editingDay}
+          employeeId={targetUserId}
+          employeeName={rosterMap.get(targetUserId) ?? "Employee"}
+          punches={
+            weekDays.find((d) => d.date.toDateString() === editingDay.toDateString())?.punches ?? []
+          }
         />
       )}
     </div>
   );
 }
 
-function PunchDialog({
-  mode,
-  initial,
-  targetUserName,
-  busy,
-  onClose,
-  onSubmit,
-}: {
-  mode: "edit" | "add";
-  initial?: Punch;
-  targetUserId: string;
-  targetUserName: string;
-  busy: boolean;
-  onClose: () => void;
-  onSubmit: (v: { at: string; kind: string; reason: string }) => void;
-}) {
-  const [kind, setKind] = useState<string>(initial?.kind ?? "in");
-  const [at, setAt] = useState<string>(
-    initial ? toLocalInput(initial.at) : toLocalInput(new Date().toISOString()),
-  );
-  const [reason, setReason] = useState("");
-
-  return (
-    <div
-      className="fixed inset-0 z-40 grid place-items-center bg-foreground/40 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-lg"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 className="text-lg font-semibold text-foreground">
-          {mode === "edit" ? "Edit punch" : "Add punch"} · {targetUserName}
-        </h2>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Manager override. A reason is required and the change will be logged.
-        </p>
-        <div className="mt-4 space-y-3">
-          <div>
-            <Label htmlFor="kind">Type</Label>
-            <select
-              id="kind"
-              className="mt-1 w-full rounded-md border border-border bg-background px-2 py-2 text-sm"
-              value={kind}
-              onChange={(e) => setKind(e.target.value)}
-            >
-              <option value="in">Clock IN</option>
-              <option value="out">Clock OUT</option>
-              <option value="break_start">Break start</option>
-              <option value="break_end">Break end</option>
-            </select>
-          </div>
-          <div>
-            <Label htmlFor="at">Date &amp; time</Label>
-            <Input
-              id="at"
-              type="datetime-local"
-              value={at}
-              onChange={(e) => setAt(e.target.value)}
-            />
-          </div>
-          <div>
-            <Label htmlFor="reason">Note (optional)</Label>
-            <Textarea
-              id="reason"
-              placeholder="e.g. Employee forgot to clock out; verified via timesheet."
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              rows={3}
-            />
-          </div>
-        </div>
-        <div className="mt-5 flex justify-end gap-2">
-          <Button variant="outline" onClick={onClose} disabled={busy}>
-            Cancel
-          </Button>
-          <Button
-            disabled={busy || !at}
-            onClick={() =>
-              onSubmit({ at: new Date(at).toISOString(), kind, reason: reason.trim() })
-            }
-          >
-            {busy ? "Saving…" : mode === "edit" ? "Save change" : "Add punch"}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}

@@ -85,8 +85,10 @@ export function useMessageAlerts(): void {
             });
           }
           if (p.desktop && (onBoard ? document.hidden : true)) {
+            // Sender as the title, their words as the body — how every chat
+            // app reads on a lock screen, and what the server's push says too.
             void showAppNotification(
-              `${who} posted a message`,
+              who,
               preview,
               `msg-${m.id}`,
               "/messages",

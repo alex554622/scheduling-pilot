@@ -159,6 +159,10 @@ function TimeclockPage() {
   const breakEndsAt =
     breakStartedAt != null && breakMinutes != null ? breakStartedAt + breakMinutes * 60_000 : null;
   const breakRemainingMs = breakEndsAt != null ? breakEndsAt - now : null;
+  // A break runs its full length; only an admin can end one early. The server
+  // enforces this too (enforce_break_length) — this just keeps the button honest.
+  const isAdmin = primaryRole === "company_admin" || primaryRole === "super_admin";
+  const breakLocked = !isAdmin && breakRemainingMs != null && breakRemainingMs > 0;
 
   // Replay the punch history oldest-first to find where the open shift began and
   // how much unpaid break it has already used. Only closed breaks are counted
@@ -607,7 +611,9 @@ function TimeclockPage() {
                 size="lg"
                 variant="outline"
                 className="mt-2 w-full"
-                disabled={!coords || locationMissing || breakMut.isPending || fenceBlocks}
+                disabled={
+                  !coords || locationMissing || breakMut.isPending || fenceBlocks || breakLocked
+                }
                 onClick={() => {
                   setFlash(null);
                   breakMut.mutate(null);
@@ -629,7 +635,9 @@ function TimeclockPage() {
 
             {status === "on_break" && (
               <p className="mt-3 text-center text-xs text-amber-700 dark:text-amber-300">
-                You're on break. End your break before clocking out.
+                {breakLocked
+                  ? `Your ${breakMinutes}-minute break has to run its full time. You can end it in ${fmtCountdown(breakRemainingMs!)} — only an admin can end it sooner.`
+                  : "You're on break. End your break before clocking out."}
               </p>
             )}
             {fenceBlocks && (

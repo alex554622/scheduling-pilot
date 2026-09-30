@@ -149,7 +149,13 @@ export function useBreakReminder(): void {
       if (desktop) {
         void hasPushSubscription().then((subscribed) => {
           if (subscribed) return;
-          void showAppNotification(title, body, `break-${punchId}`, "/timeclock");
+          void showAppNotification(
+            title,
+            body,
+            `break-${punchId}`,
+            "/timeclock",
+            "break_ending",
+          );
         });
       }
     }, wait);

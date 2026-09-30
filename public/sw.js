@@ -28,15 +28,29 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(self.clients.claim());
 });
 
-/** One place that decides what a notification looks like, however it arrived. */
-function show(title, body, tag, link) {
+/**
+ * One place that decides what a notification looks like, however it arrived.
+ *
+ * Shaped like a chat app's: it buzzes and it lights a locked screen. The break
+ * reminder stays on screen until it is dealt with — it is an alarm, and an
+ * alarm that slides away on its own is one that gets missed.
+ *
+ * Deliberately no `renotify`. Every event already has a tag of its own, so a
+ * new message is a new notification and alerts on its own. The only repeat of
+ * a tag is the page and the server announcing the same event, and that second
+ * copy should replace the first quietly rather than buzz the phone twice.
+ */
+function show(title, body, tag, link, kind) {
+  const alarm = kind === "break_ending";
   return self.registration.showNotification(title || "Scheduling Pilot", {
     body: body || "",
     tag: tag || undefined,
     icon: "/icons/icon-192.png",
     badge: "/icons/icon-192.png",
-    // A locked phone should light up and buzz for this, not collect it quietly.
-    requireInteraction: false,
+    vibrate: alarm ? [400, 150, 400, 150, 400] : [200, 100, 200],
+    timestamp: Date.now(),
+    silent: false,
+    requireInteraction: alarm,
     data: { link: link || "/dashboard" },
   });
 }
@@ -45,7 +59,7 @@ function show(title, body, tag, link) {
 self.addEventListener("message", (event) => {
   const data = event.data;
   if (!data || data.type !== "show-notification") return;
-  event.waitUntil(show(data.title, data.body, data.tag, data.link));
+  event.waitUntil(show(data.title, data.body, data.tag, data.link, data.kind));
 });
 
 /**
@@ -73,6 +87,7 @@ self.addEventListener("push", (event) => {
       payload.body || "You have a new notification.",
       payload.tag,
       payload.link,
+      payload.type,
     ),
   );
 });

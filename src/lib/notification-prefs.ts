@@ -66,6 +66,12 @@ export interface NotificationPrefs {
    * Also show them as system pop-ups, on devices that have granted it — and,
    * on a device that could be registered for push, when the app is shut. See
    * `@/lib/push-subscription`.
+   *
+   * On unless switched off. It used to default off, which meant a phone was
+   * only ever registered by someone who found this switch at the bottom of
+   * Settings — so the server queued every break reminder and sent it to
+   * nobody. The browser's own permission prompt is the real consent here, and
+   * `NotificationPrompt` asks for it the way a chat app does on first open.
    */
   desktop: boolean;
 }
@@ -75,7 +81,7 @@ export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
   types: {},
   popup: true,
   sound: true,
-  desktop: false,
+  desktop: true,
 };
 
 function parse(raw: unknown): NotificationPrefs {
@@ -88,7 +94,8 @@ function parse(raw: unknown): NotificationPrefs {
     // Absent means on, the same way an absent type does.
     popup: o.popup !== false,
     sound: o.sound !== false,
-    desktop: o.desktop === true,
+    // Only an explicit "off" is off; see the note on the field.
+    desktop: o.desktop !== false,
   };
 }
 
@@ -247,17 +254,28 @@ export async function showAppNotification(
   body: string,
   tag?: string,
   link?: string,
+  kind?: string,
 ): Promise<void> {
   if (!desktopSupported() || Notification.permission !== "granted") return;
   const reg = await ensureServiceWorker();
   // The worker's own registration is the only route an installed app has.
   if (reg?.showNotification) {
+    // Drawn the same way public/sw.js draws a pushed one, so a notification
+    // looks and buzzes alike whichever of the two got there first.
+    const alarm = kind === "break_ending";
     try {
       await reg.showNotification(title, {
         body,
         tag,
         icon: "/icons/icon-192.png",
         badge: "/icons/icon-192.png",
+        requireInteraction: alarm,
+        // `vibrate` and `timestamp` are real options that TypeScript's DOM
+        // lib leaves out of NotificationOptions.
+        ...({
+          vibrate: alarm ? [400, 150, 400, 150, 400] : [200, 100, 200],
+          timestamp: Date.now(),
+        } as NotificationOptions),
         data: { link: link ?? "/dashboard" },
       });
       return;

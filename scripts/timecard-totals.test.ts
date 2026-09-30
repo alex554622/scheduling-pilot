@@ -1,7 +1,12 @@
 /**
  * Checks for the roster-wide timecard totals. Run with `bun run test:timecards`.
  */
-import { readBreak, totalsByPerson, type SimplePunch } from "../src/lib/timecard-totals";
+import {
+  punchesInPeriod,
+  readBreak,
+  totalsByPerson,
+  type SimplePunch,
+} from "../src/lib/timecard-totals";
 
 let failures = 0;
 function eq<T>(name: string, actual: T, expected: T) {
@@ -238,6 +243,52 @@ const noLength = readBreak(37 * MINUTE, null);
 eq("counted as the clock recorded it", noLength.countedMs / MINUTE, 37);
 eq("nothing to be over", noLength.overMs, 0);
 eq("and nothing to flag", noLength.incomplete, false);
+
+console.log("\na shift past midnight counts whole on the day it was clocked in");
+t = totalsByPerson([
+  punch("a", "in", 3, 20),
+  punch("a", "break_start", 4, 0, 30, 30),
+  punch("a", "break_end", 4, 1, 0),
+  punch("a", "out", 4, 2),
+]).get("a")!;
+eq("five and a half hours worked", t.workedMs / HOUR, 5.5);
+eq("all on one day", t.dayTotals, [5.5 * HOUR]);
+eq("the clock-in's day", t.days[0].key, new Date(2026, 7, 3).toDateString());
+eq("one closed span, no open one", t.days[0].spans.map((s) => s.outAt != null), [true]);
+
+console.log("\nnight shifts on back-to-back days stay apart");
+t = totalsByPerson([
+  punch("a", "in", 3, 22),
+  punch("a", "out", 4, 6),
+  punch("a", "in", 4, 22),
+  punch("a", "out", 5, 6),
+]).get("a")!;
+eq("eight hours each, one per day", t.dayTotals, [8 * HOUR, 8 * HOUR]);
+eq("on the two clock-in days", t.days.map((d) => d.date.getDate()), [3, 4]);
+
+console.log("\na forgotten clock-out does not swallow the next day");
+t = totalsByPerson([
+  punch("a", "in", 3, 8),
+  punch("a", "in", 5, 8),
+  punch("a", "out", 5, 16),
+]).get("a")!;
+eq("the next shift counts on its own day", t.days.map((d) => d.date.getDate()), [3, 5]);
+eq("eight hours", t.workedMs / HOUR, 8);
+
+console.log("\na period keeps the shifts clocked in inside it");
+const edge = [
+  punch("a", "in", 2, 22), // previous period's last night
+  punch("a", "out", 3, 6),
+  punch("a", "in", 9, 22), // this period's last night
+  punch("a", "out", 10, 6),
+];
+const kept = punchesInPeriod(edge, new Date(2026, 7, 3), new Date(2026, 7, 10));
+eq(
+  "the tail of last period's shift is left out, and this one's clock-out is kept",
+  kept.map((p) => `${p.kind}@${new Date(p.at).getDate()}`),
+  ["in@9", "out@10"],
+);
+eq("so the last night pays in full", totalsByPerson(kept).get("a")!.workedMs / HOUR, 8);
 
 console.log(
   failures === 0 ? "\nAll timecard checks passed.\n" : `\n${failures} check(s) failed.\n`,

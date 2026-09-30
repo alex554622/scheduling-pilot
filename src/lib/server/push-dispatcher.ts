@@ -86,13 +86,18 @@ async function deliver(
     body: row.body ?? "",
     link: row.link ?? "/dashboard",
     tag: row.tag ?? `push-${row.id}`,
+    // The worker draws a break reminder as an alarm and everything else as a
+    // message, so it needs to know which this is.
+    type: row.type,
   };
 
   // How long the push service should hold this for a phone that is switched
   // off or out of signal. A break reminder is only true for as long as the
   // break has two minutes left on it, so it is allowed to go stale rather than
-  // surface later saying something that is no longer so; the rest keep.
-  const ttl = row.type === "break_ending" ? 3 * 60 : 60 * 60;
+  // surface later saying something that is no longer so. The rest keep for a
+  // day, as a chat message would: a shift change is still news to someone
+  // whose phone was off over lunch.
+  const ttl = row.type === "break_ending" ? 3 * 60 : 24 * 60 * 60;
   const results = await Promise.all(subs.map((s) => sendPush(s, payload, keys, ttl)));
 
   const gone: string[] = [];
@@ -132,6 +137,17 @@ async function drainOnce(keys: NonNullable<ReturnType<typeof vapidKeysFromEnv>>)
     const list = byUser.get(sub.user_id);
     if (list) list.push(sub);
     else byUser.set(sub.user_id, [sub]);
+  }
+
+  // Rows for people with no device on file are finished without a send. That
+  // is correct, but it is also exactly how "my phone never buzzes" looks from
+  // the server, so it is said out loud rather than recorded as a success.
+  const unreachable = rows.filter((r) => !byUser.has(r.user_id));
+  if (unreachable.length > 0) {
+    console.info(
+      `[push] ${unreachable.length} of ${rows.length} due notification(s) had no registered ` +
+        `device (${[...new Set(unreachable.map((r) => r.type))].join(", ")})`,
+    );
   }
 
   const dead = new Set<string>();

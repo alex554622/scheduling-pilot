@@ -4,7 +4,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Calendar } from "@/components/ui/calendar";
+import type { DateRange } from "react-day-picker";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -16,7 +17,6 @@ export const Route = createFileRoute("/_authenticated/time-off")({
   component: TimeOffPage,
 });
 
-type Status = "pending" | "approved" | "denied" | "cancelled";
 type Kind = "vacation" | "sick" | "personal" | "other";
 
 interface RequestRow {
@@ -33,6 +33,16 @@ interface RequestRow {
 
 function fmtDate(s: string) {
   return new Date(s + "T00:00:00").toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+}
+/** A timestamp's calendar date in this browser's zone, as YYYY-MM-DD. */
+function localDate(iso: string) {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function fmtShift(a: string, b: string) {
+  const s = new Date(a), e = new Date(b);
+  const t = (d: Date) => d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return `${s.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })} ${t(s)}–${t(e)}`;
 }
 function days(a: string, b: string) {
   return Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000) + 1;
@@ -78,13 +88,72 @@ function TimeOffPage() {
     return m;
   }, [peopleQ.data]);
 
+  // The shifts each pending request would take someone off, so an admin sees
+  // the gap an approval opens before they approve it rather than after.
+  const pendingReqs = (reqQ.data ?? []).filter((r) => r.status === "pending");
+  const shiftsQ = useQuery({
+    queryKey: ["time-off-shifts", companyId, pendingReqs.map((r) => r.id).join(",")],
+    enabled: !!companyId && canManage && pendingReqs.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("shifts")
+        .select("id, employee_id, starts_at, ends_at")
+        .eq("company_id", companyId!)
+        .in("employee_id", [...new Set(pendingReqs.map((r) => r.employee_id))])
+        .gt("ends_at", new Date().toISOString());
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  function shiftsCovered(r: RequestRow) {
+    return (shiftsQ.data ?? []).filter((s) => {
+      if (s.employee_id !== r.employee_id) return false;
+      const start = localDate(s.starts_at), end = localDate(s.ends_at);
+      return start <= r.end_date && end >= r.start_date;
+    });
+  }
+
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  function refresh() {
+    for (const key of ["time-off", "time-off-shifts", "shifts", "schedule-time-off"]) {
+      qc.invalidateQueries({ queryKey: [key] });
+    }
+  }
+
+  /**
+   * Goes through decide_time_off so approval and taking the person off their
+   * shifts happen together — a bare status update left them on the roster.
+   */
   const decideMut = useMutation({
-    mutationFn: async ({ id, status }: { id: string; status: Status }) => {
-      const { error } = await supabase.from("time_off_requests").update({ status }).eq("id", id);
+    mutationFn: async ({ id, approve }: { id: string; approve: boolean }) => {
+      const { data, error } = await supabase.rpc("decide_time_off", { _request: id, _approve: approve });
+      if (error) throw error;
+      return { approve, opened: (data as number | null) ?? 0 };
+    },
+    onMutate: () => { setActionError(null); setNotice(null); },
+    onSuccess: ({ approve, opened }) => {
+      if (approve && opened > 0) {
+        setNotice(`Approved. ${opened} shift${opened === 1 ? " is" : "s are"} now open on the schedule for someone to pick up.`);
+      }
+      refresh();
+    },
+    onError: (e: Error) => setActionError(e.message),
+  });
+
+  const cancelMut = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.rpc("cancel_time_off", { _request: id });
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["time-off"] }),
+    onMutate: () => { setActionError(null); setNotice(null); },
+    onSuccess: refresh,
+    onError: (e: Error) => setActionError(e.message),
   });
+
+  const busy = decideMut.isPending || cancelMut.isPending;
 
   if (loading) return <div className="text-sm text-muted-foreground">Loading…</div>;
   if (!companyId) return <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">Join a company to use time off.</div>;
@@ -113,6 +182,12 @@ function TimeOffPage() {
       </div>
 
       <div className="rounded-xl border border-border bg-card shadow-[var(--shadow-card)]">
+        {actionError && (
+          <p className="border-b border-border bg-destructive/10 px-5 py-3 text-sm text-destructive">{actionError}</p>
+        )}
+        {notice && (
+          <p className="border-b border-border bg-success-soft px-5 py-3 text-sm text-success">{notice}</p>
+        )}
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <h3 className="font-semibold text-foreground">{canManage ? "All requests" : "My requests"}</h3>
         </div>
@@ -135,17 +210,27 @@ function TimeOffPage() {
                     {fmtDate(r.start_date)} – {fmtDate(r.end_date)} · {days(r.start_date, r.end_date)} day{days(r.start_date, r.end_date) === 1 ? "" : "s"}
                   </p>
                   {r.note && <p className="mt-1 text-xs text-muted-foreground italic">"{r.note}"</p>}
+                  {canManage && r.status === "pending" && shiftsCovered(r).length > 0 && (
+                    <p className="mt-1 text-xs text-warning-foreground">
+                      Scheduled for {shiftsCovered(r).length} shift{shiftsCovered(r).length === 1 ? "" : "s"} in this range
+                      ({shiftsCovered(r).map((s) => fmtShift(s.starts_at, s.ends_at)).join(", ")}). Approving
+                      makes {shiftsCovered(r).length === 1 ? "it an open shift" : "them open shifts"}.
+                    </p>
+                  )}
                 </div>
                 <StatusBadge status={r.status} />
                 {canManage && r.status === "pending" && (
                   <div className="flex gap-1">
-                    <Button size="sm" variant="outline" onClick={() => decideMut.mutate({ id: r.id, status: "approved" })} disabled={decideMut.isPending}>
+                    <Button size="sm" variant="outline" onClick={() => decideMut.mutate({ id: r.id, approve: true })} disabled={busy}>
                       <Check className="h-4 w-4" /> Approve
                     </Button>
-                    <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => decideMut.mutate({ id: r.id, status: "denied" })} disabled={decideMut.isPending}>
+                    <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => decideMut.mutate({ id: r.id, approve: false })} disabled={busy}>
                       <X className="h-4 w-4" /> Deny
                     </Button>
                   </div>
+                )}
+                {r.employee_id === user?.id && r.status === "pending" && (
+                  <Button size="sm" variant="ghost" onClick={() => cancelMut.mutate(r.id)} disabled={busy}>Cancel</Button>
                 )}
               </li>
             ))}
@@ -187,29 +272,58 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`rounded-full px-2.5 py-1 text-xs font-medium capitalize ${styles[status] ?? "bg-muted text-muted-foreground"}`}>{status}</span>;
 }
 
+/**
+ * Picked days folded into runs of consecutive dates, so Mon–Wed plus Friday is
+ * two requests (Mon–Wed, Fri) rather than one that quietly covers Thursday.
+ */
+function toRuns(picked: Date[]): { start: string; end: string }[] {
+  const keys = [...new Set(picked.map((d) => localDate(d.toISOString())))].sort();
+  const runs: { start: string; end: string }[] = [];
+  for (const k of keys) {
+    const last = runs[runs.length - 1];
+    if (last && days(last.end, k) === 2) last.end = k;
+    else runs.push({ start: k, end: k });
+  }
+  return runs;
+}
+
 function NewRequestDialog({ open, onClose, userId, companyId, onSaved }: { open: boolean; onClose: () => void; userId: string; companyId: string; onSaved: () => void }) {
-  const [start, setStart] = useState("");
-  const [end, setEnd] = useState("");
+  const [mode, setMode] = useState<"days" | "range">("days");
+  const [picked, setPicked] = useState<Date[]>([]);
+  const [range, setRange] = useState<DateRange | undefined>();
   const [kind, setKind] = useState<Kind>("vacation");
   const [note, setNote] = useState("");
   const [err, setErr] = useState<string | null>(null);
 
+  const runs = useMemo(() => {
+    if (mode === "days") return toRuns(picked);
+    if (!range?.from) return [];
+    const s = localDate(range.from.toISOString());
+    return [{ start: s, end: range.to ? localDate(range.to.toISOString()) : s }];
+  }, [mode, picked, range]);
+  const dayCount = runs.reduce((n, r) => n + days(r.start, r.end), 0);
+
+  function reset() {
+    setPicked([]); setRange(undefined); setKind("vacation"); setNote(""); setErr(null);
+  }
+
   const submit = useMutation({
     mutationFn: async () => {
-      if (!start || !end) throw new Error("Pick both dates");
-      if (end < start) throw new Error("End date must be on or after start date");
-      const { error } = await supabase.from("time_off_requests").insert({
-        employee_id: userId,
-        company_id: companyId,
-        start_date: start,
-        end_date: end,
-        kind,
-        note: note.trim() || null,
-      });
+      if (runs.length === 0) throw new Error("Pick at least one day");
+      const { error } = await supabase.from("time_off_requests").insert(
+        runs.map((r) => ({
+          employee_id: userId,
+          company_id: companyId,
+          start_date: r.start,
+          end_date: r.end,
+          kind,
+          note: note.trim() || null,
+        })),
+      );
       if (error) throw error;
     },
     onSuccess: () => {
-      setStart(""); setEnd(""); setKind("vacation"); setNote(""); setErr(null);
+      reset();
       onSaved();
     },
     onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
@@ -220,12 +334,46 @@ function NewRequestDialog({ open, onClose, userId, companyId, onSaved }: { open:
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Request time off</DialogTitle>
-          <DialogDescription>A company admin will review and respond.</DialogDescription>
+          <DialogDescription>Pick the days you need off. A company admin will review and respond.</DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5"><Label htmlFor="s">From</Label><Input id="s" type="date" value={start} onChange={(e) => setStart(e.target.value)} /></div>
-            <div className="space-y-1.5"><Label htmlFor="e">To</Label><Input id="e" type="date" value={end} onChange={(e) => setEnd(e.target.value)} /></div>
+        <div className="max-h-[70vh] space-y-4 overflow-y-auto py-2">
+          <div className="space-y-2">
+            <div className="inline-flex rounded-lg bg-secondary p-1">
+              {([["days", "Pick days"], ["range", "Date range"]] as const).map(([m, label]) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setMode(m)}
+                  className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${mode === m ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {mode === "days"
+                ? "Tap each day you need off — they don't have to be next to each other."
+                : "Tap the first day, then the last day."}
+            </p>
+            <div className="flex justify-center rounded-lg border border-border">
+              {mode === "days" ? (
+                <Calendar mode="multiple" selected={picked} onSelect={(d) => setPicked(d ?? [])} />
+              ) : (
+                <Calendar mode="range" selected={range} onSelect={setRange} />
+              )}
+            </div>
+            {runs.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-xs font-medium text-foreground">
+                  {dayCount} day{dayCount === 1 ? "" : "s"}:
+                </span>
+                {runs.map((r) => (
+                  <span key={r.start} className="rounded-full bg-primary-soft px-2 py-0.5 text-xs text-primary">
+                    {r.start === r.end ? fmtDate(r.start) : `${fmtDate(r.start)} – ${fmtDate(r.end)}`}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="k">Type</Label>

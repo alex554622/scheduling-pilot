@@ -22,7 +22,13 @@ export const Route = createFileRoute("/clock/$token")({
 });
 
 type Device = { company: string | null; label: string | null };
-type Person = { name: string; state: "in" | "out" | "on_break"; breaks: Record<string, boolean> };
+type Person = {
+  name: string;
+  state: "in" | "out" | "on_break";
+  breaks: Record<string, boolean>;
+  /** Until when a running break can't be ended from here; null once it can. */
+  breakEndsAt: number | null;
+};
 
 /** Every kiosk_* RPC answers in this shape; a refused code is `ok: false`, not an error. */
 type KioskReply = {
@@ -33,6 +39,7 @@ type KioskReply = {
   name?: string;
   state?: Person["state"];
   breaks?: Record<string, boolean>;
+  break_ends_at?: string | null;
   kind?: string;
   at?: string;
 };
@@ -71,6 +78,17 @@ function SharedClockInPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+
+  // Ticks only while someone is looking at a break that can't be ended yet.
+  const breakEndsAt = person?.breakEndsAt ?? null;
+  useEffect(() => {
+    if (breakEndsAt == null) return;
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [breakEndsAt]);
+  const breakLeftMs = breakEndsAt != null ? breakEndsAt - now : 0;
 
   useEffect(() => {
     void callKiosk("kiosk_device_info", { _token: token }).then((reply) => {
@@ -108,7 +126,12 @@ function SharedClockInPage() {
         setCode("");
         return;
       }
-      setPerson({ name: reply.name, state: reply.state, breaks: reply.breaks ?? {} });
+      setPerson({
+        name: reply.name,
+        state: reply.state,
+        breaks: reply.breaks ?? {},
+        breakEndsAt: reply.break_ends_at ? new Date(reply.break_ends_at).getTime() : null,
+      });
     });
   }, [code, person, busy, token]);
 
@@ -211,9 +234,20 @@ function SharedClockInPage() {
             )}
 
             {person.state === "on_break" && (
-              <BigButton onClick={() => void punch("break")} disabled={busy} tone="go">
-                <Coffee className="h-7 w-7" /> End break
-              </BigButton>
+              <>
+                <BigButton
+                  onClick={() => void punch("break")}
+                  disabled={busy || breakLeftMs > 0}
+                  tone="go"
+                >
+                  <Coffee className="h-7 w-7" /> End break
+                </BigButton>
+                {breakLeftMs > 0 && (
+                  <p className="text-center text-base text-muted-foreground">
+                    Your break can end in {fmtLeft(breakLeftMs)}. Only an admin can end it sooner.
+                  </p>
+                )}
+              </>
             )}
 
             <button
@@ -281,6 +315,12 @@ function SharedClockInPage() {
       )}
     </Screen>
   );
+}
+
+/** m:ss until a break may end. */
+function fmtLeft(ms: number) {
+  const total = Math.ceil(ms / 1000);
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
 }
 
 /** Full-screen frame with nothing to navigate to. */

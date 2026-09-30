@@ -59,6 +59,22 @@ const swatch = (c: string | null) => SWATCH[c ?? ""] ?? SWATCH.primary;
 
 const sameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
 
+/** Approved time off, dates inclusive as YYYY-MM-DD. */
+export interface GridTimeOff {
+  employee_id: string;
+  start_date: string;
+  end_date: string;
+  kind: string;
+}
+const TIME_OFF_LABEL: Record<string, string> = {
+  vacation: "Vacation",
+  sick: "Sick",
+  personal: "Personal",
+  other: "Day off",
+};
+const dayKey = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
 export function ScheduleGrid({
   days,
   shifts,
@@ -69,6 +85,7 @@ export function ScheduleGrid({
   showDrafts = false,
   emptyText = "Nobody is scheduled this week.",
   eyebrow = "Weekly schedule",
+  timeOff = [],
 }: {
   /** The seven days of the week, Monday first. */
   days: Date[];
@@ -83,6 +100,8 @@ export function ScheduleGrid({
   emptyText?: string;
   /** The small word above the dates — "This week" for the current one. */
   eyebrow?: string;
+  /** Approved time off, drawn in the person's day so nobody books over it. */
+  timeOff?: GridTimeOff[];
 }) {
   const today = new Date();
 
@@ -96,6 +115,15 @@ export function ScheduleGrid({
       const list = byPerson.get(key);
       if (list) list.push(s);
       else byPerson.set(key, [s]);
+    }
+    // Someone away this week gets a row even with no shifts, so the gap reads
+    // as "on vacation" rather than as nobody.
+    const first = dayKey(days[0]);
+    const last = dayKey(days[days.length - 1]);
+    for (const t of timeOff) {
+      if (t.start_date <= last && t.end_date >= first && !byPerson.has(t.employee_id)) {
+        byPerson.set(t.employee_id, []);
+      }
     }
     const rows = [...byPerson.entries()]
       .map(([id, list]) => ({
@@ -112,7 +140,7 @@ export function ScheduleGrid({
     // A key only when the colours mean posts; see `sheetLegend`.
     const legend = sheetLegend(inWeek).map((l) => ({ position: l.label, color: l.color }));
     return { rows, legend };
-  }, [shifts, days, nameOf, selfId, showDrafts]);
+  }, [shifts, days, nameOf, selfId, showDrafts, timeOff]);
 
   return (
     <div className="relative overflow-hidden rounded-2xl border border-white/60 shadow-[0_10px_40px_-12px_rgba(15,23,42,0.35)] dark:border-white/10">
@@ -205,6 +233,10 @@ export function ScheduleGrid({
                       </th>
                       {days.map((d) => {
                         const cell = row.shifts.filter((s) => sameDay(new Date(s.starts_at), d));
+                        const k = dayKey(d);
+                        const off = timeOff.find(
+                          (t) => t.employee_id === row.id && t.start_date <= k && t.end_date >= k,
+                        );
                         return (
                           <td
                             key={d.toDateString()}
@@ -213,6 +245,11 @@ export function ScheduleGrid({
                             } ${sameDay(d, today) ? "bg-primary/[0.04]" : ""}`}
                           >
                             <div className="space-y-1">
+                              {off && (
+                                <div className="rounded-lg border border-dashed border-amber-500/70 bg-amber-400/20 px-2 py-1.5 text-center text-[12px] font-semibold leading-tight text-amber-950 dark:text-amber-50">
+                                  {TIME_OFF_LABEL[off.kind] ?? "Day off"}
+                                </div>
+                              )}
                               {cell.map((s) => (
                                 <div
                                   key={s.id}

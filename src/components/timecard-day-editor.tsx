@@ -1,7 +1,19 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, Coffee, Loader2, LogIn, LogOut, Plus, Trash2, X } from "lucide-react";
+import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { useAppRules } from "@/lib/app-rules";
+import {
+  diffDay,
+  newKey,
+  resolveShift,
+  shiftHours,
+  toShifts,
+  validateDay,
+  type DraftBreak,
+  type DraftShift,
+} from "@/lib/shift-edit";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,6 +21,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -20,36 +33,51 @@ export type EditablePunch = {
   break_minutes: number | null;
 };
 
-const KIND_LABEL: Record<EditablePunch["kind"], string> = {
-  in: "Clock in",
-  out: "Clock out",
-  break_start: "Break start",
-  break_end: "Break end",
-};
-
 const BREAK_LENGTHS = [10, 30, 60] as const;
 
-/** `datetime-local` wants local wall-clock time, not the ISO instant. */
-function toLocalInput(value: string | Date): string {
-  const d = new Date(value);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+function fmtHours(ms: number) {
+  const m = Math.round(ms / 60_000);
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
 }
 
-/** A new punch defaults to 9am on the day being edited, not "now". */
-function dayAtNine(day: Date): string {
-  const d = new Date(day);
-  d.setHours(9, 0, 0, 0);
-  return toLocalInput(d);
+/** "HH:MM" now, for the "Now" buttons on today's card. */
+function nowTime() {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
 /**
- * Correct one day of an employee's punches: retime them, retype them, change a
- * break's length, delete one, or add one that was never recorded.
+ * A new 30-minute break, placed where one usually goes: after the last break,
+ * or about three hours into the shift. Only a starting point to adjust.
+ */
+function suggestBreak(s: DraftShift, day: Date): DraftBreak {
+  const r = resolveShift(s, day);
+  const last = r.breaks[r.breaks.length - 1];
+  const base = last?.endAt ?? last?.startAt ?? r.inAt;
+  if (!base) return { key: newKey(), minutes: 30, start: "", end: "" };
+  const start = new Date(base.getTime() + (last ? 2 : 3) * 3_600_000);
+  if (r.outAt && start.getTime() + 30 * 60_000 > r.outAt.getTime()) {
+    return { key: newKey(), minutes: 30, start: "", end: "" };
+  }
+  const hhmm = (d: Date) =>
+    `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return {
+    key: newKey(),
+    minutes: 30,
+    start: hhmm(start),
+    end: hhmm(new Date(start.getTime() + 30 * 60_000)),
+  };
+}
+
+/**
+ * Correct one day of an employee's time, shift by shift: a clock-in, a
+ * clock-out and the breaks between, typed as times of day. A time earlier than
+ * the clock-in is the next morning, so an overnight shift reads 20:00 – 02:00.
  *
- * Everything goes through the `manager_*` RPCs rather than the table, because
- * those are what enforce the manager check and write the audit trail — a
- * timecard is a payroll record and edits to it have to be attributable.
+ * Nothing is written until Save, and Save is held while anything on the day
+ * doesn't add up. Every write still goes through the `manager_*` RPCs, which
+ * enforce the manager check and keep the audit trail — a timecard is a payroll
+ * record, and each change to it has to be attributable.
  */
 export function TimecardDayEditor({
   open,
@@ -67,117 +95,118 @@ export function TimecardDayEditor({
   employeeName: string;
 }) {
   const qc = useQueryClient();
+  const rules = useAppRules();
+  const [shifts, setShifts] = useState<DraftShift[]>(() => toShifts(punches));
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
-  const [newKind, setNewKind] = useState<EditablePunch["kind"]>("in");
-  const [newAt, setNewAt] = useState(() => dayAtNine(day));
-  const [newMinutes, setNewMinutes] = useState<number>(30);
 
-  // Local edits, keyed by punch id, so a row can be changed and saved on its own.
-  const [drafts, setDrafts] = useState<
-    Record<string, { at: string; kind: EditablePunch["kind"]; minutes: number | null }>
-  >({});
+  const changes = useMemo(() => diffDay(punches, shifts, day), [punches, shifts, day]);
+  const problems = useMemo(() => validateDay(shifts, day), [shifts, day]);
+  const dirty = changes.length > 0;
 
-  function draftFor(p: EditablePunch) {
-    return drafts[p.id] ?? { at: toLocalInput(p.at), kind: p.kind, minutes: p.break_minutes };
-  }
-  function setDraft(
-    p: EditablePunch,
-    patch: Partial<{ at: string; kind: EditablePunch["kind"]; minutes: number | null }>,
-  ) {
-    setDrafts((d) => ({ ...d, [p.id]: { ...draftFor(p), ...patch } }));
-  }
+  // The punches can land after the dialog opens, or change under it (the
+  // employee punching while it is up). Follow them until the manager edits.
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
+  // Set after a failed save: take the reloaded punches whatever the draft says.
+  const reloadRef = useRef(false);
+  const punchSig = punches.map((p) => `${p.id}:${p.at}:${p.kind}:${p.break_minutes}`).join("|");
+  useEffect(() => {
+    if (!dirtyRef.current || reloadRef.current) {
+      reloadRef.current = false;
+      setShifts(toShifts(punches));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [punchSig]);
+
+  const isToday = day.toDateString() === new Date().toDateString();
 
   function refresh() {
     qc.invalidateQueries({ queryKey: ["timecards"] });
+    qc.invalidateQueries({ queryKey: ["timecards-all"] });
     qc.invalidateQueries({ queryKey: ["my-punches-recent"] });
     qc.invalidateQueries({ queryKey: ["correct-punches"] });
-  }
-
-  /**
-   * A note if one was typed. Optional: who changed what, from what and to what
-   * is recorded either way, and demanding a sentence first only ever produced
-   * "fix" and "typo".
-   */
-  function noteOrNothing(): string {
-    return reason.trim();
+    qc.invalidateQueries({ queryKey: ["correct-audit"] });
+    qc.invalidateQueries({ queryKey: ["today-punches"] });
   }
 
   const saveMut = useMutation({
-    mutationFn: async (p: EditablePunch) => {
-      const why = noteOrNothing();
-      const d = draftFor(p);
-      const isBreak = d.kind === "break_start" || d.kind === "break_end";
-      // `_minutes` only exists once the break-length migration is pushed. Send it
-      // only when a break's length actually changed, so ordinary time and kind
-      // corrections keep working on an un-migrated database.
-      const lengthChanged = isBreak && d.minutes != null && d.minutes !== p.break_minutes;
-      const { error: rpcError } = await supabase.rpc("manager_update_punch", {
-        _id: p.id,
-        _at: new Date(d.at).toISOString(),
-        _kind: d.kind,
-        _reason: why,
-        ...(lengthChanged ? { _minutes: d.minutes } : {}),
-      });
-      if (rpcError) throw rpcError;
-    },
-    onSuccess: (_r, p) => {
-      setDrafts((d) => {
-        const next = { ...d };
-        delete next[p.id];
-        return next;
-      });
-      setError(null);
-      refresh();
-    },
-    onError: (e: Error) => setError(e.message),
-  });
-
-  const deleteMut = useMutation({
-    mutationFn: async (p: EditablePunch) => {
-      const why = noteOrNothing();
-      const { error: rpcError } = await supabase.rpc("manager_delete_punch", {
-        _id: p.id,
-        _reason: why,
-      });
-      if (rpcError) throw rpcError;
-    },
-    onSuccess: () => {
-      setError(null);
-      refresh();
-    },
-    onError: (e: Error) => setError(e.message),
-  });
-
-  const addMut = useMutation({
     mutationFn: async () => {
-      const why = noteOrNothing();
-      const isBreak = newKind === "break_start" || newKind === "break_end";
-      const { error: rpcError } = await supabase.rpc("manager_insert_punch", {
-        _user_id: employeeId,
-        _at: new Date(newAt).toISOString(),
-        _kind: newKind,
-        _reason: why,
-        ...(isBreak ? { _minutes: newMinutes } : {}),
-      });
-      if (rpcError) throw rpcError;
+      const why = reason.trim();
+      // One call per punch, in the order diffDay gives (deletes, updates,
+      // inserts). Each is audited on its own; if one fails the rest stop and
+      // the day is reloaded to show what did land.
+      for (const c of changes) {
+        const { error: e } =
+          c.op === "delete"
+            ? await supabase.rpc("manager_delete_punch", { _id: c.id, _reason: why })
+            : c.op === "update"
+              ? await supabase.rpc("manager_update_punch", {
+                  _id: c.id,
+                  _at: c.at,
+                  _kind: c.kind,
+                  _reason: why,
+                  ...(c.minutes != null ? { _minutes: c.minutes } : {}),
+                })
+              : await supabase.rpc("manager_insert_punch", {
+                  _user_id: employeeId,
+                  _at: c.at,
+                  _kind: c.kind,
+                  _reason: why,
+                  ...(c.minutes != null ? { _minutes: c.minutes } : {}),
+                });
+        if (e) throw e;
+      }
     },
     onSuccess: () => {
-      setAdding(false);
-      setError(null);
+      toast.success(`Saved ${employeeName}'s day`);
+      refresh();
+      onOpenChange(false);
+    },
+    onError: (e: Error) => {
+      setError(`${e.message} — some changes may not have been saved; the day has been reloaded.`);
+      reloadRef.current = true;
       refresh();
     },
-    onError: (e: Error) => setError(e.message),
   });
 
-  const busy = saveMut.isPending || deleteMut.isPending || addMut.isPending;
+  function close(next: boolean) {
+    if (next) return onOpenChange(true);
+    if (dirty && !saveMut.isPending && !window.confirm("Discard your changes to this day?")) return;
+    onOpenChange(false);
+  }
+
+  const patchShift = (key: string, patch: Partial<DraftShift>) =>
+    setShifts((all) => all.map((s) => (s.key === key ? { ...s, ...patch } : s)));
+  const patchBreak = (shiftKey: string, breakKey: string, patch: Partial<DraftBreak>) =>
+    setShifts((all) =>
+      all.map((s) =>
+        s.key === shiftKey
+          ? { ...s, breaks: s.breaks.map((b) => (b.key === breakKey ? { ...b, ...patch } : b)) }
+          : s,
+      ),
+    );
+
+  function addShift() {
+    setShifts((all) => [
+      ...all,
+      all.length === 0
+        ? { key: newKey(), inTime: "09:00", outTime: "17:00", breaks: [] }
+        : { key: newKey(), inTime: all[all.length - 1].outTime, outTime: "", breaks: [] },
+    ]);
+  }
+
+  const removed = changes.filter((c) => c.op === "delete").length;
+  const dayTotal = shifts.reduce(
+    (n, s) => n + shiftHours(resolveShift(s, day), rules.cap_break_to_length).workedMs,
+    0,
+  );
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
+    <Dialog open={open} onOpenChange={close}>
+      <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Edit punches — {employeeName}</DialogTitle>
+          <DialogTitle>Edit time — {employeeName}</DialogTitle>
           <DialogDescription>
             {day.toLocaleDateString(undefined, {
               weekday: "long",
@@ -185,175 +214,295 @@ export function TimecardDayEditor({
               day: "numeric",
               year: "numeric",
             })}
+            {" · "}
+            A time earlier than the clock-in counts as the next morning.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="correction-reason">Note (optional)</Label>
-          <Input
-            id="correction-reason"
-            placeholder="e.g. Forgot to clock out — confirmed with supervisor"
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-          />
-          <p className="text-xs text-muted-foreground">
-            Every change below is logged with your name, the time, and what it was before — with or
-            without a note. Add one when the change needs explaining.
-          </p>
-        </div>
-
-        <div className="max-h-[45vh] space-y-2 overflow-y-auto">
-          {punches.length === 0 && (
+        <div className="space-y-3">
+          {shifts.length === 0 && (
             <p className="rounded-lg border border-dashed border-border py-6 text-center text-sm text-muted-foreground">
-              No punches recorded for this day.
+              No time recorded for this day.
             </p>
           )}
 
-          {punches.map((p) => {
-            const d = draftFor(p);
-            const dirty =
-              d.at !== toLocalInput(p.at) || d.kind !== p.kind || d.minutes !== p.break_minutes;
-            const isBreak = d.kind === "break_start" || d.kind === "break_end";
+          {shifts.map((s, i) => {
+            const r = resolveShift(s, day);
+            const hours = shiftHours(r, rules.cap_break_to_length);
+            const issues = problems.get(s.key) ?? [];
+            const nextDay = (d: Date | null) => !!d && d.toDateString() !== day.toDateString();
             return (
               <div
-                key={p.id}
-                className="flex flex-wrap items-end gap-2 rounded-lg border border-border p-2.5"
+                key={s.key}
+                className={`rounded-xl border p-3 ${issues.length ? "border-destructive/50 bg-destructive/5" : "border-border bg-card"}`}
               >
-                <div className="w-32 shrink-0 space-y-1">
-                  <Label className="text-xs">Type</Label>
-                  <select
-                    className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
-                    value={d.kind}
-                    onChange={(e) => setDraft(p, { kind: e.target.value as EditablePunch["kind"] })}
-                  >
-                    {(Object.keys(KIND_LABEL) as EditablePunch["kind"][]).map((k) => (
-                      <option key={k} value={k}>
-                        {KIND_LABEL[k]}
-                      </option>
-                    ))}
-                  </select>
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <span className="text-sm font-semibold text-foreground">
+                    {shifts.length > 1 ? `Shift ${i + 1}` : "Shift"}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium tabular-nums text-foreground">
+                      {hours.open ? (
+                        <span className="text-amber-600 dark:text-amber-400">Still clocked in</span>
+                      ) : (
+                        `${fmtHours(hours.workedMs)} worked`
+                      )}
+                    </span>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 text-destructive"
+                      aria-label="Remove this shift"
+                      title="Remove this shift"
+                      onClick={() => setShifts((all) => all.filter((x) => x.key !== s.key))}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
 
-                <div className="w-44 shrink-0 space-y-1">
-                  <Label className="text-xs">Time</Label>
-                  <Input
-                    type="datetime-local"
-                    className="h-9"
-                    value={d.at}
-                    onChange={(e) => setDraft(p, { at: e.target.value })}
+                <div className="grid grid-cols-2 gap-3">
+                  <TimeField
+                    label="Clock in"
+                    icon={<LogIn className="h-3.5 w-3.5" />}
+                    value={s.inTime}
+                    onChange={(v) => patchShift(s.key, { inTime: v })}
+                    onNow={isToday ? () => patchShift(s.key, { inTime: nowTime() }) : undefined}
+                  />
+                  <TimeField
+                    label="Clock out"
+                    icon={<LogOut className="h-3.5 w-3.5" />}
+                    value={s.outTime}
+                    onChange={(v) => patchShift(s.key, { outTime: v })}
+                    onNow={isToday ? () => patchShift(s.key, { outTime: nowTime() }) : undefined}
+                    onClear={s.outTime ? () => patchShift(s.key, { outTime: "" }) : undefined}
+                    nextDay={nextDay(r.outAt)}
+                    placeholder="Still clocked in"
                   />
                 </div>
 
-                {isBreak && (
-                  <div className="w-28 shrink-0 space-y-1">
-                    <Label className="text-xs">Break length</Label>
-                    <select
-                      className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
-                      value={d.minutes ?? ""}
-                      onChange={(e) =>
-                        setDraft(p, { minutes: e.target.value ? Number(e.target.value) : null })
-                      }
-                    >
-                      <option value="">—</option>
-                      {BREAK_LENGTHS.map((m) => (
-                        <option key={m} value={m}>
-                          {m} min{m === 10 ? " (paid)" : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
+                <div className="mt-3 space-y-2">
+                  {s.breaks.map((b, bi) => {
+                    const rb = r.breaks[bi];
+                    return (
+                      <div
+                        key={b.key}
+                        className="flex flex-wrap items-end gap-2 rounded-lg bg-muted/40 p-2"
+                      >
+                        <div className="w-28 space-y-1">
+                          <Label className="flex items-center gap-1 text-xs">
+                            <Coffee className="h-3.5 w-3.5" /> Break
+                          </Label>
+                          <select
+                            className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+                            value={b.minutes ?? ""}
+                            onChange={(e) =>
+                              patchBreak(s.key, b.key, {
+                                minutes: e.target.value ? Number(e.target.value) : null,
+                              })
+                            }
+                          >
+                            {b.minutes == null && <option value="">—</option>}
+                            {BREAK_LENGTHS.map((m) => (
+                              <option key={m} value={m}>
+                                {m} min{m === 10 ? " · paid" : ""}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="min-w-[7.5rem] flex-1">
+                          <TimeField
+                            label="Start"
+                            value={b.start}
+                            onChange={(v) => patchBreak(s.key, b.key, { start: v })}
+                            nextDay={nextDay(rb.startAt)}
+                            compact
+                          />
+                        </div>
+                        <div className="min-w-[7.5rem] flex-1">
+                          <TimeField
+                            label="End"
+                            value={b.end}
+                            onChange={(v) => patchBreak(s.key, b.key, { end: v })}
+                            onNow={
+                              isToday ? () => patchBreak(s.key, b.key, { end: nowTime() }) : undefined
+                            }
+                            nextDay={nextDay(rb.endAt)}
+                            placeholder={s.outTime ? undefined : "On break"}
+                            compact
+                          />
+                        </div>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-9 w-9 text-muted-foreground hover:text-destructive"
+                          aria-label="Remove this break"
+                          title="Remove this break"
+                          onClick={() =>
+                            patchShift(s.key, { breaks: s.breaks.filter((x) => x.key !== b.key) })
+                          }
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    );
+                  })}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 px-2 text-xs"
+                    onClick={() =>
+                      patchShift(s.key, { breaks: [...s.breaks, suggestBreak(s, day)] })
+                    }
+                  >
+                    <Plus className="mr-1 h-3.5 w-3.5" /> Add break
+                  </Button>
+                </div>
 
-                <Button size="sm" disabled={!dirty || busy} onClick={() => saveMut.mutate(p)}>
-                  {saveMut.isPending && saveMut.variables?.id === p.id && (
-                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                  )}
-                  Save
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="text-destructive"
-                  disabled={busy}
-                  onClick={() => deleteMut.mutate(p)}
-                  aria-label="Delete punch"
-                >
-                  {deleteMut.isPending && deleteMut.variables?.id === p.id ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Trash2 className="h-3.5 w-3.5" />
-                  )}
-                </Button>
+                {(hours.unpaidMs > 0 || hours.paidMs > 0) && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {hours.unpaidMs > 0 && `${fmtHours(hours.unpaidMs)} unpaid break`}
+                    {hours.unpaidMs > 0 && hours.paidMs > 0 && " · "}
+                    {hours.paidMs > 0 && `${fmtHours(hours.paidMs)} paid break`}
+                  </p>
+                )}
+                {issues.length > 0 && (
+                  <ul className="mt-2 space-y-0.5">
+                    {issues.map((msg) => (
+                      <li key={msg} className="flex items-start gap-1.5 text-xs text-destructive">
+                        <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                        {msg}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             );
           })}
+
+          <div className="flex items-center justify-between">
+            <Button variant="outline" size="sm" onClick={addShift}>
+              <Plus className="mr-1.5 h-4 w-4" /> Add shift
+            </Button>
+            {shifts.length > 0 && (
+              <span className="text-sm text-muted-foreground">
+                Day total{" "}
+                <span className="font-semibold tabular-nums text-foreground">
+                  {fmtHours(dayTotal)}
+                </span>
+              </span>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="correction-reason">Note (optional)</Label>
+            <Input
+              id="correction-reason"
+              placeholder="e.g. Forgot to clock out — confirmed with supervisor"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Every change is logged with your name, the time, and what it was before.
+            </p>
+          </div>
+
+          {error && (
+            <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>
+          )}
         </div>
 
-        {adding ? (
-          <div className="flex flex-wrap items-end gap-2 rounded-lg border border-primary/40 bg-primary-soft/40 p-2.5">
-            <div className="w-32 shrink-0 space-y-1">
-              <Label className="text-xs">Type</Label>
-              <select
-                className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
-                value={newKind}
-                onChange={(e) => setNewKind(e.target.value as EditablePunch["kind"])}
-              >
-                {(Object.keys(KIND_LABEL) as EditablePunch["kind"][]).map((k) => (
-                  <option key={k} value={k}>
-                    {KIND_LABEL[k]}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="w-44 shrink-0 space-y-1">
-              <Label className="text-xs">Time</Label>
-              <Input
-                type="datetime-local"
-                className="h-9"
-                value={newAt}
-                onChange={(e) => setNewAt(e.target.value)}
-              />
-            </div>
-            {(newKind === "break_start" || newKind === "break_end") && (
-              <div className="w-28 shrink-0 space-y-1">
-                <Label className="text-xs">Break length</Label>
-                <select
-                  className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
-                  value={newMinutes}
-                  onChange={(e) => setNewMinutes(Number(e.target.value))}
-                >
-                  {BREAK_LENGTHS.map((m) => (
-                    <option key={m} value={m}>
-                      {m} min{m === 10 ? " (paid)" : ""}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-            <Button size="sm" disabled={busy} onClick={() => addMut.mutate()}>
-              {addMut.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
-              Add
-            </Button>
-            <Button size="sm" variant="ghost" disabled={busy} onClick={() => setAdding(false)}>
+        <DialogFooter className="items-center gap-2 sm:justify-between">
+          <span className="text-xs text-muted-foreground">
+            {!dirty
+              ? "No changes yet"
+              : `${changes.length} change${changes.length === 1 ? "" : "s"}${removed ? ` · ${removed} punch${removed === 1 ? "" : "es"} removed` : ""}`}
+          </span>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => close(false)} disabled={saveMut.isPending}>
               Cancel
             </Button>
+            <Button
+              onClick={() => {
+                setError(null);
+                saveMut.mutate();
+              }}
+              disabled={!dirty || problems.size > 0 || saveMut.isPending}
+            >
+              {saveMut.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+              Save
+            </Button>
           </div>
-        ) : (
-          <Button
-            variant="outline"
-            size="sm"
-            className="self-start"
-            onClick={() => setAdding(true)}
-          >
-            <Plus className="mr-1.5 h-4 w-4" />
-            Add a punch
-          </Button>
-        )}
-
-        {error && (
-          <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>
-        )}
+        </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function TimeField({
+  label,
+  icon,
+  value,
+  onChange,
+  onNow,
+  onClear,
+  nextDay,
+  placeholder,
+  compact,
+}: {
+  label: string;
+  icon?: React.ReactNode;
+  value: string;
+  onChange: (v: string) => void;
+  onNow?: () => void;
+  onClear?: () => void;
+  nextDay?: boolean;
+  placeholder?: string;
+  compact?: boolean;
+}) {
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between gap-1">
+        <Label className={`flex items-center gap-1 ${compact ? "text-xs" : "text-xs font-medium"}`}>
+          {icon}
+          {label}
+          {nextDay && (
+            <span className="rounded bg-blue-100 px-1 text-[10px] font-medium text-blue-700 dark:bg-blue-500/15 dark:text-blue-300">
+              next day
+            </span>
+          )}
+        </Label>
+        <div className="flex gap-1">
+          {onNow && (
+            <button
+              type="button"
+              onClick={onNow}
+              className="text-[11px] font-medium text-primary hover:underline"
+            >
+              Now
+            </button>
+          )}
+          {onClear && (
+            <button
+              type="button"
+              onClick={onClear}
+              className="text-[11px] font-medium text-muted-foreground hover:text-destructive hover:underline"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      </div>
+      <Input
+        type="time"
+        className="h-9"
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      {!value && placeholder && (
+        <p className="text-[11px] text-muted-foreground">{placeholder}</p>
+      )}
+    </div>
   );
 }

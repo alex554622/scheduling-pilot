@@ -104,6 +104,79 @@ export interface SimplePunch {
   break_minutes: number | null;
 }
 
+/**
+ * Longest a shift can run and still claim the punches after its clock-in. Past
+ * this the clock-in is taken as a forgotten clock-out, and whatever comes next
+ * counts on its own day rather than being dragged back onto an old one.
+ */
+export const MAX_SHIFT_MS = 24 * 3_600_000;
+
+/**
+ * The day each punch counts toward: the day its shift was clocked in on.
+ *
+ * A shift that runs past midnight belongs to the day it started — in at 8 pm,
+ * out at 2 am is six hours on the first day, not an open clock-in on one day
+ * and a stray clock-out on the next that between them pay nothing. Its breaks
+ * and its clock-out are filed under the clock-in's day.
+ *
+ * Keys are `Date.toDateString()` in local time, parallel to `punches`. Handles
+ * several people at once; `punches` must be oldest first.
+ */
+export function shiftDayKeys<T extends { user_id: string; kind: PunchKind; at: string }>(
+  punches: T[],
+): string[] {
+  const openIn = new Map<string, number>();
+  return punches.map((p) => {
+    const t = new Date(p.at).getTime();
+    let dayOf = t;
+    if (p.kind === "in") {
+      openIn.set(p.user_id, t);
+    } else {
+      const start = openIn.get(p.user_id);
+      if (start != null && t - start <= MAX_SHIFT_MS) dayOf = start;
+      if (p.kind === "out" || (start != null && t - start > MAX_SHIFT_MS)) {
+        openIn.delete(p.user_id);
+      }
+    }
+    return new Date(dayOf).toDateString();
+  });
+}
+
+/**
+ * The punches whose shift was clocked in during [from, to). Fetch from
+ * `MAX_SHIFT_MS` either side of the period and pass the lot: the extra hours
+ * after `to` hold the clock-out of a shift started on the period's last night,
+ * and the hours before `from` say which early-morning punches finish a shift
+ * from the period before (and so are not this period's to pay).
+ */
+export function punchesInPeriod<T extends { user_id: string; kind: PunchKind; at: string }>(
+  punches: T[],
+  from: Date,
+  to: Date,
+): T[] {
+  const ordered = [...punches].sort((a, b) => a.at.localeCompare(b.at));
+  const keys = shiftDayKeys(ordered);
+  return ordered.filter((_, i) => {
+    const day = new Date(keys[i]).getTime();
+    return day >= from.getTime() && day < to.getTime();
+  });
+}
+
+/** One person's or several people's punches, grouped by `shiftDayKeys`. */
+export function groupByShiftDay<T extends { user_id: string; kind: PunchKind; at: string }>(
+  punches: T[],
+): Map<string, T[]> {
+  const ordered = [...punches].sort((a, b) => a.at.localeCompare(b.at));
+  const keys = shiftDayKeys(ordered);
+  const byDay = new Map<string, T[]>();
+  ordered.forEach((p, i) => {
+    const list = byDay.get(keys[i]);
+    if (list) list.push(p);
+    else byDay.set(keys[i], [p]);
+  });
+  return byDay;
+}
+
 /** One clock-in to clock-out. `outAt` is null while someone is still on the clock. */
 export interface ShiftSpan {
   inAt: string;
@@ -156,13 +229,16 @@ export function totalsByPerson(
   roundMinutes = 0,
   capBreaks = true,
 ): Map<string, PersonTotals> {
+  // Grouped by the day each shift was clocked in on, so a shift past midnight
+  // is counted whole on its first day — see `shiftDayKeys`.
   const byUser = new Map<string, Map<string, SimplePunch[]>>();
-  for (const p of punches) {
-    const day = new Date(p.at).toDateString();
-    if (!byUser.has(p.user_id)) byUser.set(p.user_id, new Map());
-    const days = byUser.get(p.user_id)!;
-    if (!days.has(day)) days.set(day, []);
-    days.get(day)!.push(p);
+  for (const [day, list] of groupByShiftDay(punches)) {
+    for (const p of list) {
+      if (!byUser.has(p.user_id)) byUser.set(p.user_id, new Map());
+      const days = byUser.get(p.user_id)!;
+      if (!days.has(day)) days.set(day, []);
+      days.get(day)!.push(p);
+    }
   }
 
   const out = new Map<string, PersonTotals>();
@@ -178,9 +254,8 @@ export function totalsByPerson(
       overBreakMs: 0,
     };
     for (const [key, list] of days) {
-      // Grouped by the day the punch actually happened, then rounded — a
-      // rounding that crosses midnight must not move someone's shift onto the
-      // next day's card.
+      // Grouped by the shift's clock-in day, then rounded — a rounding that
+      // crosses midnight must not move someone's shift onto the next day's card.
       const ordered = roundPunches(
         [...list].sort((a, b) => a.at.localeCompare(b.at)),
         roundMinutes,

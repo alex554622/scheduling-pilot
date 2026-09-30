@@ -32,6 +32,7 @@ import {
   Download,
   CalendarRange,
   CheckSquare,
+  Plane,
 } from "lucide-react";
 import { SHIFT_COLORS, shiftColorClass, shiftColorHex } from "@/lib/shift-colors";
 import { ScheduleCopyPaste } from "@/components/schedule-copy-paste";
@@ -121,6 +122,30 @@ interface MemberRow {
 interface TeamRow {
   id: string;
   name: string;
+}
+
+/** An approved request, dates inclusive as YYYY-MM-DD. */
+interface TimeOffRow {
+  employee_id: string;
+  start_date: string;
+  end_date: string;
+  kind: string;
+}
+
+/** The approved time off covering this person on this day, if any. */
+function timeOffOn(timeOff: TimeOffRow[], memberId: string, day: Date): TimeOffRow | undefined {
+  const d = toDayString(day);
+  return timeOff.find((t) => t.employee_id === memberId && t.start_date <= d && t.end_date >= d);
+}
+
+const TIME_OFF_LABEL: Record<string, string> = {
+  vacation: "Vacation",
+  sick: "Sick",
+  personal: "Personal",
+  other: "Day off",
+};
+function timeOffLabel(t: TimeOffRow) {
+  return TIME_OFF_LABEL[t.kind] ?? "Day off";
 }
 
 /** Rows grouped under a heading; null means show one flat list. */
@@ -477,6 +502,24 @@ function CompanyDashboard({ role }: { role: AppRole }) {
     },
   });
 
+  // Approved time off touching the range on screen, so the builder shows who
+  // is away before anyone puts them on a shift.
+  const timeOffQ = useQuery({
+    queryKey: ["schedule-time-off", companyId, toDayString(rangeStart), toDayString(rangeEnd)],
+    enabled: !!companyId && isBuilder,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("time_off_requests")
+        .select("employee_id, start_date, end_date, kind")
+        .eq("company_id", companyId!)
+        .eq("status", "approved")
+        .lt("start_date", toDayString(rangeEnd))
+        .gte("end_date", toDayString(rangeStart));
+      if (error) throw error;
+      return (data ?? []) as TimeOffRow[];
+    },
+  });
+
   /**
    * The posted roster: every published shift the company has put up, from the
    * start of this week onwards.
@@ -575,6 +618,7 @@ function CompanyDashboard({ role }: { role: AppRole }) {
         members={members}
         teams={teams}
         shifts={shifts}
+        timeOff={timeOffQ.data ?? []}
         days={days}
         anchor={anchor}
         setAnchor={setAnchor}
@@ -901,6 +945,7 @@ interface BuilderProps {
   members: MemberRow[];
   teams: TeamRow[];
   shifts: ShiftRow[];
+  timeOff: TimeOffRow[];
   days: Date[];
   anchor: Date;
   setAnchor: (d: Date) => void;
@@ -1302,6 +1347,7 @@ function ScheduleBuilder(props: BuilderProps) {
                 : "Week of"
             }
             showDrafts
+            timeOff={props.timeOff.filter((t) => members.some((m) => m.id === t.employee_id))}
             emptyText="Nobody is scheduled this week yet."
           />
           <p className="text-xs text-muted-foreground">
@@ -1350,6 +1396,7 @@ function GridView({
   members,
   groups,
   shifts,
+  timeOff,
   days,
   canEdit,
   isLoading,
@@ -1476,6 +1523,7 @@ function GridView({
                       const pickedShift = !!s && (selection?.shifts.has(s.id) ?? false);
                       const pickedDay = selection?.days.has(toDayString(days[i])) ?? false;
                       const marked = pickedShift || (pickedDay && !!s);
+                      const off = timeOffOn(timeOff, m.id, days[i]);
                       return (
                         <button
                           key={i}
@@ -1512,7 +1560,9 @@ function GridView({
                           title={
                             s
                               ? "Click to pick this shift · double-click to edit it"
-                              : "Click to add a shift"
+                              : off
+                                ? `${m.full_name || "This employee"} is off (${timeOffLabel(off).toLowerCase()}) this day`
+                                : "Click to add a shift"
                           }
                           className={`group relative border-l border-border p-1 text-left transition-colors enabled:hover:bg-primary-soft/40 disabled:cursor-default ${weekDivider ? "border-l-2 border-primary/30" : ""} ${marked ? "bg-primary/15 ring-1 ring-inset ring-primary" : ""}`}
                         >
@@ -1525,7 +1575,10 @@ function GridView({
                               </p>
                               {s.position && <p className="truncate opacity-90">{s.position}</p>}
                               {!s.published && <p className="opacity-90">draft</p>}
+                              {off && <p className="font-semibold">⚠ {timeOffLabel(off)}</p>}
                             </div>
+                          ) : off ? (
+                            <TimeOffChip off={off} />
                           ) : canEdit ? (
                             <div className="grid h-full min-h-10 place-items-center rounded-md border border-dashed border-transparent text-muted-foreground opacity-0 transition-opacity group-hover:border-primary/40 group-hover:opacity-100">
                               <Plus className="h-4 w-4" />
@@ -1545,12 +1598,23 @@ function GridView({
   );
 }
 
+/** The mark an approved day off leaves in a person's cell. */
+function TimeOffChip({ off }: { off: TimeOffRow }) {
+  return (
+    <div className="flex min-h-10 items-center justify-center gap-1 rounded-md border border-dashed border-warning/60 bg-warning/15 px-1.5 py-1 text-[10px] font-semibold leading-tight text-warning-foreground">
+      <Plane className="h-3 w-3 shrink-0" />
+      <span className="truncate">{timeOffLabel(off)}</span>
+    </div>
+  );
+}
+
 /* ----------------------------- Day view ----------------------------- */
 
 function DayView({
   members,
   groups,
   shifts,
+  timeOff,
   days,
   canEdit,
   isLoading,
@@ -1594,6 +1658,7 @@ function DayView({
             : []),
           ...group.members.map((m) => {
             const mine = shifts.filter((s) => s.employee_id === m.id);
+            const off = timeOffOn(timeOff, m.id, day);
             return (
               <li
                 key={m.id}
@@ -1618,8 +1683,13 @@ function DayView({
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                  {off && (
+                    <span className="inline-flex items-center gap-1 rounded-md border border-dashed border-warning/60 bg-warning/15 px-2.5 py-1.5 text-xs font-semibold text-warning-foreground">
+                      <Plane className="h-3.5 w-3.5" /> {timeOffLabel(off)}
+                    </span>
+                  )}
                   {mine.length === 0 ? (
-                    canEdit ? (
+                    off ? null : canEdit ? (
                       <button
                         type="button"
                         onClick={() =>
@@ -1674,6 +1744,7 @@ function DayView({
 
 function MonthView({
   shifts,
+  timeOff,
   anchor,
   canEdit,
   isLoading,
@@ -1720,6 +1791,7 @@ function MonthView({
           const k = d.toDateString();
           const count = counts.get(k) ?? 0;
           const isToday = today === k;
+          const away = members.filter((m) => timeOffOn(timeOff, m.id, d));
           return (
             <button
               key={i}
@@ -1745,6 +1817,17 @@ function MonthView({
               {count > 0 && (
                 <span className="mt-1 block truncate rounded-md bg-primary-soft px-1.5 py-0.5 text-[10px] font-medium text-primary">
                   {count} shift{count === 1 ? "" : "s"}
+                </span>
+              )}
+              {away.length > 0 && (
+                <span
+                  className="mt-1 flex items-center gap-1 truncate rounded-md bg-warning/15 px-1.5 py-0.5 text-[10px] font-medium text-warning-foreground"
+                  title={`Off: ${away.map((m) => m.full_name || "(unnamed)").join(", ")}`}
+                >
+                  <Plane className="h-3 w-3 shrink-0" />
+                  <span className="truncate">
+                    {away.length === 1 ? shortName(away[0].full_name || "(unnamed)") : `${away.length} off`}
+                  </span>
                 </span>
               )}
             </button>
