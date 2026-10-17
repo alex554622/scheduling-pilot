@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { translate, useT } from "@/lib/i18n";
 
 /**
  * The day's board: announcements from the office and short notes from anyone.
@@ -35,19 +36,20 @@ const MAX_LEN = 1000;
 /** "5m ago", "3h ago" — posts never get older than a day. */
 function ago(ms: number): string {
   const m = Math.max(0, Math.floor(ms / 60_000));
-  if (m < 1) return "just now";
-  if (m < 60) return `${m}m ago`;
-  return `${Math.floor(m / 60)}h ago`;
+  if (m < 1) return translate("just now");
+  if (m < 60) return translate("{n}m ago", { n: m });
+  return translate("{n}h ago", { n: Math.floor(m / 60) });
 }
 
 /** How long it has left on the board. */
 function left(ms: number): string {
   const m = Math.max(0, Math.ceil(ms / 60_000));
-  if (m < 60) return `${m}m left`;
-  return `${Math.floor(m / 60)}h left`;
+  if (m < 60) return translate("{n}m left", { n: m });
+  return translate("{n}h left", { n: Math.floor(m / 60) });
 }
 
 function MessagesPage() {
+  const t = useT("time");
   const { user, profile, primaryRole } = useAuth();
   const qc = useQueryClient();
   const companyId = profile?.company_id ?? null;
@@ -91,7 +93,7 @@ function MessagesPage() {
         .select("id, full_name")
         .eq("company_id", companyId!);
       if (error) throw error;
-      return new Map((data ?? []).map((p) => [p.id, p.full_name || "Unnamed"]));
+      return new Map((data ?? []).map((p) => [p.id, p.full_name || ""]));
     },
   });
 
@@ -157,12 +159,16 @@ function MessagesPage() {
   }, [messagesQ.data, now]);
 
   const nameOf = (id: string) =>
-    id === user?.id ? "You" : (namesQ.data?.get(id) ?? "Someone");
+    id === user?.id
+      ? t("You")
+      : namesQ.data?.has(id)
+        ? namesQ.data.get(id) || t("Unnamed")
+        : t("Someone");
 
   const tooLong = draft.length > MAX_LEN;
 
   if (!companyId) {
-    return <p className="text-sm text-muted-foreground">Messages belong to a company.</p>;
+    return <p className="text-sm text-muted-foreground">{t("Messages belong to a company.")}</p>;
   }
 
   const renderMessage = (m: Message) => {
@@ -195,12 +201,12 @@ function MessagesPage() {
             <button
               type="button"
               onClick={() => {
-                if (confirm("Delete this message for everyone?")) remove.mutate(m.id);
+                if (confirm(t("Delete this message for everyone?"))) remove.mutate(m.id);
               }}
               disabled={remove.isPending}
               className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-              aria-label="Delete message"
-              title={m.author_id === user?.id ? "Delete your message" : "Delete (admin)"}
+              aria-label={t("Delete message")}
+              title={m.author_id === user?.id ? t("Delete your message") : t("Delete (admin)")}
             >
               <Trash2 className="h-4 w-4" />
             </button>
@@ -213,9 +219,9 @@ function MessagesPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-foreground">Messages</h1>
+        <h1 className="text-2xl font-semibold text-foreground">{t("Messages")}</h1>
         <p className="text-sm text-muted-foreground">
-          Today's board for the whole team. Everything posted here disappears after 24 hours.
+          {t("Today's board for the whole team. Everything posted here disappears after 24 hours.")}
         </p>
       </div>
 
@@ -232,8 +238,8 @@ function MessagesPage() {
           onChange={(e) => setDraft(e.target.value)}
           placeholder={
             isAdmin && announce
-              ? "Write an announcement for everyone…"
-              : "Write a message for the team…"
+              ? t("Write an announcement for everyone…")
+              : t("Write a message for the team…")
           }
           rows={3}
           className="resize-none"
@@ -256,9 +262,9 @@ function MessagesPage() {
                   className="h-4 w-4 accent-[var(--primary)]"
                 />
                 <Megaphone className="h-4 w-4 text-primary" />
-                Announcement
+                {t("Announcement")}
                 <span className="hidden text-xs text-muted-foreground sm:inline">
-                  — pinned, and everyone is notified
+                  {t("— pinned, and everyone is notified")}
                 </span>
               </label>
             )}
@@ -275,7 +281,7 @@ function MessagesPage() {
               ) : (
                 <Send className="mr-2 h-4 w-4" />
               )}
-              Post
+              {t("Post")}
             </Button>
           </div>
         </div>
@@ -287,20 +293,19 @@ function MessagesPage() {
       </form>
 
       {messagesQ.isLoading ? (
-        <p className="py-10 text-center text-sm text-muted-foreground">Loading…</p>
+        <p className="py-10 text-center text-sm text-muted-foreground">{t("Loading…")}</p>
       ) : messagesQ.error ? (
         <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {(messagesQ.error as Error).message}
           <span className="mt-1 block text-xs text-muted-foreground">
-            If this says the table is missing, the messages migration hasn't been applied to this
-            database yet.
+            {t("If this says the table is missing, the messages migration hasn't been applied to this database yet.")}
           </span>
         </p>
       ) : announcements.length === 0 && notes.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border py-12 text-center">
           <MessageSquare className="mx-auto h-8 w-8 text-muted-foreground" />
           <p className="mt-2 text-sm text-muted-foreground">
-            Nothing posted in the last 24 hours.
+            {t("Nothing posted in the last 24 hours.")}
           </p>
         </div>
       ) : (
@@ -308,7 +313,7 @@ function MessagesPage() {
           {announcements.length > 0 && (
             <section className="space-y-2">
               <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Announcements
+                {t("Announcements")}
               </h2>
               <ul className="space-y-2">{announcements.map(renderMessage)}</ul>
             </section>
@@ -316,7 +321,7 @@ function MessagesPage() {
           {notes.length > 0 && (
             <section className="space-y-2">
               <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Today
+                {t("Today")}
               </h2>
               <ul className="space-y-2">{notes.map(renderMessage)}</ul>
             </section>

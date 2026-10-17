@@ -46,6 +46,7 @@ import {
   type SimplePunch,
 } from "@/lib/timecard-totals";
 import { fromDayString, toDayString } from "@/lib/schedule-pattern";
+import { localeTag, useT } from "@/lib/i18n";
 
 /**
  * `?user=<id>&day=YYYY-MM-DD` opens that person's card on that day's editor —
@@ -99,10 +100,10 @@ function addDays(d: Date, n: number) {
   return x;
 }
 function fmtDate(d: Date) {
-  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  return d.toLocaleDateString(localeTag(), { weekday: "short", month: "short", day: "numeric" });
 }
 function fmtTime(s: string, roundMin = 0) {
-  return roundToMinutes(new Date(s), roundMin).toLocaleTimeString([], {
+  return roundToMinutes(new Date(s), roundMin).toLocaleTimeString(localeTag() ?? [], {
     hour: "2-digit",
     minute: "2-digit",
   });
@@ -114,7 +115,7 @@ function fmtDecimal(ms: number) {
 
 /** `Sat Sep 5`, for the day rows under a person. */
 function fmtDayShort(d: Date) {
-  return d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+  return d.toLocaleDateString(localeTag() ?? [], { weekday: "short", month: "short", day: "numeric" });
 }
 
 /** AP, DG — the initials shown in the avatar circle. */
@@ -131,6 +132,7 @@ function fmtHours(ms: number) {
 }
 
 function TimecardsPage() {
+  const t = useT("timecards");
   const qc = useQueryClient();
   const { user, profile, company, primaryRole, loading } = useAuth();
   const rules = useAppRules();
@@ -305,7 +307,7 @@ function TimecardsPage() {
     );
     return roster
       .map((m) => {
-        const t = totals.get(m.id) ?? {
+        const tot = totals.get(m.id) ?? {
           grossMs: 0,
           workedMs: 0,
           unpaidMs: 0,
@@ -315,20 +317,20 @@ function TimecardsPage() {
           incompleteBreaks: 0,
           overBreakMs: 0,
         };
-        const split = splitPeriod(t.dayTotals, rules, period === "week");
+        const split = splitPeriod(tot.dayTotals, rules, period === "week");
         return {
           id: m.id,
-          name: m.full_name || "Unnamed",
+          name: m.full_name || t("Unnamed"),
           position: m.position ?? null,
-          daysWorked: t.dayTotals.filter((ms) => ms > 0).length,
+          daysWorked: tot.dayTotals.filter((ms) => ms > 0).length,
           // One time card per clock-in, which is what the count column means.
-          cardCount: t.days.reduce((n, d) => n + d.spans.length, 0),
-          ...t,
+          cardCount: tot.days.reduce((n, d) => n + d.spans.length, 0),
+          ...tot,
           ...split,
         };
       })
       .sort((a, b) => b.workedMs - a.workedMs || a.name.localeCompare(b.name));
-  }, [viewingAll, allQ.data, roster, rules, period]);
+  }, [viewingAll, allQ.data, roster, rules, period, t]);
 
   /** Every punch on screen for this person, deleted in one go. */
   /** Whose punches are being cleared — a super admin has no company of their own. */
@@ -560,7 +562,7 @@ function TimecardsPage() {
             unpaid: "—",
             paid: "—",
             hours: "0h 00m",
-            notes: "No punches",
+            notes: t("No punches"),
           },
         ];
       }
@@ -572,11 +574,11 @@ function TimecardsPage() {
         paid: p.paidBreakMs > 0 ? fmtHours(p.paidBreakMs) : "—",
         hours: i === 0 ? fmtHours(r.totalMs) : "",
         notes: [
-          !p.out ? "Still clocked in" : null,
+          !p.out ? t("Still clocked in") : null,
           // Where someone punched from is a manager's business; an employee's
           // own timecard is about their hours.
           isManager && (!p.in.within_geofence || (p.out && !p.out.within_geofence))
-            ? "Off-site punch"
+            ? t("Off-site punch")
             : null,
         ]
           .filter(Boolean)
@@ -595,8 +597,8 @@ function TimecardsPage() {
       companyName: employeeCompanyName,
       employeeName,
       position: employeePosition,
-      periodLabel: period === "week" ? "Weekly" : "Bi-weekly",
-      rangeLabel: `${rangeStart.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })} – ${lastDay.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}`,
+      periodLabel: period === "week" ? t("Weekly") : t("Bi-weekly"),
+      rangeLabel: `${rangeStart.toLocaleDateString(localeTag(), { month: "long", day: "numeric", year: "numeric" })} – ${lastDay.toLocaleDateString(localeTag(), { month: "long", day: "numeric", year: "numeric" })}`,
       daysWorked: grouped.rows.filter((r) => r.pairs.length > 0).length,
       rows,
       totals: {
@@ -612,7 +614,7 @@ function TimecardsPage() {
       doubleTime: doubleTimeMs > 0 ? fmtHours(doubleTimeMs) : null,
       doubleTimeDecimal: doubleTimeMs > 0 ? dec(doubleTimeMs) : null,
       overtimeNote: overtimeNote(rules, period === "week"),
-      roundNote: `Punch times ${rules.punch_round_minutes > 0 ? `and hours rounded to the nearest ${rules.punch_round_minutes} minutes` : "shown as recorded"}. Unpaid break time is deducted from hours worked; paid break time is not.`,
+      roundNote: `${rules.punch_round_minutes > 0 ? t("Punch times and hours rounded to the nearest {n} minutes.", { n: rules.punch_round_minutes }) : t("Punch times shown as recorded.")} ${t("Unpaid break time is deducted from hours worked; paid break time is not.")}`,
       filename: `timecard-${employeeName.replace(/[^\w.-]+/g, "-").replace(/^-|-$/g, "")}-${rangeStart.toISOString().slice(0, 10)}.pdf`,
     };
   }
@@ -627,10 +629,10 @@ function TimecardsPage() {
     }
   }
 
-  if (loading) return <div className="text-sm text-muted-foreground">Loading…</div>;
+  if (loading) return <div className="text-sm text-muted-foreground">{t("Loading…")}</div>;
   // A super admin has no company of their own but can read every timecard.
   if (!company && !isSuperAdmin)
-    return <div className="text-sm text-muted-foreground">Join a company to view timecards.</div>;
+    return <div className="text-sm text-muted-foreground">{t("Join a company to view timecards.")}</div>;
 
   // Whose card is on screen — the roster row when a manager has picked someone,
   // otherwise the signed-in user's own profile.
@@ -640,7 +642,7 @@ function TimecardsPage() {
     (isSelf ? profile?.full_name : viewing?.full_name) ||
     viewing?.full_name ||
     user?.email ||
-    "Employee";
+    t("Employee");
   const employeePosition = isSelf ? profile?.position : viewing?.position;
   // The printed header names the employee's company, which for a super admin is
   // whichever company the person they picked belongs to — not their own.
@@ -657,7 +659,7 @@ function TimecardsPage() {
         companyName={employeeCompanyName}
         employeeName={employeeName}
         position={employeePosition}
-        periodLabel={period === "week" ? "Weekly" : "Bi-weekly"}
+        periodLabel={period === "week" ? t("Weekly") : t("Bi-weekly")}
         rangeStart={rangeStart}
         rangeEnd={rangeEnd}
         days={grouped.rows.map((r) => ({
@@ -690,9 +692,9 @@ function TimecardsPage() {
       <div data-print-hide className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold text-foreground">Timecards</h1>
+            <h1 className="text-2xl font-semibold text-foreground">{t("Timecards")}</h1>
             <p className="text-sm text-muted-foreground">
-              {period === "week" ? "Weekly" : "Bi-weekly"} totals · {fmtDate(rangeStart)} –{" "}
+              {period === "week" ? t("Weekly totals") : t("Bi-weekly totals")} · {fmtDate(rangeStart)} –{" "}
               {fmtDate(addDays(rangeEnd, -1))}
             </p>
           </div>
@@ -700,7 +702,7 @@ function TimecardsPage() {
             <Button asChild variant="outline" size="sm">
               <Link to="/timeclock">
                 <Clock className="mr-2 h-4 w-4" />
-                Time clock
+                {t("Time clock")}
               </Link>
             </Button>
             {/* Both produce the same document — see PrintableTimecard. Print goes
@@ -710,10 +712,10 @@ function TimecardsPage() {
               variant="outline"
               size="sm"
               onClick={() => window.print()}
-              title="Send to a printer, or choose “Save as PDF”"
+              title={t("Send to a printer, or choose “Save as PDF”")}
             >
               <Printer className="mr-2 h-4 w-4" />
-              Print
+              {t("Print")}
             </Button>
             {isManager && (
               <Button
@@ -729,24 +731,24 @@ function TimecardsPage() {
                   setWipeScope("period");
                   setWipeOpen(true);
                 }}
-                title="Delete timecards for a day, this period, or the whole month"
+                title={t("Delete timecards for a day, this period, or the whole month")}
               >
                 <Trash2 className="mr-2 h-4 w-4" />
-                Delete timecards
+                {t("Delete timecards")}
               </Button>
             )}
             <Button
               size="sm"
               onClick={downloadTimecard}
               disabled={savingPdf}
-              title="Saves a PDF straight to your downloads"
+              title={t("Saves a PDF straight to your downloads")}
             >
               {savingPdf ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
                 <Download className="mr-2 h-4 w-4" />
               )}
-              Download PDF
+              {t("Download PDF")}
             </Button>
           </div>
         </div>
@@ -757,17 +759,17 @@ function TimecardsPage() {
               className={`px-3 py-1 text-xs font-medium rounded ${period === "week" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
               onClick={() => setPeriod("week")}
             >
-              Weekly
+              {t("Weekly")}
             </button>
             <button
               className={`px-3 py-1 text-xs font-medium rounded ${period === "biweek" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
               onClick={() => setPeriod("biweek")}
             >
-              Bi-weekly
+              {t("Bi-weekly")}
             </button>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <Button variant="outline" size="icon" onClick={() => nav(-1)} aria-label="Previous">
+            <Button variant="outline" size="icon" onClick={() => nav(-1)} aria-label={t("Previous")}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <Button
@@ -775,9 +777,9 @@ function TimecardsPage() {
               size="sm"
               onClick={() => setAnchor(startOfWeek(new Date(), rules.week_start_day))}
             >
-              This {period === "week" ? "week" : "2-week"}
+              {period === "week" ? t("This week") : t("This 2-week")}
             </Button>
-            <Button variant="outline" size="icon" onClick={() => nav(1)} aria-label="Next">
+            <Button variant="outline" size="icon" onClick={() => nav(1)} aria-label={t("Next")}>
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
@@ -788,7 +790,7 @@ function TimecardsPage() {
                 htmlFor="timecard-employee"
                 className="shrink-0 text-sm font-medium text-foreground"
               >
-                Employee
+                {t("Employee")}
               </label>
               <select
                 id="timecard-employee"
@@ -796,15 +798,17 @@ function TimecardsPage() {
                 value={selectedUser}
                 onChange={(e) => setSelectedUser(e.target.value)}
               >
-                <option value="all">All employees</option>
+                <option value="all">{t("All employees")}</option>
                 {!isSuperAdmin && (
-                  <option value="me">Me ({profile?.full_name || user?.email})</option>
+                  <option value="me">
+                    {t("Me ({name})", { name: profile?.full_name || user?.email || "" })}
+                  </option>
                 )}
                 {roster
                   .filter((m) => m.id !== user?.id)
                   .map((m) => (
                     <option key={m.id} value={m.id}>
-                      {m.full_name || "Unnamed"}
+                      {m.full_name || t("Unnamed")}
                     </option>
                   ))}
               </select>
@@ -818,7 +822,7 @@ function TimecardsPage() {
           <div className="flex items-start gap-3 rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
             <div>
-              <p className="font-medium">Couldn't load this timecard</p>
+              <p className="font-medium">{t("Couldn't load this timecard")}</p>
               <p className="mt-0.5">{((rosterQ.error ?? punchesQ.error) as Error).message}</p>
             </div>
           </div>
@@ -828,12 +832,11 @@ function TimecardsPage() {
           <div className="flex items-start gap-3 rounded-xl border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-200">
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
             <p>
-              You're the only person on this company's roster, so there are no other timecards to
-              open. Add employees from the{" "}
+              {t("You're the only person on this company's roster, so there are no other timecards to open. Add employees from the")}{" "}
               <Link to="/employees" className="underline">
-                Employees
-              </Link>{" "}
-              page.
+                {t("Employees")}
+              </Link>
+              {t(" page.")}
             </p>
           </div>
         )}
@@ -843,7 +846,7 @@ function TimecardsPage() {
           <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
               <h2 className="font-semibold text-foreground">
-                All employees · {fmtDate(rangeStart)} – {fmtDate(addDays(rangeEnd, -1))}
+                {t("All employees")} · {fmtDate(rangeStart)} – {fmtDate(addDays(rangeEnd, -1))}
               </h2>
               <div className="flex items-center gap-3">
                 {everyone.some((r) => r.cardCount > 0) && (
@@ -858,7 +861,7 @@ function TimecardsPage() {
                       )
                     }
                   >
-                    {expanded.length > 0 ? "Collapse all" : "Expand all"}
+                    {expanded.length > 0 ? t("Collapse all") : t("Expand all")}
                   </button>
                 )}
                 {allQ.isLoading && (
@@ -870,13 +873,13 @@ function TimecardsPage() {
               <table className="w-full min-w-[820px] text-sm">
                 <thead>
                   <tr className="bg-muted/30 text-xs uppercase tracking-wide text-muted-foreground">
-                    <th className="px-4 py-2 text-left font-medium">Date</th>
-                    <th className="px-3 py-2 text-left font-medium">Time card</th>
-                    <th className="px-3 py-2 text-right font-medium">Actual hours</th>
-                    <th className="px-3 py-2 text-right font-medium">Total paid hours</th>
-                    <th className="px-3 py-2 text-right font-medium">Regular hours</th>
-                    <th className="px-3 py-2 text-right font-medium">OT hours</th>
-                    <th className="px-3 py-2 text-right font-medium">Double time</th>
+                    <th className="px-4 py-2 text-left font-medium">{t("Date")}</th>
+                    <th className="px-3 py-2 text-left font-medium">{t("Time card")}</th>
+                    <th className="px-3 py-2 text-right font-medium">{t("Actual hours")}</th>
+                    <th className="px-3 py-2 text-right font-medium">{t("Total paid hours")}</th>
+                    <th className="px-3 py-2 text-right font-medium">{t("Regular hours")}</th>
+                    <th className="px-3 py-2 text-right font-medium">{t("OT hours")}</th>
+                    <th className="px-3 py-2 text-right font-medium">{t("Double time")}</th>
                     <th className="px-3 py-2" />
                   </tr>
                 </thead>
@@ -905,7 +908,7 @@ function TimecardsPage() {
                                   )
                                 }
                                 aria-expanded={open}
-                                aria-label={`${open ? "Hide" : "Show"} ${r.name}'s time cards`}
+                                aria-label={open ? t("Hide {name}'s time cards", { name: r.name }) : t("Show {name}'s time cards", { name: r.name })}
                                 className="rounded p-0.5 text-muted-foreground hover:bg-muted disabled:opacity-30"
                               >
                                 <ChevronDown
@@ -926,7 +929,9 @@ function TimecardsPage() {
                           <td className="px-3 py-2 font-medium text-foreground">
                             {r.cardCount === 0
                               ? "—"
-                              : `${r.cardCount} Time Card${r.cardCount === 1 ? "" : "s"}`}
+                              : r.cardCount === 1
+                                ? t("1 time card")
+                                : t("{n} time cards", { n: r.cardCount })}
                           </td>
                           <td className="px-3 py-2 text-right font-medium text-foreground">
                             {fmtDecimal(r.grossMs)}
@@ -953,7 +958,7 @@ function TimecardsPage() {
                               size="sm"
                               onClick={() => setSelectedUser(r.id)}
                             >
-                              Open
+                              {t("Open")}
                             </Button>
                           </td>
                         </tr>
@@ -975,7 +980,7 @@ function TimecardsPage() {
                                     fmtTime(span.outAt, rules.punch_round_minutes)
                                   ) : (
                                     <span className="text-warning-foreground">
-                                      still clocked in
+                                      {t("still clocked in")}
                                     </span>
                                   )}
                                 </td>
@@ -995,7 +1000,7 @@ function TimecardsPage() {
                   {everyone.length === 0 && !allQ.isLoading && (
                     <tr>
                       <td colSpan={8} className="px-4 py-6 text-center text-muted-foreground">
-                        No punches for this period.
+                        {t("No punches for this period.")}
                       </td>
                     </tr>
                   )}
@@ -1003,9 +1008,9 @@ function TimecardsPage() {
                 {everyone.length > 0 && (
                   <tfoot>
                     <tr className="border-t border-border bg-muted/30 font-medium text-foreground">
-                      <td className="px-4 py-2">Totals</td>
+                      <td className="px-4 py-2">{t("Totals")}</td>
                       <td className="px-3 py-2">
-                        {everyone.reduce((n, r) => n + r.cardCount, 0)} Time Cards
+                        {t("{n} time cards", { n: everyone.reduce((n, r) => n + r.cardCount, 0) })}
                       </td>
                       <td className="px-3 py-2 text-right">
                         {fmtDecimal(everyone.reduce((n, r) => n + r.grossMs, 0))}
@@ -1029,8 +1034,7 @@ function TimecardsPage() {
               </table>
             </div>
             <p className="border-t border-border px-4 py-2 text-xs text-muted-foreground">
-              Actual hours is time on the clock. Total paid hours is the same less unpaid breaks,
-              and splits into regular, overtime and double time.
+              {t("Actual hours is time on the clock. Total paid hours is the same less unpaid breaks, and splits into regular, overtime and double time.")}
             </p>
           </div>
         )}
@@ -1041,16 +1045,20 @@ function TimecardsPage() {
               <div
                 className={`grid ${isManager ? "grid-cols-[1fr_2fr_1fr_auto]" : "grid-cols-[1fr_2fr_1fr]"} border-b border-border bg-muted/30 px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground`}
               >
-                <div>Date</div>
-                <div>Punches</div>
-                <div className="text-right">Hours</div>
-                {isManager && <div className="w-16 text-right">Edit</div>}
+                <div>{t("Date")}</div>
+                <div>{t("Punches")}</div>
+                <div className="text-right">{t("Hours")}</div>
+                {isManager && <div className="w-16 text-right">{t("Edit")}</div>}
               </div>
               {!punchesQ.isLoading && !punchesQ.error && (punchesQ.data ?? []).length === 0 && (
                 <div className="border-b border-border px-4 py-6 text-center text-sm text-muted-foreground">
-                  No punches for <span className="font-medium text-foreground">{employeeName}</span>{" "}
-                  between {fmtDate(rangeStart)} and {fmtDate(addDays(rangeEnd, -1))}.
-                  {isManager && " Use Edit on a day to add one."}
+                  {t("No punches for")}{" "}
+                  <span className="font-medium text-foreground">{employeeName}</span>{" "}
+                  {t("between {from} and {to}.", {
+                    from: fmtDate(rangeStart),
+                    to: fmtDate(addDays(rangeEnd, -1)),
+                  })}
+                  {isManager && " " + t("Use Edit on a day to add one.")}
                 </div>
               )}
               {grouped.rows.map((r) => (
@@ -1064,19 +1072,19 @@ function TimecardsPage() {
                     {r.pairs.map((p, i) => (
                       <div key={i} className="flex items-center gap-2">
                         <span className="rounded bg-emerald-100 dark:bg-emerald-500/15 px-1.5 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">
-                          IN {fmtTime(p.in.at, rules.punch_round_minutes)}
+                          {t("IN")} {fmtTime(p.in.at, rules.punch_round_minutes)}
                         </span>
                         {p.out ? (
                           <span className="rounded bg-blue-100 dark:bg-blue-500/15 px-1.5 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">
-                            OUT {fmtTime(p.out.at, rules.punch_round_minutes)}
+                            {t("OUT")} {fmtTime(p.out.at, rules.punch_round_minutes)}
                           </span>
                         ) : (
                           <span className="rounded bg-amber-100 dark:bg-amber-500/15 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
-                            Still clocked in
+                            {t("Still clocked in")}
                           </span>
                         )}
                         {(!p.in.within_geofence || (p.out && !p.out.within_geofence)) && (
-                          <span className="text-xs text-destructive">⚠ off-site</span>
+                          <span className="text-xs text-destructive">{t("⚠ off-site")}</span>
                         )}
                       </div>
                     ))}
@@ -1085,9 +1093,9 @@ function TimecardsPage() {
                     {fmtHours(r.totalMs)}
                     {(r.unpaidBreakMs > 0 || r.paidBreakMs > 0) && (
                       <div className="text-[10px] font-normal text-muted-foreground">
-                        {r.unpaidBreakMs > 0 && <>unpaid {fmtHours(r.unpaidBreakMs)}</>}
+                        {r.unpaidBreakMs > 0 && <>{t("unpaid")} {fmtHours(r.unpaidBreakMs)}</>}
                         {r.unpaidBreakMs > 0 && r.paidBreakMs > 0 && " · "}
-                        {r.paidBreakMs > 0 && <>paid {fmtHours(r.paidBreakMs)}</>}
+                        {r.paidBreakMs > 0 && <>{t("paid")} {fmtHours(r.paidBreakMs)}</>}
                       </div>
                     )}
                     {/* Back on the clock before the break was up. The day is
@@ -1095,13 +1103,16 @@ function TimecardsPage() {
                         came off the shift. */}
                     {r.incompleteBreaks > 0 && (
                       <div className="text-[10px] font-normal text-destructive">
-                        ⚠ {r.incompleteBreaks === 1 ? "incomplete break" : `${r.incompleteBreaks} incomplete breaks`}
+                        ⚠{" "}
+                        {r.incompleteBreaks === 1
+                          ? t("incomplete break")
+                          : t("{n} incomplete breaks", { n: r.incompleteBreaks })}
                       </div>
                     )}
                     {/* Time they ran over and were not charged for. */}
                     {r.overBreakMs > 0 && (
                       <div className="text-[10px] font-normal text-muted-foreground">
-                        {fmtHours(r.overBreakMs)} over, not counted
+                        {t("{time} over, not counted", { time: fmtHours(r.overBreakMs) })}
                       </div>
                     )}
                   </div>
@@ -1112,7 +1123,7 @@ function TimecardsPage() {
                         size="sm"
                         className="h-7 px-2"
                         onClick={() => setEditingDay(r.date)}
-                        aria-label={`Edit punches for ${fmtDate(r.date)}`}
+                        aria-label={t("Edit punches for {date}", { date: fmtDate(r.date) })}
                       >
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
@@ -1129,13 +1140,13 @@ function TimecardsPage() {
                 const isOT = split.overtimeMs > 0 || split.doubleTimeMs > 0;
                 return (
                   <div className="grid grid-cols-[1fr_2fr_1fr] bg-muted/30 px-4 py-3 text-sm">
-                    <div className="font-semibold text-foreground">Total</div>
+                    <div className="font-semibold text-foreground">{t("Total")}</div>
                     <div className="text-xs text-muted-foreground">
-                      Unpaid break: {fmtHours(grouped.weekUnpaid)} · Paid break:{" "}
+                      {t("Unpaid break:")} {fmtHours(grouped.weekUnpaid)} · {t("Paid break:")}{" "}
                       {fmtHours(grouped.weekPaid)}
                       {split.overtimeMs > 0 && (
                         <span className="ml-2 rounded bg-amber-100 dark:bg-amber-500/15 px-1.5 py-0.5 font-medium text-amber-800 dark:text-amber-200">
-                          OT {fmtHours(split.overtimeMs)}
+                          {t("OT")} {fmtHours(split.overtimeMs)}
                         </span>
                       )}
                       {split.doubleTimeMs > 0 && (
@@ -1160,14 +1171,14 @@ function TimecardsPage() {
               <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
                 <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
                   <MapPin className="h-4 w-4 text-muted-foreground" />
-                  <h2 className="font-semibold text-foreground">Clock-in locations</h2>
+                  <h2 className="font-semibold text-foreground">{t("Clock-in locations")}</h2>
                   <span className="text-xs text-muted-foreground">
-                    {employeeName} · this {period === "week" ? "week" : "fortnight"}
+                    {employeeName} · {period === "week" ? t("this week") : t("this fortnight")}
                   </span>
                 </div>
                 {locationRows.length === 0 ? (
                   <div className="px-4 py-6 text-center text-sm text-muted-foreground">
-                    No locations recorded for this period.
+                    {t("No locations recorded for this period.")}
                   </div>
                 ) : (
                   <div className="divide-y divide-border">
@@ -1177,9 +1188,9 @@ function TimecardsPage() {
                         className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-sm"
                       >
                         <div className="min-w-0">
-                          <span className="font-medium text-foreground">{KIND_LABEL[p.kind]}</span>{" "}
+                          <span className="font-medium text-foreground">{t(KIND_LABEL[p.kind])}</span>{" "}
                           <span className="text-muted-foreground">
-                            {new Date(p.at).toLocaleString(undefined, {
+                            {new Date(p.at).toLocaleString(localeTag(), {
                               month: "short",
                               day: "numeric",
                               hour: "numeric",
@@ -1196,7 +1207,7 @@ function TimecardsPage() {
                                   : "bg-destructive/10 text-destructive"
                               }`}
                             >
-                              {Math.round(p.distance_m)} m from worksite
+                              {t("{n} m from worksite", { n: Math.round(p.distance_m) })}
                             </span>
                           )}
                           <a
@@ -1205,7 +1216,7 @@ function TimecardsPage() {
                             rel="noreferrer"
                             className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
                           >
-                            Map <ExternalLink className="h-3 w-3" />
+                            {t("Map")} <ExternalLink className="h-3 w-3" />
                           </a>
                         </div>
                       </div>
@@ -1221,22 +1232,20 @@ function TimecardsPage() {
           <Dialog open onOpenChange={(o) => !o && setWipeOpen(false)}>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Delete timecards</DialogTitle>
+                <DialogTitle>{t("Delete timecards")}</DialogTitle>
                 <DialogDescription>
-                  Each deleted punch is recorded in the audit log under your name, but the hours
-                  themselves are gone. Anything already paid from these timecards will no longer add
-                  up.
+                  {t("Each deleted punch is recorded in the audit log under your name, but the hours themselves are gone. Anything already paid from these timecards will no longer add up.")}
                 </DialogDescription>
               </DialogHeader>
 
               {wipeDone !== null ? (
                 <p className="rounded-md bg-primary-soft px-3 py-2 text-sm text-primary">
-                  Deleted {wipeDone} punch{wipeDone === 1 ? "" : "es"}.
+                  {wipeDone === 1 ? t("Deleted 1 punch.") : t("Deleted {n} punches.", { n: wipeDone })}
                 </p>
               ) : (
                 <div className="space-y-4">
                   <div className="space-y-1.5">
-                    <Label htmlFor="wipe-who">Whose timecards</Label>
+                    <Label htmlFor="wipe-who">{t("Whose timecards")}</Label>
                     <select
                       id="wipe-who"
                       value={wipeWho}
@@ -1244,29 +1253,34 @@ function TimecardsPage() {
                       className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
                     >
                       <option value="one" disabled={!targetUserId}>
-                        Just {employeeName}
+                        {t("Just {name}", { name: employeeName })}
                       </option>
-                      <option value="all">Everyone in the company</option>
+                      <option value="all">{t("Everyone in the company")}</option>
                     </select>
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label htmlFor="wipe-scope">Which dates</Label>
+                    <Label htmlFor="wipe-scope">{t("Which dates")}</Label>
                     <select
                       id="wipe-scope"
                       value={wipeScope}
                       onChange={(e) => setWipeScope(e.target.value as "day" | "period" | "month")}
                       className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
                     >
-                      <option value="day">One day</option>
+                      <option value="day">{t("One day")}</option>
                       <option value="period">
-                        {period === "week" ? "This week" : "These two weeks"} ({fmtDate(rangeStart)}
+                        {period === "week" ? t("This week") : t("These two weeks")} (
+                        {fmtDate(rangeStart)}
                         {" – "}
                         {fmtDate(addDays(rangeEnd, -1))})
                       </option>
                       <option value="month">
-                        The whole of{" "}
-                        {anchor.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
+                        {t("The whole of {month}", {
+                          month: anchor.toLocaleDateString(localeTag(), {
+                            month: "long",
+                            year: "numeric",
+                          }),
+                        })}
                       </option>
                     </select>
                     {wipeScope === "day" && (
@@ -1279,19 +1293,21 @@ function TimecardsPage() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label htmlFor="wipe-reason">Note (optional)</Label>
+                    <Label htmlFor="wipe-reason">{t("Note (optional)")}</Label>
                     <Input
                       id="wipe-reason"
                       value={wipeReason}
                       onChange={(e) => setWipeReason(e.target.value)}
-                      placeholder="e.g. punches imported twice by mistake"
+                      placeholder={t("e.g. punches imported twice by mistake")}
                     />
                   </div>
 
                   <p className="text-sm text-muted-foreground">
                     {wipeCountQ.isLoading
-                      ? "Counting…"
-                      : `${wipeCountQ.data ?? 0} punch${(wipeCountQ.data ?? 0) === 1 ? "" : "es"} will be deleted.`}
+                      ? t("Counting…")
+                      : (wipeCountQ.data ?? 0) === 1
+                        ? t("1 punch will be deleted.")
+                        : t("{n} punches will be deleted.", { n: wipeCountQ.data ?? 0 })}
                   </p>
 
                   <label className="flex cursor-pointer items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-foreground">
@@ -1302,8 +1318,7 @@ function TimecardsPage() {
                       onChange={(e) => setWipeUnderstood(e.target.checked)}
                     />
                     <span>
-                      I have checked the people and the dates, and I understand these punches cannot
-                      be brought back.
+                      {t("I have checked the people and the dates, and I understand these punches cannot be brought back.")}
                     </span>
                   </label>
 
@@ -1317,11 +1332,11 @@ function TimecardsPage() {
 
               <DialogFooter>
                 {wipeDone !== null ? (
-                  <Button onClick={() => setWipeOpen(false)}>Done</Button>
+                  <Button onClick={() => setWipeOpen(false)}>{t("Done")}</Button>
                 ) : (
                   <>
                     <Button variant="outline" onClick={() => setWipeOpen(false)}>
-                      Keep them
+                      {t("Keep them")}
                     </Button>
                     <Button
                       variant="destructive"
@@ -1331,7 +1346,7 @@ function TimecardsPage() {
                       onClick={() => wipePeriod.mutate()}
                     >
                       {wipePeriod.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                      Delete {wipeCountQ.data ?? 0}
+                      {t("Delete {n}", { n: wipeCountQ.data ?? 0 })}
                     </Button>
                   </>
                 )}

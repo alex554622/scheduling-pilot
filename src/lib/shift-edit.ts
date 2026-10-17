@@ -9,6 +9,7 @@
  * Kept free of React and Supabase so the test script can run it under bun.
  */
 import { readBreak } from "./timecard-totals";
+import { translate } from "@/lib/i18n";
 
 export type PunchKind = "in" | "out" | "break_start" | "break_end";
 
@@ -147,27 +148,27 @@ export function validateDay(shifts: DraftShift[], day: Date): Map<string, string
 
   for (const r of resolved) {
     const k = r.shift.key;
-    if (!r.inAt) add(k, "Enter a clock-in time.");
+    if (!r.inAt) add(k, translate("Enter a clock-in time."));
     if (r.inAt && r.outAt && r.outAt.getTime() === r.inAt.getTime()) {
-      add(k, "Clock-out can't be the same as clock-in.");
+      add(k, translate("Clock-out can't be the same as clock-in."));
     }
     const spans: [number, number][] = [];
     r.breaks.forEach(({ brk, startAt, endAt }, i) => {
       const n = r.breaks.length > 1 ? ` ${i + 1}` : "";
-      if (!startAt) add(k, `Break${n}: enter a start time.`);
-      if (!endAt && r.outAt) add(k, `Break${n}: enter an end time, or clear the clock-out.`);
+      if (!startAt) add(k, translate("Break{n}: enter a start time.", { n }));
+      if (!endAt && r.outAt) add(k, translate("Break{n}: enter an end time, or clear the clock-out.", { n }));
       if (startAt && endAt && endAt.getTime() <= startAt.getTime()) {
-        add(k, `Break${n}: the end has to come after the start.`);
+        add(k, translate("Break{n}: the end has to come after the start.", { n }));
       }
       if (r.outAt && ((startAt && startAt > r.outAt) || (endAt && endAt > r.outAt))) {
-        add(k, `Break${n}: has to end by the clock-out.`);
+        add(k, translate("Break{n}: has to end by the clock-out.", { n }));
       }
-      if (brk.minutes == null && !brk.startId) add(k, `Break${n}: pick a length.`);
+      if (brk.minutes == null && !brk.startId) add(k, translate("Break{n}: pick a length.", { n }));
       if (startAt) spans.push([startAt.getTime(), (endAt ?? startAt).getTime()]);
     });
     spans.sort((a, b) => a[0] - b[0]);
     for (let i = 1; i < spans.length; i++) {
-      if (spans[i][0] < spans[i - 1][1]) add(k, "Two breaks overlap.");
+      if (spans[i][0] < spans[i - 1][1]) add(k, translate("Two breaks overlap."));
     }
   }
 
@@ -180,9 +181,9 @@ export function validateDay(shifts: DraftShift[], day: Date): Map<string, string
     const next = timed[i + 1];
     if (!next) break;
     if (!r.outAt) {
-      add(r.shift.key, "Only the last shift of the day can be left without a clock-out.");
+      add(r.shift.key, translate("Only the last shift of the day can be left without a clock-out."));
     } else if (next.inAt!.getTime() < r.outAt.getTime()) {
-      add(next.shift.key, "Starts before the shift above it has ended.");
+      add(next.shift.key, translate("Starts before the shift above it has ended."));
     }
   }
   return problems;

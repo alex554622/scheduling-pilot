@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { BrandLogo } from "@/components/brand";
 import { noindexSeo } from "@/lib/seo";
+import { useT } from "@/lib/i18n";
 
 const searchSchema = z.object({
   token: z.string().uuid().optional(),
@@ -34,6 +35,7 @@ interface InvitePreview {
 function JoinPage() {
   const { token } = Route.useSearch();
   const { user, loading: authLoading, refresh } = useAuth();
+  const t = useT("shell");
   const navigate = useNavigate();
 
   const [invite, setInvite] = useState<InvitePreview | null>(null);
@@ -44,7 +46,7 @@ function JoinPage() {
 
   useEffect(() => {
     if (!token) {
-      setError("This invite link is missing its token.");
+      setError(t("This invite link is missing its token."));
       setLoading(false);
       return;
     }
@@ -53,7 +55,7 @@ function JoinPage() {
       if (error) {
         setError(error.message);
       } else if (!data || data.length === 0) {
-        setError("Invitation not found.");
+        setError(t("Invitation not found."));
       } else {
         setInvite(data[0] as InvitePreview);
       }
@@ -89,48 +91,53 @@ function JoinPage() {
 
         {loading || authLoading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> Checking invitation…
+            <Loader2 className="h-4 w-4 animate-spin" /> {t("Checking invitation…")}
           </div>
         ) : error ? (
           <ErrorBlock message={error} />
         ) : invite ? (
           <>
-            <h1 className="text-xl font-semibold text-foreground">You're invited</h1>
+            <h1 className="text-xl font-semibold text-foreground">{t("You're invited")}</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">{invite.company_name}</span> invited{" "}
-              <span className="font-medium text-foreground">{invite.email}</span> to join as{" "}
+              <span className="font-medium text-foreground">{invite.company_name}</span>{" "}
+              {t("invited")} <span className="font-medium text-foreground">{invite.email}</span>{" "}
+              {t("to join as")}{" "}
               <span className="font-medium text-foreground">{roleLabel(invite.role)}</span>.
             </p>
 
             {invite.status !== "pending" ? (
-              <ErrorBlock message={`This invitation is ${invite.status}.`} />
+              <ErrorBlock message={t("This invitation is {status}.", { status: t(invite.status) })} />
             ) : expired ? (
-              <ErrorBlock message="This invitation has expired. Ask an admin to send a new one." />
+              <ErrorBlock message={t("This invitation has expired. Ask an admin to send a new one.")} />
             ) : done ? (
               <div className="mt-5 flex items-center gap-2 rounded-lg bg-primary-soft p-3 text-sm text-primary">
-                <CheckCircle2 className="h-4 w-4" /> Joined! Redirecting…
+                <CheckCircle2 className="h-4 w-4" /> {t("Joined! Redirecting…")}
               </div>
             ) : !user ? (
               <div className="mt-5 space-y-2">
                 <p className="text-sm text-muted-foreground">
-                  Sign in or create an account with <strong>{invite.email}</strong> to accept.
+                  {t("Sign in or create an account with")} <strong>{invite.email}</strong>{" "}
+                  {t("to accept.")}
                 </p>
                 <Link
                   to="/login"
                   search={{ invite: token } as never}
                   className="block w-full rounded-md bg-primary px-4 py-2 text-center text-sm font-medium text-primary-foreground hover:opacity-90"
                 >
-                  Continue to sign in
+                  {t("Continue to sign in")}
                 </Link>
               </div>
             ) : wrongEmail ? (
               <ErrorBlock
-                message={`You're signed in as ${user.email}, but this invite is for ${invite.email}. Sign out and use the invited email.`}
+                message={t(
+                  "You're signed in as {current}, but this invite is for {invited}. Sign out and use the invited email.",
+                  { current: user.email ?? "", invited: invite.email },
+                )}
               />
             ) : (
               <Button className="mt-5 w-full" onClick={accept} disabled={accepting}>
                 {accepting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Accept invitation
+                {t("Accept invitation")}
               </Button>
             )}
           </>

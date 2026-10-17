@@ -7,6 +7,7 @@ import { showAppNotification, useNotificationPrefs } from "@/lib/notification-pr
 import { hasPushSubscription } from "@/lib/push-subscription";
 import { playBreakAlert, playChime } from "@/lib/notify-sound";
 import { useBreakAlertSound } from "@/lib/break-alert-sound";
+import { translate } from "@/lib/i18n";
 
 /**
  * "Two minutes left on your break."
@@ -130,12 +131,17 @@ export function useBreakReminder(): void {
       // true, and "two minutes left" after the fact is worse than silence.
       if (remaining <= 0) return;
 
-      const title = "Break almost over";
+      const title = translate("Break almost over");
       const mins = Math.ceil(remaining / 60_000);
       const body =
         remaining > BREAK_WARNING_MS - 30_000
-          ? `Two minutes left on your ${minutes}-minute break.`
-          : `Under ${mins} minute${mins === 1 ? "" : "s"} left on your ${minutes}-minute break.`;
+          ? translate("Two minutes left on your {minutes}-minute break.", { minutes })
+          : mins === 1
+            ? translate("Under 1 minute left on your {minutes}-minute break.", { minutes })
+            : translate("Under {mins} minutes left on your {minutes}-minute break.", {
+                mins,
+                minutes,
+              });
 
       toast.warning(title, { description: body, duration: 30_000 });
       // The one notification that gets the recorded alert, and only where

@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useT, useLocaleTag } from "@/lib/i18n";
 import { sheetLegend, sheetTime, shortName } from "@/lib/sheet-format";
 
 /**
@@ -103,6 +104,8 @@ export function ScheduleGrid({
   /** Approved time off, drawn in the person's day so nobody books over it. */
   timeOff?: GridTimeOff[];
 }) {
+  const t = useT("schedule");
+  const tag = useLocaleTag();
   const today = new Date();
 
   const { rows, legend } = useMemo(() => {
@@ -128,7 +131,7 @@ export function ScheduleGrid({
     const rows = [...byPerson.entries()]
       .map(([id, list]) => ({
         id,
-        name: id === "open" ? "Open shift" : nameOf(id),
+        name: id === "open" ? t("Open shift") : nameOf(id),
         shifts: list.sort((a, b) => a.starts_at.localeCompare(b.starts_at)),
       }))
       .sort((a, b) => {
@@ -140,7 +143,7 @@ export function ScheduleGrid({
     // A key only when the colours mean posts; see `sheetLegend`.
     const legend = sheetLegend(inWeek).map((l) => ({ position: l.label, color: l.color }));
     return { rows, legend };
-  }, [shifts, days, nameOf, selfId, showDrafts, timeOff]);
+  }, [shifts, days, nameOf, selfId, showDrafts, timeOff, t]);
 
   return (
     <div className="relative overflow-hidden rounded-2xl border border-white/60 shadow-[0_10px_40px_-12px_rgba(15,23,42,0.35)] dark:border-white/10">
@@ -159,7 +162,7 @@ export function ScheduleGrid({
         <div className="flex flex-wrap items-end justify-between gap-2 px-4 pb-3 pt-4 sm:px-5">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-              {eyebrow}
+              {t(eyebrow)}
             </p>
             <p className="text-lg font-semibold text-slate-900 dark:text-white">{rangeLabel}</p>
           </div>
@@ -168,7 +171,7 @@ export function ScheduleGrid({
 
         {rows.length === 0 ? (
           <p className="border-t border-white/50 px-5 py-10 text-center text-sm text-slate-500 dark:border-white/10 dark:text-slate-400">
-            {emptyText}
+            {t(emptyText)}
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -176,7 +179,7 @@ export function ScheduleGrid({
               <thead>
                 <tr>
                   <th className="sticky left-0 z-20 w-36 bg-slate-800/80 px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-200 backdrop-blur-md">
-                    Team
+                    {t("Team")}
                   </th>
                   {days.map((d) => {
                     const isToday = sameDay(d, today);
@@ -188,14 +191,14 @@ export function ScheduleGrid({
                         }`}
                       >
                         <span className="block text-[13px] font-semibold">
-                          {d.toLocaleDateString([], { weekday: "long" })}
+                          {d.toLocaleDateString(tag ?? [], { weekday: "long" })}
                         </span>
                         <span
                           className={`block text-[11px] font-medium ${
                             isToday ? "text-white/85" : "text-slate-300"
                           }`}
                         >
-                          {d.toLocaleDateString([], {
+                          {d.toLocaleDateString(tag ?? [], {
                             month: "2-digit",
                             day: "2-digit",
                             year: "numeric",
@@ -226,7 +229,7 @@ export function ScheduleGrid({
                           {row.id === "open" ? row.name : shortName(row.name)}
                           {mine && (
                             <span className="rounded-full bg-primary px-1.5 py-px text-[10px] font-semibold text-primary-foreground">
-                              You
+                              {t("You")}
                             </span>
                           )}
                         </span>
@@ -247,7 +250,7 @@ export function ScheduleGrid({
                             <div className="space-y-1">
                               {off && (
                                 <div className="rounded-lg border border-dashed border-amber-500/70 bg-amber-400/20 px-2 py-1.5 text-center text-[12px] font-semibold leading-tight text-amber-950 dark:text-amber-50">
-                                  {TIME_OFF_LABEL[off.kind] ?? "Day off"}
+                                  {t(TIME_OFF_LABEL[off.kind] ?? "Day off")}
                                 </div>
                               )}
                               {cell.map((s) => (
@@ -266,7 +269,7 @@ export function ScheduleGrid({
                                       {s.position}
                                       {!s.published && (
                                         <span className="ml-1 font-semibold uppercase tracking-wide">
-                                          draft
+                                          {t("draft")}
                                         </span>
                                       )}
                                     </p>
@@ -313,10 +316,11 @@ export function LayoutSwitch({
   onChange: (l: "classic" | "grid") => void;
   disabled?: boolean;
 }) {
+  const t = useT("schedule");
   return (
     <div
       role="radiogroup"
-      aria-label="Schedule layout"
+      aria-label={t("Schedule layout")}
       className="inline-flex rounded-lg bg-secondary p-1"
     >
       {(
@@ -338,7 +342,7 @@ export function LayoutSwitch({
               : "text-muted-foreground hover:text-foreground"
           }`}
         >
-          {label}
+          {t(label)}
         </button>
       ))}
     </div>

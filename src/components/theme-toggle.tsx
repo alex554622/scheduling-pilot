@@ -1,5 +1,6 @@
 import { Moon, Sun } from "lucide-react";
 import { useThemePref } from "@/lib/theme";
+import { useT } from "@/lib/i18n";
 
 /**
  * The one-tap switch in the header. Two states, because that is what someone
@@ -8,7 +9,8 @@ import { useThemePref } from "@/lib/theme";
  */
 export function ThemeToggle() {
   const { dark, setPref } = useThemePref();
-  const label = dark ? "Switch to day mode" : "Switch to night mode";
+  const t = useT("shell");
+  const label = dark ? t("Switch to day mode") : t("Switch to night mode");
   return (
     <button
       type="button"

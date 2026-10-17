@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { useT, translate, useLocaleTag } from "@/lib/i18n";
 import { Users, ShieldCheck, Search, Copy, Check, Loader2, UserCog, Trash2, Pencil, Mail, Send, X, Link2, RefreshCw, CalendarClock, Inbox, History, RotateCcw } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/employees")({
@@ -57,6 +58,7 @@ interface SeparationRow {
 }
 
 function EmployeesPage() {
+  const t = useT("people");
   const { primaryRole, company, loading } = useAuth();
   const navigate = useNavigate();
 
@@ -66,14 +68,14 @@ function EmployeesPage() {
     }
   }, [loading, primaryRole, navigate]);
 
-  if (loading) return <div className="text-sm text-muted-foreground">Loading…</div>;
+  if (loading) return <div className="text-sm text-muted-foreground">{t("Loading…")}</div>;
   if (!primaryRole || (primaryRole !== "company_admin" && primaryRole !== "super_admin")) {
-    return <div className="text-sm text-muted-foreground">You don't have access to this page.</div>;
+    return <div className="text-sm text-muted-foreground">{t("You don't have access to this page.")}</div>;
   }
   if (!company) {
     return (
       <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">
-        You need to belong to a company before managing employees.
+        {t("You need to belong to a company before managing employees.")}
       </div>
     );
   }
@@ -89,6 +91,7 @@ function Roster({
   companyName: string;
   joinCode: string | null;
 }) {
+  const t = useT("people");
   const qc = useQueryClient();
   const { user } = useAuth();
   const [search, setSearch] = useState("");
@@ -281,7 +284,7 @@ function Roster({
 
   const createInviteMut = useMutation({
     mutationFn: async ({ email, role }: { email: string; role: AssignableRole }) => {
-      if (!user) throw new Error("Not authenticated");
+      if (!user) throw new Error(translate("Not authenticated"));
       const { data, error } = await supabase
         .from("invitations")
         .insert({
@@ -350,24 +353,24 @@ function Roster({
     <div className="space-y-6">
       <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
         <div>
-          <h2 className="text-2xl font-semibold text-foreground">Employees</h2>
-          <p className="text-sm text-muted-foreground">Manage the roster and assign roles for {companyName}.</p>
+          <h2 className="text-2xl font-semibold text-foreground">{t("Employees")}</h2>
+          <p className="text-sm text-muted-foreground">{t("Manage the roster and assign roles for {companyName}.", { companyName })}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="rounded-lg border border-border bg-card px-3 py-2 text-xs text-muted-foreground">
             {joinCode ? (
               <>
-                Join code:{" "}
+                {t("Join code:")}{" "}
                 <span className="font-mono tracking-widest text-foreground">{joinCode}</span>
               </>
             ) : (
-              "Join code available once your company is approved"
+              t("Join code available once your company is approved")
             )}
           </div>
           {joinCode && (
             <Button variant="outline" size="sm" onClick={copyJoinCode}>
               {copied ? <Check className="mr-1.5 h-3.5 w-3.5" /> : <Copy className="mr-1.5 h-3.5 w-3.5" />}
-              {copied ? "Copied" : "Copy join code"}
+              {copied ? t("Copied") : t("Copy join code")}
             </Button>
           )}
           <Link
@@ -375,7 +378,7 @@ function Roster({
             className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-sm font-medium text-foreground hover:bg-accent"
           >
             <Inbox className="h-3.5 w-3.5" />
-            Join requests
+            {t("Join requests")}
             {(joinRequestsQ.data?.length ?? 0) > 0 && (
               <span className="ml-1 grid h-5 min-w-5 place-items-center rounded-full bg-primary px-1.5 text-xs font-semibold text-primary-foreground">
                 {joinRequestsQ.data!.length}
@@ -383,7 +386,7 @@ function Roster({
             )}
           </Link>
           <Button size="sm" onClick={() => setInviteOpen(true)}>
-            <Send className="mr-1.5 h-3.5 w-3.5" /> Invite teammate
+            <Send className="mr-1.5 h-3.5 w-3.5" /> {t("Invite teammate")}
           </Button>
         </div>
       </div>
@@ -406,16 +409,16 @@ function Roster({
 
 
       <div className="grid gap-3 md:grid-cols-3">
-        <StatCard label="Total members" value={(membersQ.data ?? []).length} icon={Users} />
-        <StatCard label="Admins" value={counts.company_admin} icon={ShieldCheck} />
-        <StatCard label="Employees" value={counts.employee} icon={Users} />
+        <StatCard label={t("Total members")} value={(membersQ.data ?? []).length} icon={Users} />
+        <StatCard label={t("Admins")} value={counts.company_admin} icon={ShieldCheck} />
+        <StatCard label={t("Employees")} value={counts.employee} icon={Users} />
       </div>
 
       <div className="rounded-xl border border-border bg-card">
         <div className="flex items-center gap-2 border-b border-border p-3">
           <Search className="h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search by name or position…"
+            placeholder={t("Search by name or position…")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="h-9 border-0 shadow-none focus-visible:ring-0"
@@ -423,10 +426,10 @@ function Roster({
         </div>
 
         {membersQ.isLoading ? (
-          <div className="p-6 text-sm text-muted-foreground">Loading roster…</div>
+          <div className="p-6 text-sm text-muted-foreground">{t("Loading roster…")}</div>
         ) : filtered.length === 0 ? (
           <div className="p-6 text-sm text-muted-foreground">
-            {search ? "No matches." : "No members yet. Share your company ID so teammates can join."}
+            {search ? t("No matches.") : t("No members yet. Share your company ID so teammates can join.")}
           </div>
         ) : (
           <div className="divide-y divide-border">
@@ -446,8 +449,8 @@ function Roster({
                       {initials}
                     </div>
                     <div className="min-w-0">
-                      <p className="truncate font-medium text-foreground">{m.full_name || "Unnamed"}</p>
-                      <p className="truncate text-xs text-muted-foreground">{m.position || "No position set"}</p>
+                      <p className="truncate font-medium text-foreground">{m.full_name || t("Unnamed")}</p>
+                      <p className="truncate text-xs text-muted-foreground">{m.position || t("No position set")}</p>
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -461,12 +464,12 @@ function Roster({
                     >
                       {ASSIGNABLE_ROLES.map((r) => (
                         <option key={r} value={r}>
-                          {ROLE_LABEL[r]}
+                          {t(ROLE_LABEL[r])}
                         </option>
                       ))}
                     </select>
                     <Button variant="outline" size="sm" onClick={() => setEditing(m)} disabled={busy}>
-                      <Pencil className="mr-1.5 h-3.5 w-3.5" /> Edit
+                      <Pencil className="mr-1.5 h-3.5 w-3.5" /> {t("Edit")}
                     </Button>
                     <Button
                       variant="ghost"
@@ -551,6 +554,7 @@ function RemoveMemberDialog({
   onClose: () => void;
   onConfirm: (reason: SeparationReason, note: string) => void;
 }) {
+  const t = useT("people");
   const [reason, setReason] = useState<SeparationReason>("rehire");
   const [note, setNote] = useState("");
 
@@ -567,16 +571,15 @@ function RemoveMemberDialog({
     <Dialog open={!!member} onOpenChange={(o) => !o && !busy && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Remove {member?.full_name || "member"}</DialogTitle>
+          <DialogTitle>{t("Remove {name}", { name: member?.full_name || t("member") })}</DialogTitle>
           <DialogDescription>
-            This removes them from {companyName} and frees their seat. Their account is kept, so you
-            can rehire them later, and they can join another company with that company's join code.
+            {t("This removes them from {companyName} and frees their seat. Their account is kept, so you can rehire them later, and they can join another company with that company's join code.", { companyName })}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label>Reason</Label>
+            <Label>{t("Reason")}</Label>
             <div className="space-y-2">
               {SEPARATION_REASONS.map((r) => (
                 <label
@@ -596,8 +599,8 @@ function RemoveMemberDialog({
                     disabled={busy}
                   />
                   <span className="min-w-0">
-                    <span className="block font-medium text-foreground">{r.label}</span>
-                    <span className="block text-xs text-muted-foreground">{r.hint}</span>
+                    <span className="block font-medium text-foreground">{t(r.label)}</span>
+                    <span className="block text-xs text-muted-foreground">{t(r.hint)}</span>
                   </span>
                 </label>
               ))}
@@ -606,13 +609,13 @@ function RemoveMemberDialog({
 
           <div className="space-y-2">
             <Label htmlFor="separation-note">
-              Note {reason === "other" && <span className="text-destructive">*</span>}
+              {t("Note")} {reason === "other" && <span className="text-destructive">*</span>}
             </Label>
             <Input
               id="separation-note"
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="Optional context for the record"
+              placeholder={t("Optional context for the record")}
               disabled={busy}
             />
           </div>
@@ -622,7 +625,7 @@ function RemoveMemberDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={busy}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button
             variant="destructive"
@@ -630,7 +633,7 @@ function RemoveMemberDialog({
             disabled={busy || (reason === "other" && !note.trim())}
           >
             {busy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
-            Remove from company
+            {t("Remove from company")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -655,13 +658,15 @@ function FormerEmployeesCard({
   onForget: (userId: string) => void;
   forgettingId: string | null;
 }) {
+  const t = useT("people");
+  const tag = useLocaleTag();
   if (loading || rows.length === 0) return null;
 
   return (
     <div className="rounded-xl border border-border bg-card">
       <div className="flex items-center gap-2 border-b border-border p-4">
         <History className="h-4 w-4 text-muted-foreground" />
-        <h2 className="font-semibold text-foreground">Former employees</h2>
+        <h2 className="font-semibold text-foreground">{t("Former employees")}</h2>
         <span className="text-xs text-muted-foreground">({rows.length})</span>
       </div>
       <div className="divide-y divide-border">
@@ -675,12 +680,11 @@ function FormerEmployeesCard({
             >
               <div className="min-w-0">
                 <p className="truncate font-medium text-foreground">
-                  {s.prior_full_name || "Unnamed"}
+                  {s.prior_full_name || t("Unnamed")}
                 </p>
                 <p className="truncate text-xs text-muted-foreground">
-                  {REASON_LABEL[s.reason]}
-                  {s.prior_position ? ` · ${s.prior_position}` : ""} · left{" "}
-                  {new Date(s.separated_at).toLocaleDateString()}
+                  {t(REASON_LABEL[s.reason])}
+                  {s.prior_position ? ` · ${s.prior_position}` : ""} · {t("left {date}", { date: new Date(s.separated_at).toLocaleDateString(tag) })}
                 </p>
                 {s.note && (
                   <p className="mt-1 truncate text-xs text-muted-foreground italic">{s.note}</p>
@@ -693,7 +697,7 @@ function FormerEmployeesCard({
                   disabled={busy || forgetting}
                   onClick={() => {
                     if (
-                      confirm(`Rehire ${s.prior_full_name || "this person"} into ${companyName}?`)
+                      confirm(t("Rehire {name} into {companyName}?", { name: s.prior_full_name || t("this person"), companyName }))
                     ) {
                       onRehire(s.user_id);
                     }
@@ -704,7 +708,7 @@ function FormerEmployeesCard({
                   ) : (
                     <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
                   )}
-                  Rehire
+                  {t("Rehire")}
                 </Button>
                 <Button
                   variant="ghost"
@@ -714,7 +718,7 @@ function FormerEmployeesCard({
                   onClick={() => {
                     if (
                       confirm(
-                        `Delete ${s.prior_full_name || "this person"} from ${companyName} for good?\n\nThey leave this list and can no longer be rehired with one click. Their own account stays, and they can join again with the company code. This cannot be undone.`,
+                        t("Delete {name} from {companyName} for good?\n\nThey leave this list and can no longer be rehired with one click. Their own account stays, and they can join again with the company code. This cannot be undone.", { name: s.prior_full_name || t("this person"), companyName }),
                       )
                     ) {
                       onForget(s.user_id);
@@ -726,7 +730,7 @@ function FormerEmployeesCard({
                   ) : (
                     <Trash2 className="mr-1.5 h-3.5 w-3.5" />
                   )}
-                  Delete permanently
+                  {t("Delete permanently")}
                 </Button>
               </div>
             </div>
@@ -754,6 +758,8 @@ function PendingInvitesCard({
   };
   companyName: string;
 }) {
+  const t = useT("people");
+  const tag = useLocaleTag();
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   if (loading) return null;
@@ -773,7 +779,7 @@ function PendingInvitesCard({
       <div className="flex items-center justify-between border-b border-border p-4">
         <div className="flex items-center gap-2">
           <Mail className="h-4 w-4 text-muted-foreground" />
-          <h3 className="text-sm font-semibold text-foreground">Pending invitations</h3>
+          <h3 className="text-sm font-semibold text-foreground">{t("Pending invitations")}</h3>
           <span className="rounded-full bg-primary-soft px-2 py-0.5 text-xs font-medium text-primary">
             {invites.length}
           </span>
@@ -786,20 +792,25 @@ function PendingInvitesCard({
           const extendBusy = extending.isPending && extending.variables?.id === inv.id;
           const regenBusy = extendBusy && extending.variables?.regenerate === true;
           const justExtendBusy = extendBusy && extending.variables?.regenerate === false;
-          const subject = encodeURIComponent(`You're invited to join ${companyName}`);
+          const subject = encodeURIComponent(t("You're invited to join {companyName}", { companyName }));
           const body = encodeURIComponent(
-            `You've been invited to join ${companyName} as ${roleLabel(inv.role)}.\n\nAccept your invitation:\n${joinUrl(inv.token)}\n\nThis link expires on ${new Date(inv.expires_at).toLocaleDateString()}.`,
+            t("You've been invited to join {companyName} as {role}.\n\nAccept your invitation:\n{url}\n\nThis link expires on {date}.", {
+              companyName,
+              role: t(roleLabel(inv.role)),
+              url: joinUrl(inv.token),
+              date: new Date(inv.expires_at).toLocaleDateString(tag),
+            }),
           );
           return (
             <div key={inv.id} className="flex flex-col gap-2 p-4 md:flex-row md:items-center md:justify-between">
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium text-foreground">{inv.email}</p>
                 <p className="text-xs text-muted-foreground">
-                  {roleLabel(inv.role)} ·{" "}
+                  {t(roleLabel(inv.role))} ·{" "}
                   {expired ? (
-                    <span className="text-destructive">Expired</span>
+                    <span className="text-destructive">{t("Expired")}</span>
                   ) : (
-                    <>Expires {new Date(inv.expires_at).toLocaleDateString()}</>
+                    <>{t("Expires {date}", { date: new Date(inv.expires_at).toLocaleDateString(tag) })}</>
                   )}
                 </p>
               </div>
@@ -810,27 +821,27 @@ function PendingInvitesCard({
                   ) : (
                     <Link2 className="mr-1.5 h-3.5 w-3.5" />
                   )}
-                  {copiedId === inv.id ? "Copied" : "Copy link"}
+                  {copiedId === inv.id ? t("Copied") : t("Copy link")}
                 </Button>
                 <a
                   href={`mailto:${inv.email}?subject=${subject}&body=${body}`}
                   className="inline-flex h-9 items-center rounded-md border border-border bg-background px-3 text-sm font-medium text-foreground hover:bg-accent"
                 >
-                  <Send className="mr-1.5 h-3.5 w-3.5" /> Email
+                  <Send className="mr-1.5 h-3.5 w-3.5" /> {t("Email")}
                 </a>
                 <Button
                   variant="outline"
                   size="sm"
                   disabled={extendBusy}
                   onClick={() => extending.mutate({ id: inv.id, regenerate: false })}
-                  title="Extend expiration by 14 days"
+                  title={t("Extend expiration by 14 days")}
                 >
                   {justExtendBusy ? (
                     <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                   ) : (
                     <CalendarClock className="mr-1.5 h-3.5 w-3.5" />
                   )}
-                  Extend
+                  {t("Extend")}
                 </Button>
                 <Button
                   variant="outline"
@@ -839,20 +850,20 @@ function PendingInvitesCard({
                   onClick={() => {
                     if (
                       confirm(
-                        `Regenerate the invite link for ${inv.email}? The previous link will stop working.`,
+                        t("Regenerate the invite link for {email}? The previous link will stop working.", { email: inv.email }),
                       )
                     ) {
                       extending.mutate({ id: inv.id, regenerate: true });
                     }
                   }}
-                  title="Generate a new link and reset expiration"
+                  title={t("Generate a new link and reset expiration")}
                 >
                   {regenBusy ? (
                     <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                   ) : (
                     <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
                   )}
-                  Regenerate
+                  {t("Regenerate")}
                 </Button>
                 <Button
                   variant="ghost"
@@ -860,7 +871,7 @@ function PendingInvitesCard({
                   className="text-destructive hover:text-destructive"
                   disabled={busy}
                   onClick={() => {
-                    if (confirm(`Revoke invitation to ${inv.email}?`)) revoking.mutate(inv.id);
+                    if (confirm(t("Revoke invitation to {email}?", { email: inv.email }))) revoking.mutate(inv.id);
                   }}
                 >
                   {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
@@ -887,6 +898,7 @@ function InviteDialog({
   companyName: string;
   createInvite: (args: { email: string; role: AssignableRole }) => Promise<{ token: string }>;
 }) {
+  const t = useT("people");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<AssignableRole>("employee");
   const [busy, setBusy] = useState(false);
@@ -909,11 +921,11 @@ function InviteDialog({
     setErr(null);
     const trimmed = email.trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
-      setErr("Enter a valid email address.");
+      setErr(t("Enter a valid email address."));
       return;
     }
     if (existingEmails.includes(trimmed)) {
-      setErr("There is already a pending invitation for this email.");
+      setErr(t("There is already a pending invitation for this email."));
       return;
     }
     setBusy(true);
@@ -928,10 +940,14 @@ function InviteDialog({
   }
 
   const joinUrl = created ? `${window.location.origin}/join?token=${created.token}` : "";
-  const subject = created ? encodeURIComponent(`You're invited to join ${companyName}`) : "";
+  const subject = created ? encodeURIComponent(t("You're invited to join {companyName}", { companyName })) : "";
   const body = created
     ? encodeURIComponent(
-        `You've been invited to join ${companyName} as ${ROLE_LABEL[role]}.\n\nAccept your invitation:\n${joinUrl}`,
+        t("You've been invited to join {companyName} as {role}.\n\nAccept your invitation:\n{url}", {
+          companyName,
+          role: t(ROLE_LABEL[role]),
+          url: joinUrl,
+        }),
       )
     : "";
 
@@ -945,41 +961,41 @@ function InviteDialog({
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{created ? "Invitation ready" : "Invite a teammate"}</DialogTitle>
+          <DialogTitle>{created ? t("Invitation ready") : t("Invite a teammate")}</DialogTitle>
           <DialogDescription>
             {created
-              ? "Share the join link below with your teammate. It expires in 14 days."
-              : "We'll create a join link with their role pre-assigned."}
+              ? t("Share the join link below with your teammate. It expires in 14 days.")
+              : t("We'll create a join link with their role pre-assigned.")}
           </DialogDescription>
         </DialogHeader>
 
         {created ? (
           <div className="space-y-3">
             <div>
-              <Label>Recipient</Label>
+              <Label>{t("Recipient")}</Label>
               <Input readOnly value={created.email} />
             </div>
             <div>
-              <Label>Join link</Label>
+              <Label>{t("Join link")}</Label>
               <Input readOnly value={joinUrl} className="font-mono text-xs" onFocus={(e) => e.currentTarget.select()} />
             </div>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={copyLink}>
                 {copied ? <Check className="mr-1.5 h-3.5 w-3.5" /> : <Copy className="mr-1.5 h-3.5 w-3.5" />}
-                {copied ? "Copied" : "Copy link"}
+                {copied ? t("Copied") : t("Copy link")}
               </Button>
               <a
                 href={`mailto:${created.email}?subject=${subject}&body=${body}`}
                 className="inline-flex h-10 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90"
               >
-                <Send className="mr-1.5 h-3.5 w-3.5" /> Open email
+                <Send className="mr-1.5 h-3.5 w-3.5" /> {t("Open email")}
               </a>
             </div>
           </div>
         ) : (
           <form onSubmit={submit} className="space-y-3">
             <div>
-              <Label htmlFor="invite-email">Email</Label>
+              <Label htmlFor="invite-email">{t("Email")}</Label>
               <Input
                 id="invite-email"
                 type="email"
@@ -992,7 +1008,7 @@ function InviteDialog({
               />
             </div>
             <div>
-              <Label htmlFor="invite-role">Role</Label>
+              <Label htmlFor="invite-role">{t("Role")}</Label>
               <select
                 id="invite-role"
                 value={role}
@@ -1001,7 +1017,7 @@ function InviteDialog({
               >
                 {ASSIGNABLE_ROLES.map((r) => (
                   <option key={r} value={r}>
-                    {ROLE_LABEL[r]}
+                    {t(ROLE_LABEL[r])}
                   </option>
                 ))}
               </select>
@@ -1009,11 +1025,11 @@ function InviteDialog({
             {err && <p className="text-sm text-destructive">{err}</p>}
             <DialogFooter>
               <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
-                Cancel
+                {t("Cancel")}
               </Button>
               <Button type="submit" disabled={busy}>
                 {busy && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
-                Create invitation
+                {t("Create invitation")}
               </Button>
             </DialogFooter>
           </form>
@@ -1046,6 +1062,7 @@ function EditMemberDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const t = useT("people");
   const [fullName, setFullName] = useState("");
   const [position, setPosition] = useState("");
   // Which team they are on. Teams are the company's departments, and the
@@ -1180,36 +1197,36 @@ function EditMemberDialog({
     <Dialog open={!!member} onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Edit member</DialogTitle>
+          <DialogTitle>{t("Edit member")}</DialogTitle>
           <DialogDescription>
-            Name, scheduling limits and qualifications. Roles are managed from the roster.
+            {t("Name, scheduling limits and qualifications. Roles are managed from the roster.")}
           </DialogDescription>
         </DialogHeader>
         <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
           <div>
-            <Label htmlFor="full-name">Full name</Label>
+            <Label htmlFor="full-name">{t("Full name")}</Label>
             <Input id="full-name" value={fullName} onChange={(e) => setFullName(e.target.value)} maxLength={120} />
           </div>
           <div>
-            <Label htmlFor="position">Job title</Label>
+            <Label htmlFor="position">{t("Job title")}</Label>
             <Input
               id="position"
               value={position}
               onChange={(e) => setPosition(e.target.value)}
-              placeholder="e.g. Barista, Shift Lead"
+              placeholder={t("e.g. Barista, Shift Lead")}
               maxLength={120}
             />
           </div>
 
           <div>
-            <Label htmlFor="team">Team</Label>
+            <Label htmlFor="team">{t("Team")}</Label>
             <select
               id="team"
               className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
               value={departmentId}
               onChange={(e) => setDepartmentId(e.target.value)}
             >
-              <option value="">— no team —</option>
+              <option value="">{t("— no team —")}</option>
               {(departmentsQ.data ?? []).map((d) => (
                 <option key={d.id} value={d.id}>
                   {d.name}
@@ -1218,14 +1235,14 @@ function EditMemberDialog({
             </select>
             <p className="mt-1 text-xs text-muted-foreground">
               {(departmentsQ.data ?? []).length === 0
-                ? "No teams yet — add them on Organization → Departments."
-                : "The schedule builder can divide its rows under each team."}
+                ? t("No teams yet — add them on Organization → Departments.")
+                : t("The schedule builder can divide its rows under each team.")}
             </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label htmlFor="max-hours">Max weekly hours</Label>
+              <Label htmlFor="max-hours">{t("Max weekly hours")}</Label>
               <Input
                 id="max-hours"
                 type="number"
@@ -1236,24 +1253,24 @@ function EditMemberDialog({
               />
             </div>
             <div>
-              <Label htmlFor="active">Status</Label>
+              <Label htmlFor="active">{t("Status")}</Label>
               <select
                 id="active"
                 className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
                 value={isActive ? "active" : "inactive"}
                 onChange={(e) => setIsActive(e.target.value === "active")}
               >
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
+                <option value="active">{t("Active")}</option>
+                <option value="inactive">{t("Inactive")}</option>
               </select>
             </div>
           </div>
 
           <div>
-            <Label>Qualified positions</Label>
+            <Label>{t("Qualified positions")}</Label>
             {(positionsQ.data ?? []).length === 0 ? (
               <p className="mt-1 text-xs text-muted-foreground">
-                No positions defined yet — add them under Organization → Positions.
+                {t("No positions defined yet — add them under Organization → Positions.")}
               </p>
             ) : (
               <div className="mt-1.5 grid gap-1.5 sm:grid-cols-2">
@@ -1274,7 +1291,7 @@ function EditMemberDialog({
               </div>
             )}
             <p className="mt-1.5 text-xs text-muted-foreground">
-              The schedule builder warns when someone is assigned a position they aren&rsquo;t marked for.
+              {t("The schedule builder warns when someone is assigned a position they aren’t marked for.")}
             </p>
           </div>
 
@@ -1282,11 +1299,11 @@ function EditMemberDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={saving}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button onClick={save} disabled={saving || !fullName.trim()}>
             {saving && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
-            Save
+            {t("Save")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1305,13 +1322,14 @@ function JoinRequestsCard({
   approving: { mutate: (id: string) => void; isPending: boolean; variables?: string };
   rejecting: { mutate: (id: string) => void; isPending: boolean; variables?: string };
 }) {
+  const t = useT("people");
   if (loading || requests.length === 0) return null;
   return (
     <div className="rounded-xl border border-border bg-card">
       <div className="flex items-center justify-between border-b border-border p-4">
         <div className="flex items-center gap-2">
           <UserCog className="h-4 w-4 text-muted-foreground" />
-          <h3 className="text-sm font-semibold text-foreground">Pending join requests</h3>
+          <h3 className="text-sm font-semibold text-foreground">{t("Pending join requests")}</h3>
           <span className="rounded-full bg-primary-soft px-2 py-0.5 text-xs font-medium text-primary">
             {requests.length}
           </span>
@@ -1330,14 +1348,14 @@ function JoinRequestsCard({
                   {initials}
                 </div>
                 <div className="min-w-0">
-                  <p className="truncate font-medium text-foreground">{r.full_name || "Unnamed"}</p>
-                  <p className="truncate text-xs text-muted-foreground">{r.position || "Requested to join"}</p>
+                  <p className="truncate font-medium text-foreground">{r.full_name || t("Unnamed")}</p>
+                  <p className="truncate text-xs text-muted-foreground">{r.position || t("Requested to join")}</p>
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <Button size="sm" onClick={() => approving.mutate(r.id)} disabled={busy}>
                   {approveBusy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Check className="mr-1.5 h-3.5 w-3.5" />}
-                  Approve
+                  {t("Approve")}
                 </Button>
                 <Button
                   variant="ghost"

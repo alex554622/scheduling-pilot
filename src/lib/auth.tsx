@@ -12,6 +12,7 @@ import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { captureAuthLinkError, takeAuthLinkError } from "@/lib/auth-link-error";
 import { keepStorageOnDevice } from "@/lib/installed-app";
+import { translate } from "@/lib/i18n";
 import { clearSignupIntent, readSignupIntent, saveSignupIntentError } from "@/lib/signup-intent";
 
 export type AppRole = "super_admin" | "company_admin" | "employee";
@@ -270,7 +271,7 @@ export function useAuth() {
  */
 export function roleLabel(role: string): string {
   const normalized = normalizeRole(role);
-  return normalized ? ROLE_LABEL[normalized] : "Member";
+  return translate(normalized ? ROLE_LABEL[normalized] : "Member");
 }
 
 export const ROLE_LABEL: Record<AppRole, string> = {

@@ -1,3 +1,5 @@
+import { translate } from "@/lib/i18n";
+
 /**
  * How the posted sheet writes things — shared by the on-screen weekly grid and
  * its printed PDF, so the two cannot drift apart.
@@ -6,7 +8,7 @@
 /** "Alan P." — the sheet's own way of naming people: first name, last initial. */
 export function shortName(full: string): string {
   const parts = full.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "Unnamed";
+  if (parts.length === 0) return translate("Unnamed");
   if (parts.length === 1) return parts[0];
   return `${parts[0]} ${parts[parts.length - 1][0].toUpperCase()}.`;
 }

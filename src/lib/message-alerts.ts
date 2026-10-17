@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { showAppNotification, useNotificationPrefs } from "@/lib/notification-prefs";
 import { playChime } from "@/lib/notify-sound";
+import { translate } from "@/lib/i18n";
 
 /**
  * A pop-up and a chime when someone posts on Messages, wherever you are in the
@@ -38,7 +39,7 @@ export function useMessageAlerts(): void {
         .select("id, full_name")
         .eq("company_id", companyId!);
       if (error) throw error;
-      return new Map((data ?? []).map((p) => [p.id, p.full_name || "Unnamed"]));
+      return new Map((data ?? []).map((p) => [p.id, p.full_name || translate("Unnamed")]));
     },
   });
 
@@ -71,17 +72,17 @@ export function useMessageAlerts(): void {
           const { wants: allowed, prefs: p, path: here, names, navigate: go } = live.current;
           if (!allowed("board_message")) return;
 
-          const who = names?.get(m.author_id) ?? "Someone";
+          const who = names?.get(m.author_id) ?? translate("Someone");
           const onBoard = here === "/messages";
           const preview = m.body.length > 120 ? `${m.body.slice(0, 120)}…` : m.body;
 
           if (p.sound) playChime();
           if (p.popup && !onBoard) {
-            toast(`${who} posted a message`, {
+            toast(translate("{who} posted a message", { who }), {
               description: preview,
               duration: 15_000,
               closeButton: true,
-              action: { label: "Open", onClick: () => go({ to: "/messages" }) },
+              action: { label: translate("Open", undefined, undefined, "shell"), onClick: () => go({ to: "/messages" }) },
             });
           }
           if (p.desktop && (onBoard ? document.hidden : true)) {

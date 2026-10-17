@@ -17,8 +17,10 @@ import {
   Moon,
   Sun,
   MonitorSmartphone,
+  Languages,
 } from "lucide-react";
 import { useThemePref, type ThemePref } from "@/lib/theme";
+import { LANGUAGES, useLang, useT } from "@/lib/i18n";
 import { SCHEDULE_LAYOUTS, useScheduleLayout } from "@/lib/schedule-layout";
 import { playBreakAlert, playChime } from "@/lib/notify-sound";
 import { useBreakAlertSound } from "@/lib/break-alert-sound";
@@ -43,6 +45,7 @@ export const Route = createFileRoute("/_authenticated/settings")({
 
 function SettingsPage() {
   const { user, profile, primaryRole, company, refresh, loading } = useAuth();
+  const t = useT("shell");
   const [fullName, setFullName] = useState("");
   const [position, setPosition] = useState("");
   const [savedProfile, setSavedProfile] = useState(false);
@@ -79,8 +82,8 @@ function SettingsPage() {
 
   const changePw = useMutation({
     mutationFn: async () => {
-      if (pw.length < 8) throw new Error("Password must be at least 8 characters");
-      if (pw !== pw2) throw new Error("Passwords don't match");
+      if (pw.length < 8) throw new Error(t("Password must be at least 8 characters"));
+      if (pw !== pw2) throw new Error(t("Passwords don't match"));
       const { error } = await supabase.auth.updateUser({ password: pw });
       if (error) throw error;
     },
@@ -113,8 +116,8 @@ function SettingsPage() {
       const next = companyName.trim();
       // `name` is NOT NULL but an empty string would satisfy that, leaving the
       // company nameless everywhere it is displayed.
-      if (!next) throw new Error("Organization name can't be empty");
-      if (next.length > 120) throw new Error("Organization name must be 120 characters or fewer");
+      if (!next) throw new Error(t("Organization name can't be empty"));
+      if (next.length > 120) throw new Error(t("Organization name must be 120 characters or fewer"));
       if (next === company?.name) return;
 
       const { error } = await supabase
@@ -136,34 +139,35 @@ function SettingsPage() {
 
   const companyNameDirty = !!company && companyName.trim() !== company.name;
 
-  if (loading) return <div className="text-sm text-muted-foreground">Loading…</div>;
+  if (loading) return <div className="text-sm text-muted-foreground">{t("Loading…")}</div>;
 
   return (
     <div className="space-y-6 max-w-2xl">
       <div>
-        <h2 className="text-2xl font-semibold text-foreground">Settings</h2>
-        <p className="text-sm text-muted-foreground">Manage your profile and password.</p>
+        <h2 className="text-2xl font-semibold text-foreground">{t("Settings")}</h2>
+        <p className="text-sm text-muted-foreground">{t("Manage your profile and password.")}</p>
       </div>
 
       {canSeeCode && company && (
         <div className="rounded-xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
           <div className="mb-4 flex items-center gap-2">
             <Building2 className="h-5 w-5 text-primary" />
-            <h3 className="font-semibold text-foreground">Organization name</h3>
+            <h3 className="font-semibold text-foreground">{t("Organization name")}</h3>
           </div>
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="company-name">Organization name</Label>
+              <Label htmlFor="company-name">{t("Organization name")}</Label>
               <Input
                 id="company-name"
                 value={companyName}
                 maxLength={120}
                 onChange={(e) => setCompanyName(e.target.value)}
-                placeholder="e.g. City of Calexico"
+                placeholder={t("e.g. City of Calexico")}
               />
               <p className="text-xs text-muted-foreground">
-                Shown to your team across the app, on schedules you publish, and on printed
-                timecards.
+                {t(
+                  "Shown to your team across the app, on schedules you publish, and on printed timecards.",
+                )}
               </p>
             </div>
             {companyErr && (
@@ -178,7 +182,7 @@ function SettingsPage() {
               >
                 {saveCompanyName.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
                 {companySaved && <Check className="h-4 w-4" />}
-                {companySaved ? "Saved" : "Save name"}
+                {companySaved ? t("Saved") : t("Save name")}
               </Button>
             </div>
           </div>
@@ -189,21 +193,22 @@ function SettingsPage() {
         <div className="rounded-xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
           <div className="mb-3 flex items-center gap-2">
             <Building2 className="h-5 w-5 text-primary" />
-            <h3 className="font-semibold text-foreground">Company join code</h3>
+            <h3 className="font-semibold text-foreground">{t("Company join code")}</h3>
           </div>
           {company.status !== "active" ? (
             <p className="text-sm text-muted-foreground">
-              Your company is{" "}
+              {t("Your company is")}{" "}
               <span className="font-medium text-foreground">
-                {company.status.replace("_", " ")}
+                {t(company.status.replace("_", " "))}
               </span>
-              . A join code will be generated once a platform admin approves your company.
+              {t(". A join code will be generated once a platform admin approves your company.")}
             </p>
           ) : company.join_code ? (
             <>
               <p className="text-sm text-muted-foreground mb-3">
-                Share this code with employees. When they sign up with it, you'll get a join request
-                to approve in the Employees page.
+                {t(
+                  "Share this code with employees. When they sign up with it, you'll get a join request to approve in the Employees page.",
+                )}
               </p>
               <div className="flex items-center gap-2">
                 <div className="flex-1 rounded-md border border-border bg-secondary/40 px-4 py-3 text-center text-2xl font-mono font-semibold tracking-[0.3em] text-foreground">
@@ -218,12 +223,12 @@ function SettingsPage() {
                   }}
                 >
                   {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                  {copied ? "Copied" : "Copy"}
+                  {copied ? t("Copied") : t("Copy")}
                 </Button>
               </div>
             </>
           ) : (
-            <p className="text-sm text-muted-foreground">No code yet — contact support.</p>
+            <p className="text-sm text-muted-foreground">{t("No code yet — contact support.")}</p>
           )}
         </div>
       )}
@@ -231,36 +236,37 @@ function SettingsPage() {
       <div className="rounded-xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
         <div className="mb-4 flex items-center gap-2">
           <UserCog className="h-5 w-5 text-primary" />
-          <h3 className="font-semibold text-foreground">Profile</h3>
+          <h3 className="font-semibold text-foreground">{t("Profile")}</h3>
         </div>
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label>Email</Label>
+            <Label>{t("Email")}</Label>
             <Input value={user?.email ?? ""} disabled />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="fn">Full name</Label>
+            <Label htmlFor="fn">{t("Full name")}</Label>
             <Input id="fn" value={fullName} onChange={(e) => setFullName(e.target.value)} />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="po">Position</Label>
+            <Label htmlFor="po">{t("Position")}</Label>
             <Input
               id="po"
               value={position}
               onChange={(e) => setPosition(e.target.value)}
-              placeholder="e.g. Shift Lead"
+              placeholder={t("e.g. Shift Lead")}
             />
           </div>
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
             <span>
-              Role:{" "}
+              {t("Role:")}{" "}
               <span className="font-medium text-foreground">
-                {primaryRole ? ROLE_LABEL[primaryRole] : "None"}
+                {primaryRole ? t(ROLE_LABEL[primaryRole]) : t("None")}
               </span>
             </span>
             {company && (
               <span>
-                Company: <span className="font-medium text-foreground">{company.name}</span>
+                {t("Company:")}{" "}
+                <span className="font-medium text-foreground">{company.name}</span>
               </span>
             )}
           </div>
@@ -273,11 +279,13 @@ function SettingsPage() {
             <Button onClick={() => saveProfile.mutate()} disabled={saveProfile.isPending}>
               {saveProfile.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
               {savedProfile && <Check className="h-4 w-4" />}
-              {savedProfile ? "Saved" : "Save changes"}
+              {savedProfile ? t("Saved") : t("Save changes")}
             </Button>
           </div>
         </div>
       </div>
+
+      <LanguageSettings />
 
       <AppearanceSettings />
 
@@ -286,21 +294,21 @@ function SettingsPage() {
       <div className="rounded-xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
         <div className="mb-4 flex items-center gap-2">
           <KeyRound className="h-5 w-5 text-primary" />
-          <h3 className="font-semibold text-foreground">Change password</h3>
+          <h3 className="font-semibold text-foreground">{t("Change password")}</h3>
         </div>
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="np">New password</Label>
+            <Label htmlFor="np">{t("New password")}</Label>
             <Input
               id="np"
               type="password"
               value={pw}
               onChange={(e) => setPw(e.target.value)}
-              placeholder="Min. 8 characters"
+              placeholder={t("Min. 8 characters")}
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="np2">Confirm new password</Label>
+            <Label htmlFor="np2">{t("Confirm new password")}</Label>
             <Input id="np2" type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} />
           </div>
           {pwErr && (
@@ -312,7 +320,7 @@ function SettingsPage() {
             <Button onClick={() => changePw.mutate()} disabled={changePw.isPending || !pw || !pw2}>
               {changePw.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
               {pwOk && <Check className="h-4 w-4" />}
-              {pwOk ? "Updated" : "Update password"}
+              {pwOk ? t("Updated") : t("Update password")}
             </Button>
           </div>
         </div>
@@ -332,6 +340,7 @@ function SettingsPage() {
  */
 function NotificationSettings() {
   const { user } = useAuth();
+  const t = useT("shell");
   const breakAlert = useBreakAlertSound();
   const { prefs, unavailable, isSaving, setEnabled, setType, setPopup, setSound, setDesktop } =
     useNotificationPrefs();
@@ -394,29 +403,30 @@ function NotificationSettings() {
     <div className="rounded-xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
       <div className="mb-4 flex items-center gap-2">
         <Bell className="h-5 w-5 text-primary" />
-        <h3 className="font-semibold text-foreground">Notifications</h3>
+        <h3 className="font-semibold text-foreground">{t("Notifications")}</h3>
       </div>
 
       {unavailable && (
         <p className="mb-4 rounded-md bg-warning/10 px-3 py-2 text-xs text-warning-foreground">
-          Your notification settings can't be saved yet — this company's database is still waiting
-          on an update. Everything stays switched on until then.
+          {t(
+            "Your notification settings can't be saved yet — this company's database is still waiting on an update. Everything stays switched on until then.",
+          )}
         </p>
       )}
 
       <div className="space-y-4">
         <div className="flex items-start justify-between gap-4 rounded-lg border border-border p-3">
           <div className="min-w-0">
-            <p className="text-sm font-medium text-foreground">Notifications</p>
+            <p className="text-sm font-medium text-foreground">{t("Notifications")}</p>
             <p className="text-xs text-muted-foreground">
-              The master switch. Off, nothing reaches your bell and nothing pops up.
+              {t("The master switch. Off, nothing reaches your bell and nothing pops up.")}
             </p>
           </div>
           <Switch
             checked={prefs.enabled}
             disabled={unavailable || isSaving}
             onCheckedChange={setEnabled}
-            aria-label="All notifications"
+            aria-label={t("All notifications")}
           />
         </div>
 
@@ -424,57 +434,60 @@ function NotificationSettings() {
           className={`space-y-3 ${prefs.enabled ? "" : "pointer-events-none opacity-50"}`}
           aria-disabled={!prefs.enabled}
         >
-          {NOTIFICATION_TYPES.map((t) => (
-            <div key={t.key} className="flex items-start justify-between gap-4">
+          {NOTIFICATION_TYPES.map((nt) => (
+            <div key={nt.key} className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <p className="text-sm font-medium text-foreground">{t.label}</p>
-                <p className="text-xs text-muted-foreground">{t.detail}</p>
+                <p className="text-sm font-medium text-foreground">{t(nt.label)}</p>
+                <p className="text-xs text-muted-foreground">{t(nt.detail)}</p>
               </div>
               <Switch
-                checked={prefs.types[t.key] !== false}
+                checked={prefs.types[nt.key] !== false}
                 disabled={unavailable || isSaving}
-                onCheckedChange={(v) => setType(t.key, v)}
-                aria-label={t.label}
+                onCheckedChange={(v) => setType(nt.key, v)}
+                aria-label={t(nt.label)}
               />
             </div>
           ))}
 
           <div className="flex items-start justify-between gap-4 border-t border-border pt-3">
             <div className="min-w-0">
-              <p className="text-sm font-medium text-foreground">Pop them up in the app</p>
+              <p className="text-sm font-medium text-foreground">{t("Pop them up in the app")}</p>
               <p className="text-xs text-muted-foreground">
-                A pop-up in the corner as it arrives, with a button to open it. Off, it only counts
-                up on the bell and waits for you there.
+                {t(
+                  "A pop-up in the corner as it arrives, with a button to open it. Off, it only counts up on the bell and waits for you there.",
+                )}
               </p>
             </div>
             <Switch
               checked={prefs.popup}
               disabled={unavailable || isSaving}
               onCheckedChange={setPopup}
-              aria-label="Pop notifications up in the app"
+              aria-label={t("Pop notifications up in the app")}
             />
           </div>
 
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-sm font-medium text-foreground">Play a sound</p>
+              <p className="text-sm font-medium text-foreground">{t("Play a sound")}</p>
               <p className="text-xs text-muted-foreground">
-                A short chime when something pops up — a new message, an announcement, your
-                schedule, or your break running out.
+                {t(
+                  "A short chime when something pops up — a new message, an announcement, your schedule, or your break running out.",
+                )}
               </p>
               {/* The alert is not a preference, so it is explained rather than
                   offered. Somebody who hears it once and does not know why it
                   differs from everything else will think it is a fault. */}
               {breakAlert && (
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Your break reminder is the exception: it plays a louder alert, so it carries when
-                  your phone is in a pocket.{" "}
+                  {t(
+                    "Your break reminder is the exception: it plays a louder alert, so it carries when your phone is in a pocket.",
+                  )}{" "}
                   <button
                     type="button"
                     onClick={() => playBreakAlert(true)}
                     className="font-medium text-primary hover:underline"
                   >
-                    Hear it
+                    {t("Hear it")}
                   </button>
                 </p>
               )}
@@ -486,28 +499,34 @@ function NotificationSettings() {
                 onClick={() => playChime(true)}
                 className="text-xs font-medium text-primary hover:underline"
               >
-                Test
+                {t("Test")}
               </button>
               <Switch
                 checked={prefs.sound}
                 disabled={unavailable || isSaving}
                 onCheckedChange={setSound}
-                aria-label="Play a sound"
+                aria-label={t("Play a sound")}
               />
             </div>
           </div>
 
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-sm font-medium text-foreground">Show them on this device</p>
+              <p className="text-sm font-medium text-foreground">{t("Show them on this device")}</p>
               <p className="text-xs text-muted-foreground">
                 {needsInstall
-                  ? "Add Scheduling Pilot to your Home Screen first — on iPhone and iPad, notifications are only offered to the installed app."
+                  ? t(
+                      "Add Scheduling Pilot to your Home Screen first — on iPhone and iPad, notifications are only offered to the installed app.",
+                    )
                   : permission === "unsupported"
-                    ? "This browser doesn't do system notifications."
+                    ? t("This browser doesn't do system notifications.")
                     : permission === "denied"
-                      ? "This browser is blocking notifications — allow them in its site settings first."
-                      : "A system pop-up as well as the one in the app, on your phone's lock screen too. Each device asks once."}
+                      ? t(
+                          "This browser is blocking notifications — allow them in its site settings first.",
+                        )
+                      : t(
+                          "A system pop-up as well as the one in the app, on your phone's lock screen too. Each device asks once.",
+                        )}
               </p>
               {/* The difference between "it pops up while I'm looking" and "it
                   wakes my phone in my pocket" is the whole point of the
@@ -517,10 +536,16 @@ function NotificationSettings() {
                   className={`mt-1 text-xs ${deliversClosed ? "text-muted-foreground" : "text-warning-foreground"}`}
                 >
                   {deliversClosed
-                    ? "These reach you with the app closed — your break reminder will arrive whether or not it's open."
+                    ? t(
+                        "These reach you with the app closed — your break reminder will arrive whether or not it's open.",
+                      )
                     : !pushConfigured()
-                      ? "This device will only be told while the app is open: delivery to closed apps isn't set up on this server yet."
-                      : "This device will only be told while the app is open — it couldn't be registered for delivery. Switching this off and on again usually fixes it."}
+                      ? t(
+                          "This device will only be told while the app is open: delivery to closed apps isn't set up on this server yet.",
+                        )
+                      : t(
+                          "This device will only be told while the app is open — it couldn't be registered for delivery. Switching this off and on again usually fixes it.",
+                        )}
                 </p>
               )}
             </div>
@@ -534,10 +559,53 @@ function NotificationSettings() {
                 permission === "unsupported"
               }
               onCheckedChange={(v) => void toggleDesktop(v)}
-              aria-label="Show notifications on this device"
+              aria-label={t("Show notifications on this device")}
             />
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * English or Spanish. Saved on this device, like the theme — see `@/lib/i18n`.
+ * Each option is labelled in its own language, so someone who cannot read the
+ * current one can still find theirs.
+ */
+function LanguageSettings() {
+  const { lang, setLang } = useLang();
+  const t = useT("shell");
+  return (
+    <div className="rounded-xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
+      <div className="mb-1 flex items-center gap-2">
+        <Languages className="h-5 w-5 text-primary" />
+        <h3 className="font-semibold text-foreground">{t("Language")}</h3>
+      </div>
+      <p className="mb-4 text-xs text-muted-foreground">
+        {t("Saved on this device, so your phone and your computer can each have their own.")}
+      </p>
+      <div role="radiogroup" aria-label={t("Language")} className="grid gap-2 sm:grid-cols-2">
+        {LANGUAGES.map((o) => {
+          const active = lang === o.value;
+          return (
+            <button
+              key={o.value}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              lang={o.value}
+              onClick={() => setLang(o.value)}
+              className={`rounded-lg border p-3 text-left transition-colors ${
+                active
+                  ? "border-primary bg-primary-soft/40 ring-1 ring-primary"
+                  : "border-border hover:bg-accent/50"
+              }`}
+            >
+              <span className="block text-sm font-medium text-foreground">{o.native}</span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -550,6 +618,7 @@ function NotificationSettings() {
  */
 function AppearanceSettings() {
   const { pref, setPref } = useThemePref();
+  const t = useT("shell");
   const { layout, setLayout, saving } = useScheduleLayout();
   const [layoutErr, setLayoutErr] = useState<string | null>(null);
   const options: { value: ThemePref; label: string; detail: string; icon: typeof Sun }[] = [
@@ -567,12 +636,12 @@ function AppearanceSettings() {
     <div className="rounded-xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
       <div className="mb-1 flex items-center gap-2">
         <Moon className="h-5 w-5 text-primary" />
-        <h3 className="font-semibold text-foreground">Appearance</h3>
+        <h3 className="font-semibold text-foreground">{t("Appearance")}</h3>
       </div>
       <p className="mb-4 text-xs text-muted-foreground">
-        Saved on this device, so your phone and your computer can each have their own.
+        {t("Saved on this device, so your phone and your computer can each have their own.")}
       </p>
-      <div role="radiogroup" aria-label="Appearance" className="grid gap-2 sm:grid-cols-3">
+      <div role="radiogroup" aria-label={t("Appearance")} className="grid gap-2 sm:grid-cols-3">
         {options.map((o) => {
           const active = pref === o.value;
           const Icon = o.icon;
@@ -591,9 +660,9 @@ function AppearanceSettings() {
             >
               <span className="flex items-center gap-2 text-sm font-medium text-foreground">
                 <Icon className="h-4 w-4" />
-                {o.label}
+                {t(o.label)}
               </span>
-              <span className="mt-0.5 block text-xs text-muted-foreground">{o.detail}</span>
+              <span className="mt-0.5 block text-xs text-muted-foreground">{t(o.detail)}</span>
             </button>
           );
         })}
@@ -602,12 +671,13 @@ function AppearanceSettings() {
       {/* Unlike the theme, this one follows the account: the schedule looks the
           same wherever you sign in. */}
       <div className="mt-6 border-t border-border pt-5">
-        <p className="text-sm font-medium text-foreground">Schedule layout</p>
+        <p className="text-sm font-medium text-foreground">{t("Schedule layout")}</p>
         <p className="mb-3 mt-0.5 text-xs text-muted-foreground">
-          How the Schedule page is laid out for you. Saved to your account, so it follows you to any
-          device.
+          {t(
+            "How the Schedule page is laid out for you. Saved to your account, so it follows you to any device.",
+          )}
         </p>
-        <div role="radiogroup" aria-label="Schedule layout" className="grid gap-2 sm:grid-cols-2">
+        <div role="radiogroup" aria-label={t("Schedule layout")} className="grid gap-2 sm:grid-cols-2">
           {SCHEDULE_LAYOUTS.map((o) => {
             const active = layout === o.value;
             return (
@@ -627,8 +697,8 @@ function AppearanceSettings() {
                     : "border-border hover:bg-accent/50"
                 }`}
               >
-                <span className="block text-sm font-medium text-foreground">{o.label}</span>
-                <span className="mt-0.5 block text-xs text-muted-foreground">{o.detail}</span>
+                <span className="block text-sm font-medium text-foreground">{t(o.label)}</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">{t(o.detail)}</span>
               </button>
             );
           })}

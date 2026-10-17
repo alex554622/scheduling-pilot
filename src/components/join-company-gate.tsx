@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { BrandLogo } from "@/components/brand";
+import { useT } from "@/lib/i18n";
 
 const CODE_PATTERN = /^[A-Za-z0-9]{6,12}$/;
 
@@ -26,6 +27,7 @@ const CODE_PATTERN = /^[A-Za-z0-9]{6,12}$/;
  */
 export function JoinCompanyGate({ onSignOut }: { onSignOut: () => void }) {
   const { user, profile, refresh, roles } = useAuth();
+  const t = useT("shell");
   /**
    * Which half of this screen someone lands on.
    *
@@ -47,7 +49,7 @@ export function JoinCompanyGate({ onSignOut }: { onSignOut: () => void }) {
   // rejection has no form to land on. It waits here instead.
   useEffect(() => {
     const parked = takeSignupIntentError();
-    if (parked) setError(`The company code from your signup wasn't accepted: ${parked}`);
+    if (parked) setError(t("The company code from your signup wasn't accepted: {reason}", { reason: parked }));
   }, []);
 
   async function registerBusiness(e: React.FormEvent) {
@@ -56,12 +58,14 @@ export function JoinCompanyGate({ onSignOut }: { onSignOut: () => void }) {
     const phone = bizPhone.trim();
     const address = bizAddress.trim();
     if (name.length < 2) {
-      setError("Enter the name of your business.");
+      setError(t("Enter the name of your business."));
       return;
     }
     if (!phone || !address) {
       setError(
-        "A platform admin approves this by hand, so they need a phone number and an address to check.",
+        t(
+          "A platform admin approves this by hand, so they need a phone number and an address to check.",
+        ),
       );
       return;
     }
@@ -98,7 +102,7 @@ export function JoinCompanyGate({ onSignOut }: { onSignOut: () => void }) {
     e.preventDefault();
     const trimmed = code.trim().toUpperCase();
     if (!CODE_PATTERN.test(trimmed)) {
-      setError("Enter the 8-character company code from your admin (letters and digits).");
+      setError(t("Enter the 8-character company code from your admin (letters and digits)."));
       return;
     }
     setBusy(true);
@@ -124,13 +128,15 @@ export function JoinCompanyGate({ onSignOut }: { onSignOut: () => void }) {
 
         <div className="flex items-center gap-2">
           <Building2 className="h-5 w-5 text-primary" />
-          <h2 className="text-xl font-semibold text-foreground">Add your company</h2>
+          <h2 className="text-xl font-semibold text-foreground">{t("Add your company")}</h2>
         </div>
         <p className="mt-2 text-sm text-muted-foreground">
-          Your profile is ready{profile?.full_name ? `, ${profile.full_name.split(" ")[0]}` : ""}.{" "}
+          {profile?.full_name
+            ? t("Your profile is ready, {name}.", { name: profile.full_name.split(" ")[0] })
+            : t("Your profile is ready.")}{" "}
           {mode === "join"
-            ? "Enter the join code from your manager to request access to their workspace."
-            : "Tell us about your business and a platform admin will approve it."}
+            ? t("Enter the join code from your manager to request access to their workspace.")
+            : t("Tell us about your business and a platform admin will approve it.")}
         </p>
 
         {/* The reminder. Your account exists and has no company attached to it,
@@ -139,13 +145,17 @@ export function JoinCompanyGate({ onSignOut }: { onSignOut: () => void }) {
         <div className="mt-4 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5">
           <p className="text-xs font-medium text-warning-foreground">
             {wasRegistering
-              ? "Add your business details to continue"
-              : "Your account isn't attached to a company yet"}
+              ? t("Add your business details to continue")
+              : t("Your account isn't attached to a company yet")}
           </p>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {wasRegistering
-              ? "You're approved as an admin, but your business has no name or details yet. Fill this in and a platform admin will approve it — nothing else in the app opens until you do."
-              : "Nothing opens until it is. Join your employer with their code, or name your own business to register it."}
+              ? t(
+                  "You're approved as an admin, but your business has no name or details yet. Fill this in and a platform admin will approve it — nothing else in the app opens until you do.",
+                )
+              : t(
+                  "Nothing opens until it is. Join your employer with their code, or name your own business to register it.",
+                )}
           </p>
         </div>
 
@@ -168,7 +178,7 @@ export function JoinCompanyGate({ onSignOut }: { onSignOut: () => void }) {
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              {m === "join" ? "Join a company" : "Register a business"}
+              {m === "join" ? t("Join a company") : t("Register a business")}
             </button>
           ))}
         </div>
@@ -176,48 +186,49 @@ export function JoinCompanyGate({ onSignOut }: { onSignOut: () => void }) {
         {mode === "create" && (
           <form className="mt-5 space-y-4" onSubmit={registerBusiness}>
             <div className="space-y-1.5">
-              <Label htmlFor="company-name">Business name</Label>
+              <Label htmlFor="company-name">{t("Business name")}</Label>
               <Input
                 id="company-name"
                 autoFocus
                 required
                 maxLength={120}
-                placeholder="e.g. Calexico Parking Enforcement"
+                placeholder={t("e.g. Calexico Parking Enforcement")}
                 className="h-12"
                 value={companyName}
                 onChange={(e) => setCompanyName(e.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                This is the name your staff see on schedules and printed timecards.
+                {t("This is the name your staff see on schedules and printed timecards.")}
               </p>
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="company-phone">Business phone</Label>
+              <Label htmlFor="company-phone">{t("Business phone")}</Label>
               <Input
                 id="company-phone"
                 required
                 type="tel"
                 maxLength={40}
-                placeholder="e.g. (760) 555-0142"
+                placeholder={t("e.g. (760) 555-0142")}
                 value={bizPhone}
                 onChange={(e) => setBizPhone(e.target.value)}
               />
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="company-address">Business address</Label>
+              <Label htmlFor="company-address">{t("Business address")}</Label>
               <Input
                 id="company-address"
                 required
                 maxLength={200}
-                placeholder="Street, city, state"
+                placeholder={t("Street, city, state")}
                 value={bizAddress}
                 onChange={(e) => setBizAddress(e.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                You'll be its admin. A platform admin approves the account before anyone can sign in
-                — including you.
+                {t(
+                  "You'll be its admin. A platform admin approves the account before anyone can sign in — including you.",
+                )}
               </p>
             </div>
 
@@ -229,26 +240,26 @@ export function JoinCompanyGate({ onSignOut }: { onSignOut: () => void }) {
 
             <Button type="submit" className="h-11 w-full" disabled={busy}>
               {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Register business
+              {t("Register business")}
             </Button>
           </form>
         )}
 
         <form className={`mt-5 space-y-4 ${mode === "join" ? "" : "hidden"}`} onSubmit={submit}>
           <div className="space-y-1.5">
-            <Label htmlFor="join-code">Company code</Label>
+            <Label htmlFor="join-code">{t("Company code")}</Label>
             <Input
               id="join-code"
               autoFocus
               required
               maxLength={12}
-              placeholder="e.g. A1B2C3D4"
+              placeholder={t("e.g. A1B2C3D4")}
               className="h-12 text-center text-lg uppercase tracking-[0.3em]"
               value={code}
               onChange={(e) => setCode(e.target.value.toUpperCase())}
             />
             <p className="text-xs text-muted-foreground">
-              A company admin approves the request before you get access.
+              {t("A company admin approves the request before you get access.")}
             </p>
           </div>
 
@@ -260,17 +271,17 @@ export function JoinCompanyGate({ onSignOut }: { onSignOut: () => void }) {
 
           <Button type="submit" className="h-11 w-full" disabled={busy}>
             {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Request to join
+            {t("Request to join")}
           </Button>
         </form>
 
         <div className="mt-6 border-t border-border pt-4 text-center">
-          <p className="text-xs text-muted-foreground">Signed in as {user?.email}</p>
+          <p className="text-xs text-muted-foreground">{t("Signed in as {email}", { email: user?.email ?? "" })}</p>
           <button
             onClick={onSignOut}
             className="mt-2 text-sm font-medium text-primary hover:underline"
           >
-            Sign out
+            {t("Sign out")}
           </button>
         </div>
       </div>

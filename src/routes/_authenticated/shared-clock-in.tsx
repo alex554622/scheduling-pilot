@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useLocaleTag, useT } from "@/lib/i18n";
 
 /**
  * Set-up screen for the shared clock-in device: the link a tablet is opened
@@ -27,6 +28,8 @@ type DeviceRow = {
 };
 
 function SharedClockInAdminPage() {
+  const t = useT("time");
+  const tag = useLocaleTag();
   const { company, primaryRole } = useAuth();
   const qc = useQueryClient();
   const isAdmin = primaryRole === "company_admin" || primaryRole === "super_admin";
@@ -66,7 +69,7 @@ function SharedClockInAdminPage() {
       const byUser = new Map((codes ?? []).map((c) => [c.user_id, c.code]));
       return (people ?? []).map((p) => ({
         id: p.id,
-        name: p.full_name || "Unnamed",
+        name: p.full_name || t("Unnamed"),
         code: byUser.get(p.id) ?? null,
       }));
     },
@@ -120,14 +123,14 @@ function SharedClockInAdminPage() {
       setCopied(id);
       setTimeout(() => setCopied(null), 2000);
     } catch {
-      setError("Couldn't copy — select the link and copy it by hand.");
+      setError(t("Couldn't copy — select the link and copy it by hand."));
     }
   }
 
   if (!isAdmin) {
     return (
       <p className="text-sm text-muted-foreground">
-        Only a company admin can set up the shared clock-in.
+        {t("Only a company admin can set up the shared clock-in.")}
       </p>
     );
   }
@@ -137,10 +140,9 @@ function SharedClockInAdminPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-foreground">Shared clock-in</h1>
+        <h1 className="text-2xl font-semibold text-foreground">{t("Shared clock-in")}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          One tablet or computer that everyone punches in on. The device is signed in to nobody: it
-          can only clock people in and out, so nothing on it reaches your account.
+          {t("One tablet or computer that everyone punches in on. The device is signed in to nobody: it can only clock people in and out, so nothing on it reaches your account.")}
         </p>
       </div>
 
@@ -150,20 +152,18 @@ function SharedClockInAdminPage() {
 
       <section className="rounded-2xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
         <h2 className="flex items-center gap-2 text-lg font-semibold text-foreground">
-          <Tablet className="h-5 w-5 text-primary" /> Devices
+          <Tablet className="h-5 w-5 text-primary" /> {t("Devices")}
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Open a device's link once on that tablet, then leave the page open. Anyone with the link
-          can clock staff in and out, so treat it like a key: if a tablet goes missing, remove its
-          link here and make a new one.
+          {t("Open a device's link once on that tablet, then leave the page open. Anyone with the link can clock staff in and out, so treat it like a key: if a tablet goes missing, remove its link here and make a new one.")}
         </p>
 
         <div className="mt-5 flex flex-wrap items-end gap-3">
           <div className="space-y-1.5">
-            <Label htmlFor="device-label">Where is it? (optional)</Label>
+            <Label htmlFor="device-label">{t("Where is it? (optional)")}</Label>
             <Input
               id="device-label"
-              placeholder="e.g. Front desk"
+              placeholder={t("e.g. Front desk")}
               maxLength={60}
               value={label}
               onChange={(e) => setLabel(e.target.value)}
@@ -171,15 +171,14 @@ function SharedClockInAdminPage() {
             />
           </div>
           <Button onClick={() => createDevice.mutate()} disabled={createDevice.isPending}>
-            {createDevice.isPending && <Loader2 className="h-4 w-4 animate-spin" />} Create device
-            link
+            {createDevice.isPending && <Loader2 className="h-4 w-4 animate-spin" />} {t("Create device link")}
           </Button>
         </div>
 
         <div className="mt-5 space-y-3">
           {devicesQ.isLoading && <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
           {devicesQ.data?.length === 0 && (
-            <p className="text-sm text-muted-foreground">No devices yet. Create one above.</p>
+            <p className="text-sm text-muted-foreground">{t("No devices yet. Create one above.")}</p>
           )}
           {devicesQ.data?.map((d) => {
             const link = `${origin}/clock/${d.token}`;
@@ -193,7 +192,7 @@ function SharedClockInAdminPage() {
                     onClick={() => revokeDevice.mutate(d.id)}
                     disabled={revokeDevice.isPending}
                   >
-                    <Trash2 className="mr-2 h-4 w-4" /> Remove link
+                    <Trash2 className="mr-2 h-4 w-4" /> {t("Remove link")}
                   </Button>
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -206,13 +205,13 @@ function SharedClockInAdminPage() {
                     ) : (
                       <Copy className="mr-2 h-4 w-4" />
                     )}
-                    {copied === d.id ? "Copied" : "Copy link"}
+                    {copied === d.id ? t("Copied") : t("Copy link")}
                   </Button>
                 </div>
                 <p className="mt-2 text-xs text-muted-foreground">
                   {d.last_used_at
-                    ? `Last used ${new Date(d.last_used_at).toLocaleString()}`
-                    : "Not used yet"}
+                    ? t("Last used {when}", { when: new Date(d.last_used_at).toLocaleString(tag) })
+                    : t("Not used yet")}
                 </p>
               </div>
             );
@@ -221,10 +220,9 @@ function SharedClockInAdminPage() {
       </section>
 
       <section className="rounded-2xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
-        <h2 className="text-lg font-semibold text-foreground">Employee codes</h2>
+        <h2 className="text-lg font-semibold text-foreground">{t("Employee codes")}</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Each person types their own 4-digit code on the shared device. Give someone a new code any
-          time; the old one stops working straight away.
+          {t("Each person types their own 4-digit code on the shared device. Give someone a new code any time; the old one stops working straight away.")}
         </p>
 
         <div className="mt-5 divide-y divide-border">
@@ -246,7 +244,7 @@ function SharedClockInAdminPage() {
                   onClick={() => setCode.mutate(p.id)}
                   disabled={setCode.isPending}
                 >
-                  <RefreshCw className="mr-2 h-4 w-4" /> {p.code ? "New code" : "Give code"}
+                  <RefreshCw className="mr-2 h-4 w-4" /> {p.code ? t("New code") : t("Give code")}
                 </Button>
                 {p.code && (
                   <Button
@@ -254,7 +252,7 @@ function SharedClockInAdminPage() {
                     size="sm"
                     onClick={() => clearCode.mutate(p.id)}
                     disabled={clearCode.isPending}
-                    aria-label={`Remove ${p.name}'s code`}
+                    aria-label={t("Remove {name}'s code", { name: p.name })}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
@@ -263,7 +261,7 @@ function SharedClockInAdminPage() {
             </div>
           ))}
           {staffQ.data?.length === 0 && (
-            <p className="py-3 text-sm text-muted-foreground">No employees yet.</p>
+            <p className="py-3 text-sm text-muted-foreground">{t("No employees yet.")}</p>
           )}
         </div>
       </section>

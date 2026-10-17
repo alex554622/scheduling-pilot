@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { useT, translate } from "@/lib/i18n";
 import { BillingRenewalsPanel } from "@/components/billing-renewals-panel";
 import { CAPABILITY_LABELS, ALL_CAPABILITIES, NO_CAPABILITIES, normalizeCapabilities, planBullets, seatLine, type Capabilities } from "@/lib/capabilities";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,7 @@ type PlanRow = {
 };
 
 function PlatformPage() {
+  const t = useT("admin");
   const { primaryRole, loading } = useAuth();
   const navigate = useNavigate();
 
@@ -98,7 +100,7 @@ function PlatformPage() {
     },
   });
 
-  if (loading || !isSuper) return <div className="text-sm text-muted-foreground">Loading…</div>;
+  if (loading || !isSuper) return <div className="text-sm text-muted-foreground">{t("Loading…")}</div>;
 
   const companies = companiesQ.data ?? [];
   const subs = subsQ.data ?? [];
@@ -115,42 +117,42 @@ function PlatformPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-foreground">Platform</h1>
+        <h1 className="text-2xl font-semibold text-foreground">{t("Platform")}</h1>
         <p className="text-sm text-muted-foreground">
-          Analytics and subscription plans across every company on Scheduling Pilot.
+          {t("Analytics and subscription plans across every company on Scheduling Pilot.")}
         </p>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Metric icon={Building2} label="Companies" value={String(companies.length)}
-          sub={`${byStatus("active")} active · ${byStatus("pending")} pending`} />
-        <Metric icon={Users} label="People" value={peopleQ.isLoading ? "…" : String(peopleQ.data ?? 0)}
-          sub="profiles across all tenants" tone="muted" />
-        <Metric icon={TrendingUp} label="Est. MRR" value={`$${(mrrCents / 100).toLocaleString()}`}
-          sub={`${billable.length} billable subscription${billable.length === 1 ? "" : "s"}`} tone="success" />
-        <Metric icon={AlertTriangle} label="Needs attention"
+        <Metric icon={Building2} label={t("Companies")} value={String(companies.length)}
+          sub={t("{active} active · {pending} pending", { active: byStatus("active"), pending: byStatus("pending") })} />
+        <Metric icon={Users} label={t("People")} value={peopleQ.isLoading ? "…" : String(peopleQ.data ?? 0)}
+          sub={t("profiles across all tenants")} tone="muted" />
+        <Metric icon={TrendingUp} label={t("Est. MRR")} value={`$${(mrrCents / 100).toLocaleString()}`}
+          sub={billable.length === 1 ? t("1 billable subscription") : t("{n} billable subscriptions", { n: billable.length })} tone="success" />
+        <Metric icon={AlertTriangle} label={t("Needs attention")}
           value={String(byStatus("pending") + byStatus("past_due") + byStatus("suspended"))}
-          sub={`${byStatus("pending")} awaiting approval`} tone="warning" />
+          sub={t("{n} awaiting approval", { n: byStatus("pending") })} tone="warning" />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Metric icon={Activity} label="Shifts this week"
+        <Metric icon={Activity} label={t("Shifts this week")}
           value={activityQ.isLoading ? "…" : String(activityQ.data?.shifts ?? 0)} tone="muted" />
-        <Metric icon={Clock} label="Punches this week"
+        <Metric icon={Clock} label={t("Punches this week")}
           value={activityQ.isLoading ? "…" : String(activityQ.data?.punches ?? 0)} tone="muted" />
-        <Metric icon={Building2} label="New this week" value={String(newThisWeek)} tone="muted" />
-        <Metric icon={CreditCard} label="No subscription yet" value={String(unbilled)}
-          sub="treated as trial" tone="muted" />
+        <Metric icon={Building2} label={t("New this week")} value={String(newThisWeek)} tone="muted" />
+        <Metric icon={CreditCard} label={t("No subscription yet")} value={String(unbilled)}
+          sub={t("treated as trial")} tone="muted" />
       </div>
 
       {byStatus("pending") > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-warning/40 bg-warning/15 p-4">
           <p className="text-sm text-warning-foreground">
-            <span className="font-medium">{byStatus("pending")} company{byStatus("pending") === 1 ? "" : "ies"}</span>{" "}
-            waiting for approval — until approved, nobody there can sign in.
+            <span className="font-medium">{byStatus("pending") === 1 ? t("1 company") : t("{n} companies", { n: byStatus("pending") })}</span>{" "}
+            {t("waiting for approval — until approved, nobody there can sign in.")}
           </p>
           <Button asChild size="sm" variant="outline">
-            <Link to="/companies">Review companies</Link>
+            <Link to="/companies">{t("Review companies")}</Link>
           </Button>
         </div>
       )}
@@ -197,6 +199,7 @@ function Metric({
 /* ------------------------------ pricing plans ------------------------------ */
 
 function PlansPanel({ plans, isLoading }: { plans: PlanRow[]; isLoading: boolean }) {
+  const t = useT("admin");
   const qc = useQueryClient();
   const [editing, setEditing] = useState<PlanRow | null>(null);
   const [creating, setCreating] = useState(false);
@@ -256,19 +259,19 @@ function PlansPanel({ plans, isLoading }: { plans: PlanRow[]; isLoading: boolean
     <div className="rounded-2xl border border-border bg-card shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
         <div>
-          <h2 className="text-sm font-semibold text-foreground">Subscription plans</h2>
-          <p className="text-xs text-muted-foreground">Shown on the public pricing page and used to compute MRR.</p>
+          <h2 className="text-sm font-semibold text-foreground">{t("Subscription plans")}</h2>
+          <p className="text-xs text-muted-foreground">{t("Shown on the public pricing page and used to compute MRR.")}</p>
         </div>
         <Button size="sm" onClick={() => { setErr(null); setCreating(true); }}>
-          <Plus className="mr-2 h-4 w-4" />Add plan
+          <Plus className="mr-2 h-4 w-4" />{t("Add plan")}
         </Button>
       </div>
 
       <div className="p-5">
         {isLoading ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">Loading…</p>
+          <p className="py-6 text-center text-sm text-muted-foreground">{t("Loading…")}</p>
         ) : plans.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">No plans defined.</p>
+          <p className="py-6 text-center text-sm text-muted-foreground">{t("No plans defined.")}</p>
         ) : (
           <ul className="divide-y divide-border">
             {plans.map((p) => {
@@ -279,28 +282,28 @@ function PlansPanel({ plans, isLoading }: { plans: PlanRow[]; isLoading: boolean
                     <div className="flex items-center gap-2">
                       <p className="truncate text-sm font-medium text-foreground">{p.name}</p>
                       {p.featured && (
-                        <span className="rounded-full bg-primary-soft px-2 py-0.5 text-[11px] font-medium text-primary">Popular</span>
+                        <span className="rounded-full bg-primary-soft px-2 py-0.5 text-[11px] font-medium text-primary">{t("Popular")}</span>
                       )}
                       {!p.active && (
-                        <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium text-muted-foreground">Hidden</span>
+                        <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium text-muted-foreground">{t("Hidden")}</span>
                       )}
                     </div>
                     <p className="truncate text-xs text-muted-foreground">
-                      ${(p.price_cents / 100).toFixed(0)}/mo · {p.capacity} · {features.length} feature{features.length === 1 ? "" : "s"}
+                      {t("${price}/mo", { price: (p.price_cents / 100).toFixed(0) })} · {p.capacity} · {features.length === 1 ? t("1 feature") : t("{n} features", { n: features.length })}
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     {!p.featured && (
-                      <Button variant="ghost" size="sm" title="Mark as the popular plan"
+                      <Button variant="ghost" size="sm" title={t("Mark as the popular plan")}
                         disabled={feature.isPending} onClick={() => feature.mutate(p.id)}>
                         <Star className="h-4 w-4" />
                       </Button>
                     )}
-                    <Button variant="ghost" size="sm" onClick={() => { setErr(null); setEditing(p); }} aria-label={`Edit ${p.name}`}>
+                    <Button variant="ghost" size="sm" onClick={() => { setErr(null); setEditing(p); }} aria-label={t("Edit {name}", { name: p.name })}>
                       <Pencil className="h-4 w-4" />
                     </Button>
                     <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                      disabled={del.isPending} onClick={() => del.mutate(p.id)} aria-label={`Delete ${p.name}`}>
+                      disabled={del.isPending} onClick={() => del.mutate(p.id)} aria-label={t("Delete {name}", { name: p.name })}>
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
@@ -331,6 +334,7 @@ function PlanDialog({
   onCancel: () => void;
   onSave: (v: { name: string; price_cents: number; capacity: string; features: string[]; active: boolean; sort_order: number; capabilities: Capabilities; max_employees: number | null }) => void;
 }) {
+  const t = useT("admin");
   const [name, setName] = useState("");
   const [price, setPrice] = useState("0");
   const [features, setFeatures] = useState("");
@@ -355,36 +359,36 @@ function PlanDialog({
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onCancel(); }}>
       <DialogContent>
-        <DialogHeader><DialogTitle>{plan ? "Edit plan" : "New plan"}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{plan ? t("Edit plan") : t("New plan")}</DialogTitle></DialogHeader>
         <div className="space-y-3 py-2">
           <div className="space-y-1.5">
-            <Label htmlFor="pl-name">Name</Label>
-            <Input id="pl-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Pro" />
+            <Label htmlFor="pl-name">{t("Name")}</Label>
+            <Input id="pl-name" value={name} onChange={(e) => setName(e.target.value)} placeholder={t("e.g. Pro")} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="pl-price">Price (USD / month)</Label>
+              <Label htmlFor="pl-price">{t("Price (USD / month)")}</Label>
               <Input id="pl-price" type="number" min={0} value={price} onChange={(e) => setPrice(e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="pl-cap">Capacity label</Label>
+              <Label htmlFor="pl-cap">{t("Capacity label")}</Label>
               {/* Derived from the seat limit rather than typed, so the pricing
                   card can't advertise a headcount the plan doesn't enforce. */}
               <Input id="pl-cap" value={seatLine(seatCap)} readOnly className="bg-muted/40 text-muted-foreground" />
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="pl-seats">Employee limit</Label>
+            <Label htmlFor="pl-seats">{t("Employee limit")}</Label>
             <Input
               id="pl-seats"
               type="number"
               min={1}
-              placeholder="Leave blank for unlimited"
+              placeholder={t("Leave blank for unlimited")}
               value={maxEmployees}
               onChange={(e) => setMaxEmployees(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              Approving a join request past this number is refused. Blank means unlimited.
+              {t("Approving a join request past this number is refused. Blank means unlimited.")}
             </p>
           </div>
 
@@ -392,22 +396,22 @@ function PlanDialog({
               pricing page — these checkboxes are what the app enforces. */}
           <div className="space-y-2 rounded-lg border border-border p-3">
             <div className="flex items-center justify-between">
-              <Label className="text-sm">Included features</Label>
+              <Label className="text-sm">{t("Included features")}</Label>
               <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">{grantedCount} of {CAPABILITY_LABELS.length}</span>
+                <span className="text-xs text-muted-foreground">{t("{n} of {total}", { n: grantedCount, total: CAPABILITY_LABELS.length })}</span>
                 <button
                   type="button"
                   className="text-xs font-medium text-primary hover:underline"
                   onClick={() => setCaps(ALL_CAPABILITIES)}
                 >
-                  All
+                  {t("All")}
                 </button>
                 <button
                   type="button"
                   className="text-xs font-medium text-primary hover:underline"
                   onClick={() => setCaps(NO_CAPABILITIES)}
                 >
-                  None
+                  {t("None")}
                 </button>
               </div>
             </div>
@@ -421,8 +425,8 @@ function PlanDialog({
                     onChange={(e) => setCaps((p) => ({ ...p, [c.key]: e.target.checked }))}
                   />
                   <span className="min-w-0">
-                    <span className="block text-sm text-foreground">{c.label}</span>
-                    <span className="block text-xs text-muted-foreground">{c.hint}</span>
+                    <span className="block text-sm text-foreground">{t(c.label)}</span>
+                    <span className="block text-xs text-muted-foreground">{t(c.hint)}</span>
                   </span>
                 </label>
               ))}
@@ -430,25 +434,25 @@ function PlanDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="pl-feat">Extra bullets (one per line)</Label>
+            <Label htmlFor="pl-feat">{t("Extra bullets (one per line)")}</Label>
             <Textarea id="pl-feat" rows={3} value={features} onChange={(e) => setFeatures(e.target.value)}
-              placeholder="Priority support" />
+              placeholder={t("Priority support")} />
             <p className="text-xs text-muted-foreground">
-              For things that aren't features above, like support terms. Lines that repeat a ticked feature are dropped.
+              {t("For things that aren't features above, like support terms. Lines that repeat a ticked feature are dropped.")}
             </p>
           </div>
 
           {/* What the public pricing card and the Billing page will show. Built
               from the ticks above, so the promise and the product stay in step. */}
           <div className="rounded-lg border border-border bg-secondary/30 p-3">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Pricing card preview</p>
-            <p className="mt-1.5 text-sm font-semibold text-foreground">{name || "Untitled plan"}</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("Pricing card preview")}</p>
+            <p className="mt-1.5 text-sm font-semibold text-foreground">{name || t("Untitled plan")}</p>
             <p className="text-xs text-muted-foreground">
-              ${(Number(price) || 0).toFixed(0)}/month · {seatLine(seatCap)}
+              {t("${price}/month", { price: (Number(price) || 0).toFixed(0) })} · {seatLine(seatCap)}
             </p>
             <ul className="mt-2 space-y-0.5">
               {previewBullets.length === 0 && (
-                <li className="text-xs text-muted-foreground">No features ticked — the card will list nothing.</li>
+                <li className="text-xs text-muted-foreground">{t("No features ticked — the card will list nothing.")}</li>
               )}
               {previewBullets.map((b) => (
                 <li key={b} className="flex items-center gap-1.5 text-xs text-foreground">
@@ -459,17 +463,17 @@ function PlanDialog({
           </div>
           <label className="flex cursor-pointer items-center gap-2 text-sm">
             <input type="checkbox" className="h-4 w-4" checked={active} onChange={(e) => setActive(e.target.checked)} />
-            <span className="text-foreground">Visible on the public pricing page</span>
+            <span className="text-foreground">{t("Visible on the public pricing page")}</span>
           </label>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onCancel}>Cancel</Button>
+          <Button variant="outline" onClick={onCancel}>{t("Cancel")}</Button>
           <Button
             disabled={!name.trim() || pending}
             onClick={() => onSave({
               name: name.trim(),
               price_cents: Math.max(0, Math.round(Number(price) * 100)),
-              capacity: seatLine(seatCap),
+              capacity: seatCap == null ? "Unlimited employees" : `Up to ${seatCap} employees`, // stored in English whatever language the admin uses
               features: features.split("\n").map((f) => f.trim()).filter(Boolean),
               active,
               sort_order: plan?.sort_order ?? nextSort,
@@ -477,7 +481,7 @@ function PlanDialog({
               max_employees: seatCap,
             })}
           >
-            {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save
+            {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{t("Save")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -488,6 +492,7 @@ function PlanDialog({
 /* ----------------------------- global settings ----------------------------- */
 
 function GlobalSettingsPanel() {
+  const t = useT("admin");
   const qc = useQueryClient();
   const [err, setErr] = useState<string | null>(null);
 
@@ -521,15 +526,14 @@ function GlobalSettingsPanel() {
             <CreditCard className="h-5 w-5" />
           </div>
           <div>
-            <h2 className="text-sm font-semibold text-foreground">Card payments</h2>
+            <h2 className="text-sm font-semibold text-foreground">{t("Card payments")}</h2>
             <p className="text-sm text-muted-foreground">
-              While off, the public pricing page says cash / invoice billing. Turn on once Stripe
-              checkout is connected.
+              {t("While off, the public pricing page says cash / invoice billing. Turn on once Stripe checkout is connected.")}
             </p>
           </div>
         </div>
         <label className="inline-flex cursor-pointer select-none items-center gap-2">
-          <span className="text-sm text-muted-foreground">{q.data ? "On" : "Off"}</span>
+          <span className="text-sm text-muted-foreground">{q.data ? t("On") : t("Off")}</span>
           <input
             type="checkbox"
             className="relative h-5 w-9 appearance-none rounded-full bg-muted transition-colors before:absolute before:left-0.5 before:top-0.5 before:h-4 before:w-4 before:rounded-full before:bg-background before:transition-transform before:content-[''] checked:bg-primary checked:before:translate-x-4"
@@ -552,6 +556,7 @@ function GlobalSettingsPanel() {
  * haven't started yet.
  */
 function TrialSettingsPanel({ plans }: { plans: PlanRow[] }) {
+  const t = useT("admin");
   const qc = useQueryClient();
   const [days, setDays] = useState("");
   const [plan, setPlan] = useState("");
@@ -581,7 +586,7 @@ function TrialSettingsPanel({ plans }: { plans: PlanRow[] }) {
   const save = useMutation({
     mutationFn: async () => {
       const n = Math.max(0, Math.round(Number(days)));
-      if (!Number.isFinite(n)) throw new Error("Trial length must be a number of days.");
+      if (!Number.isFinite(n)) throw new Error(translate("Trial length must be a number of days."));
       const stamp = new Date().toISOString();
       const { error } = await supabase.from("app_settings").upsert(
         [
@@ -608,19 +613,18 @@ function TrialSettingsPanel({ plans }: { plans: PlanRow[] }) {
           <Gift className="h-5 w-5" />
         </div>
         <div className="min-w-0 flex-1">
-          <h2 className="text-sm font-semibold text-foreground">Free trial</h2>
+          <h2 className="text-sm font-semibold text-foreground">{t("Free trial")}</h2>
           <p className="text-sm text-muted-foreground">
-            Every new company starts on a trial of the plan below. The countdown begins when you
-            approve the company, so nobody loses days waiting for review.
+            {t("Every new company starts on a trial of the plan below. The countdown begins when you approve the company, so nobody loses days waiting for review.")}
           </p>
 
           <div className="mt-4 flex flex-wrap items-end gap-3">
             <div className="w-32 space-y-1.5">
-              <Label htmlFor="trial-days">Length (days)</Label>
+              <Label htmlFor="trial-days">{t("Length (days)")}</Label>
               <Input id="trial-days" type="number" min={0} value={days} onChange={(e) => setDays(e.target.value)} />
             </div>
             <div className="w-48 space-y-1.5">
-              <Label htmlFor="trial-plan">Plan granted</Label>
+              <Label htmlFor="trial-plan">{t("Plan granted")}</Label>
               <select
                 id="trial-plan"
                 className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
@@ -631,17 +635,17 @@ function TrialSettingsPanel({ plans }: { plans: PlanRow[] }) {
                   <option key={p.id} value={p.name}>{p.name}</option>
                 ))}
                 {/* Keep a saved value visible even if that plan was renamed. */}
-                {plan && !plans.some((p) => p.name === plan) && <option value={plan}>{plan} (missing)</option>}
+                {plan && !plans.some((p) => p.name === plan) && <option value={plan}>{t("{plan} (missing)", { plan })}</option>}
               </select>
             </div>
             <Button size="sm" disabled={q.isLoading || save.isPending} onClick={() => save.mutate()}>
               {save.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {saved ? "Saved" : "Save"}
+              {saved ? t("Saved") : t("Save")}
             </Button>
           </div>
 
           <p className="mt-2 text-xs text-muted-foreground">
-            Setting the length to 0 gives new companies no trial at all.
+            {t("Setting the length to 0 gives new companies no trial at all.")}
           </p>
           {err && <p className="mt-3 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{err}</p>}
         </div>

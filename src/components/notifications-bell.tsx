@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/auth";
 import { showAppNotification, useNotificationPrefs } from "@/lib/notification-prefs";
 import { playChime } from "@/lib/notify-sound";
 import { readCutoff } from "@/lib/notification-retention";
+import { translate, useT, useLocaleTag } from "@/lib/i18n";
 
 interface Notification {
   id: string;
@@ -21,6 +22,8 @@ interface Notification {
 
 export function NotificationsBell() {
   const { user } = useAuth();
+  const t = useT("shell");
+  const localeTag = useLocaleTag();
   const { wants, prefs } = useNotificationPrefs();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -98,7 +101,7 @@ export function NotificationsBell() {
               closeButton: true,
               action: row.link
                 ? {
-                    label: "Open",
+                    label: translate("Open", undefined, undefined, "shell"),
                     onClick: () => openRef.current(row),
                   }
                 : undefined,
@@ -165,7 +168,7 @@ export function NotificationsBell() {
       <button
         onClick={() => setOpen((v) => !v)}
         className="relative rounded-md p-2 text-muted-foreground hover:bg-accent"
-        aria-label="Notifications"
+        aria-label={t("Notifications")}
       >
         <Bell className="h-5 w-5" />
         {unread > 0 && (
@@ -178,21 +181,21 @@ export function NotificationsBell() {
       {open && (
         <div className="absolute right-0 z-40 mt-2 w-80 overflow-hidden rounded-xl border border-border bg-card shadow-lg">
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
-            <p className="text-sm font-semibold text-foreground">Notifications</p>
+            <p className="text-sm font-semibold text-foreground">{t("Notifications")}</p>
             {unread > 0 && (
               <button
                 onClick={() => markRead.mutate(items.filter((n) => !n.read_at).map((n) => n.id))}
                 className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
               >
-                <CheckCheck className="h-3.5 w-3.5" /> Mark all read
+                <CheckCheck className="h-3.5 w-3.5" /> {t("Mark all read")}
               </button>
             )}
           </div>
           <div className="max-h-96 overflow-y-auto">
             {notifsQ.isLoading ? (
-              <p className="px-4 py-6 text-center text-sm text-muted-foreground">Loading…</p>
+              <p className="px-4 py-6 text-center text-sm text-muted-foreground">{t("Loading…")}</p>
             ) : items.length === 0 ? (
-              <p className="px-4 py-6 text-center text-sm text-muted-foreground">You're all caught up.</p>
+              <p className="px-4 py-6 text-center text-sm text-muted-foreground">{t("You're all caught up.")}</p>
             ) : (
               items.map((n) => (
                 // A row, not one big button: marking read is its own control,
@@ -216,14 +219,14 @@ export function NotificationsBell() {
                         </p>
                       )}
                       <p className="mt-1 text-[11px] text-muted-foreground">
-                        {new Date(n.created_at).toLocaleString()}
+                        {new Date(n.created_at).toLocaleString(localeTag)}
                       </p>
                     </div>
                   </button>
                   {n.read_at ? (
                     <span
                       className="p-3 text-muted-foreground"
-                      title="Read — removed 24 hours after reading"
+                      title={t("Read — removed 24 hours after reading")}
                     >
                       <Check className="h-3.5 w-3.5" />
                     </span>
@@ -232,8 +235,8 @@ export function NotificationsBell() {
                       onClick={() => markRead.mutate([n.id])}
                       disabled={markRead.isPending}
                       className="m-1.5 rounded-md p-1.5 text-muted-foreground hover:bg-background hover:text-primary"
-                      aria-label={`Mark "${n.title}" as read`}
-                      title="Mark as read"
+                      aria-label={t("Mark \"{title}\" as read", { title: n.title })}
+                      title={t("Mark as read")}
                     >
                       <Check className="h-4 w-4" />
                     </button>
@@ -244,7 +247,7 @@ export function NotificationsBell() {
           </div>
           {items.some((n) => n.read_at) && (
             <p className="px-4 py-2 text-center text-[11px] text-muted-foreground">
-              Read notifications are removed after 24 hours.
+              {t("Read notifications are removed after 24 hours.")}
             </p>
           )}
         </div>

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CalendarCheck, Plus, Trash2, Loader2, Ban, Check } from "lucide-react";
+import { useT } from "@/lib/i18n";
 
 export const Route = createFileRoute("/_authenticated/availability")({
   component: AvailabilityPage,
@@ -25,6 +26,7 @@ type Slot = {
 };
 
 function AvailabilityPage() {
+  const t = useT("time");
   const { company, user, primaryRole, loading } = useAuth();
   const isManager = primaryRole === "company_admin" || primaryRole === "super_admin";
   const [target, setTarget] = useState<string | null>(null);
@@ -41,8 +43,8 @@ function AvailabilityPage() {
     },
   });
 
-  if (loading) return <div className="text-sm text-muted-foreground">Loading…</div>;
-  if (!company) return <div className="text-sm text-muted-foreground">Join a company first.</div>;
+  if (loading) return <div className="text-sm text-muted-foreground">{t("Loading…")}</div>;
+  if (!company) return <div className="text-sm text-muted-foreground">{t("Join a company first.")}</div>;
 
   const employeeId = (isManager && target) || user!.id;
   const members = membersQ.data ?? [];
@@ -51,29 +53,28 @@ function AvailabilityPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-foreground">Availability</h1>
+        <h1 className="text-2xl font-semibold text-foreground">{t("Availability")}</h1>
         <p className="text-sm text-muted-foreground">
-          The hours you can normally work each week. The schedule builder warns admins when a
-          shift falls outside these windows.
+          {t("The hours you can normally work each week. The schedule builder warns admins when a shift falls outside these windows.")}
         </p>
       </div>
 
       {isManager && members.length > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card p-3 shadow-sm">
-          <Label htmlFor="who" className="text-xs text-muted-foreground">Viewing</Label>
+          <Label htmlFor="who" className="text-xs text-muted-foreground">{t("Viewing")}</Label>
           <select
             id="who"
             className="h-9 min-w-56 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
             value={employeeId}
             onChange={(e) => setTarget(e.target.value)}
           >
-            <option value={user!.id}>My availability</option>
+            <option value={user!.id}>{t("My availability")}</option>
             {members.filter((m) => m.id !== user!.id).map((m) => (
               <option key={m.id} value={m.id}>{m.full_name}</option>
             ))}
           </select>
           {employeeId !== user!.id && (
-            <span className="text-xs text-muted-foreground">Editing {viewingName}&rsquo;s availability</span>
+            <span className="text-xs text-muted-foreground">{t("Editing {name}’s availability", { name: viewingName ?? "" })}</span>
           )}
         </div>
       )}
@@ -84,6 +85,7 @@ function AvailabilityPage() {
 }
 
 function AvailabilityEditor({ companyId, employeeId }: { companyId: string; employeeId: string }) {
+  const t = useT("time");
   const qc = useQueryClient();
   const [err, setErr] = useState<string | null>(null);
   const [adding, setAdding] = useState<number | null>(null);
@@ -104,7 +106,7 @@ function AvailabilityEditor({ companyId, employeeId }: { companyId: string; empl
 
   const add = useMutation({
     mutationFn: async (weekday: number) => {
-      if (form.end <= form.start) throw new Error("End time must be after start time.");
+      if (form.end <= form.start) throw new Error(t("End time must be after start time."));
       const { error } = await supabase.from("employee_availability").insert({
         company_id: companyId,
         employee_id: employeeId,
@@ -134,9 +136,8 @@ function AvailabilityEditor({ companyId, employeeId }: { companyId: string; empl
     <div className="space-y-4">
       {slots.length === 0 && !q.isLoading && (
         <div className="rounded-xl border border-border bg-primary-soft/40 p-4 text-sm text-muted-foreground">
-          <span className="font-medium text-foreground">No availability set.</span>{" "}
-          While this is empty the scheduler treats every hour as workable and never raises an
-          availability warning.
+          <span className="font-medium text-foreground">{t("No availability set.")}</span>{" "}
+          {t("While this is empty the scheduler treats every hour as workable and never raises an availability warning.")}
         </div>
       )}
 
@@ -146,15 +147,15 @@ function AvailabilityEditor({ companyId, employeeId }: { companyId: string; empl
           return (
             <div key={day} className="rounded-2xl border border-border bg-card p-4 shadow-sm">
               <div className="mb-3 flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-foreground">{day}</h3>
+                <h3 className="text-sm font-semibold text-foreground">{t(day)}</h3>
                 <Button variant="ghost" size="sm" onClick={() => { setErr(null); setAdding(adding === weekday ? null : weekday); }}
-                  aria-label={`Add availability for ${day}`}>
+                  aria-label={t("Add availability for {day}", { day: t(day) })}>
                   <Plus className="h-4 w-4" />
                 </Button>
               </div>
 
               {daySlots.length === 0 ? (
-                <p className="text-xs text-muted-foreground">Not set</p>
+                <p className="text-xs text-muted-foreground">{t("Not set")}</p>
               ) : (
                 <ul className="space-y-1.5">
                   {daySlots.map((s) => (
@@ -170,7 +171,7 @@ function AvailabilityEditor({ companyId, employeeId }: { companyId: string; empl
                       <button
                         onClick={() => del.mutate(s.id)}
                         className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                        aria-label="Remove window"
+                        aria-label={t("Remove window")}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -183,11 +184,11 @@ function AvailabilityEditor({ companyId, employeeId }: { companyId: string; empl
                 <div className="mt-3 space-y-2 rounded-lg border border-border bg-muted/30 p-3">
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <Label className="text-[11px]">From</Label>
+                      <Label className="text-[11px]">{t("From")}</Label>
                       <Input type="time" value={form.start} onChange={(e) => setForm({ ...form, start: e.target.value })} className="h-8" />
                     </div>
                     <div>
-                      <Label className="text-[11px]">To</Label>
+                      <Label className="text-[11px]">{t("To")}</Label>
                       <Input type="time" value={form.end} onChange={(e) => setForm({ ...form, end: e.target.value })} className="h-8" />
                     </div>
                   </div>
@@ -197,19 +198,19 @@ function AvailabilityEditor({ companyId, employeeId }: { companyId: string; empl
                       onClick={() => setForm({ ...form, available: true })}
                       className={`flex-1 rounded-md px-2 py-1.5 text-[11px] font-medium ${form.available ? "bg-success text-success-foreground" : "bg-secondary text-muted-foreground"}`}
                     >
-                      Available
+                      {t("Available")}
                     </button>
                     <button
                       type="button"
                       onClick={() => setForm({ ...form, available: false })}
                       className={`flex-1 rounded-md px-2 py-1.5 text-[11px] font-medium ${!form.available ? "bg-destructive text-destructive-foreground" : "bg-secondary text-muted-foreground"}`}
                     >
-                      Blackout
+                      {t("Blackout")}
                     </button>
                   </div>
                   <Button size="sm" className="w-full" disabled={add.isPending} onClick={() => add.mutate(weekday)}>
                     {add.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <CalendarCheck className="mr-2 h-3.5 w-3.5" />}
-                    Add window
+                    {t("Add window")}
                   </Button>
                 </div>
               )}

@@ -4,6 +4,7 @@ import { Coffee, Delete, LogIn, LogOut, Loader2, CheckCircle2 } from "lucide-rea
 import { supabase } from "@/integrations/supabase/client";
 import { BrandLogo } from "@/components/brand";
 import { noindexSeo } from "@/lib/seo";
+import { translate, useLocaleTag, useT } from "@/lib/i18n";
 
 /**
  * The shared clock-in screen: a tablet by the door that belongs to nobody.
@@ -61,14 +62,16 @@ function callKiosk(
       console.error("[shared clock-in]", error);
       return {
         ok: false,
-        message: "This clock-in screen can not reach the server. Ask an admin to check it.",
+        message: translate("This clock-in screen can not reach the server. Ask an admin to check it."),
       } satisfies KioskReply;
     }
-    return (data ?? { ok: false, message: "No answer from the server." }) as unknown as KioskReply;
+    return (data ?? { ok: false, message: translate("No answer from the server.") }) as unknown as KioskReply;
   });
 }
 
 function SharedClockInPage() {
+  const t = useT("time");
+  const tag = useLocaleTag();
   const { token } = Route.useParams();
 
   const [device, setDevice] = useState<Device | null>(null);
@@ -93,9 +96,9 @@ function SharedClockInPage() {
   useEffect(() => {
     void callKiosk("kiosk_device_info", { _token: token }).then((reply) => {
       if (reply.ok) setDevice({ company: reply.company ?? null, label: reply.label ?? null });
-      else setDeviceError(reply.message ?? "This device link is no longer valid.");
+      else setDeviceError(reply.message ?? t("This device link is no longer valid."));
     });
-  }, [token]);
+  }, [token, t]);
 
   const reset = useCallback(() => {
     setCode("");
@@ -122,7 +125,7 @@ function SharedClockInPage() {
     void callKiosk("kiosk_state", { _token: token, _code: code }).then((reply) => {
       setBusy(false);
       if (!reply.ok || !reply.name || !reply.state) {
-        setError(reply.message ?? "That code was not recognised.");
+        setError(reply.message ?? t("That code was not recognised."));
         setCode("");
         return;
       }
@@ -133,7 +136,7 @@ function SharedClockInPage() {
         breakEndsAt: reply.break_ends_at ? new Date(reply.break_ends_at).getTime() : null,
       });
     });
-  }, [code, person, busy, token]);
+  }, [code, person, busy, token, t]);
 
   async function punch(action: "clock" | "break", minutes?: number) {
     setBusy(true);
@@ -146,20 +149,20 @@ function SharedClockInPage() {
     });
     setBusy(false);
     if (!reply.ok) {
-      setError(reply.message ?? "That didn't go through. Try again.");
+      setError(reply.message ?? t("That didn't go through. Try again."));
       return;
     }
     const at = reply.at ? new Date(reply.at) : new Date();
-    const time = at.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-    const what =
+    const time = at.toLocaleTimeString(tag, { hour: "numeric", minute: "2-digit" });
+    const what: string =
       reply.kind === "in"
-        ? "Clocked in"
+        ? t("Clocked in at {time}", { time })
         : reply.kind === "out"
-          ? "Clocked out"
+          ? t("Clocked out at {time}", { time })
           : reply.kind === "break_start"
-            ? "Break started"
-            : "Back from break";
-    setConfirmation(`${what} at ${time}`);
+            ? t("Break started at {time}", { time })
+            : t("Back from break at {time}", { time });
+    setConfirmation(what);
     setPerson((p) => (p ? { ...p, name: reply.name ?? p.name } : p));
   }
 
@@ -184,7 +187,7 @@ function SharedClockInPage() {
       <div className="text-center">
         <BrandLogo className="mx-auto h-14" />
         <h1 className="mt-4 text-2xl font-semibold text-foreground">
-          {device.company ?? "Clock in"}
+          {device.company ?? t("Clock in")}
         </h1>
         <p className="text-sm text-muted-foreground">{device.label}</p>
       </div>
@@ -200,23 +203,23 @@ function SharedClockInPage() {
           <p className="text-center text-3xl font-semibold text-foreground">{person.name}</p>
           <p className="mt-1 text-center text-base text-muted-foreground">
             {person.state === "out"
-              ? "Not clocked in"
+              ? t("Not clocked in")
               : person.state === "on_break"
-                ? "On break"
-                : "On the clock"}
+                ? t("On break")
+                : t("On the clock")}
           </p>
 
           <div className="mt-8 space-y-3">
             {person.state === "out" && (
               <BigButton onClick={() => void punch("clock")} disabled={busy} tone="go">
-                <LogIn className="h-7 w-7" /> Clock in
+                <LogIn className="h-7 w-7" /> {t("Clock in")}
               </BigButton>
             )}
 
             {person.state === "in" && (
               <>
                 <BigButton onClick={() => void punch("clock")} disabled={busy} tone="stop">
-                  <LogOut className="h-7 w-7" /> Clock out
+                  <LogOut className="h-7 w-7" /> {t("Clock out")}
                 </BigButton>
                 <div className="grid grid-cols-3 gap-3">
                   {BREAK_LENGTHS.filter((m) => person.breaks[String(m)] !== false).map((m) => (
@@ -226,7 +229,7 @@ function SharedClockInPage() {
                       disabled={busy}
                       tone="quiet"
                     >
-                      <Coffee className="h-6 w-6" /> {m} min
+                      <Coffee className="h-6 w-6" /> {t("{n} min", { n: m })}
                     </BigButton>
                   ))}
                 </div>
@@ -240,11 +243,11 @@ function SharedClockInPage() {
                   disabled={busy || breakLeftMs > 0}
                   tone="go"
                 >
-                  <Coffee className="h-7 w-7" /> End break
+                  <Coffee className="h-7 w-7" /> {t("End break")}
                 </BigButton>
                 {breakLeftMs > 0 && (
                   <p className="text-center text-base text-muted-foreground">
-                    Your break can end in {fmtLeft(breakLeftMs)}. Only an admin can end it sooner.
+                    {t("Your break can end in {time}. Only an admin can end it sooner.", { time: fmtLeft(breakLeftMs) })}
                   </p>
                 )}
               </>
@@ -254,17 +257,17 @@ function SharedClockInPage() {
               onClick={reset}
               className="mx-auto block px-4 py-3 text-base font-medium text-muted-foreground hover:text-foreground"
             >
-              Cancel
+              {t("Cancel")}
             </button>
           </div>
         </div>
       ) : (
         <div className="mt-8 w-full">
-          <p className="text-center text-lg text-muted-foreground">Enter your 4-digit code</p>
+          <p className="text-center text-lg text-muted-foreground">{t("Enter your 4-digit code")}</p>
 
           <div
             className="mt-5 flex justify-center gap-3"
-            aria-label={`${code.length} of 4 digits entered`}
+            aria-label={t("{n} of 4 digits entered", { n: code.length })}
           >
             {[0, 1, 2, 3].map((i) => (
               <span
@@ -290,8 +293,8 @@ function SharedClockInPage() {
                 {d}
               </KeypadKey>
             ))}
-            <KeypadKey onClick={reset} disabled={busy} aria-label="Clear">
-              <span className="text-lg">Clear</span>
+            <KeypadKey onClick={reset} disabled={busy} aria-label={t("Clear")}>
+              <span className="text-lg">{t("Clear")}</span>
             </KeypadKey>
             <KeypadKey onClick={() => setCode((c) => (c.length < 4 ? c + "0" : c))} disabled={busy}>
               0
@@ -299,7 +302,7 @@ function SharedClockInPage() {
             <KeypadKey
               onClick={() => setCode((c) => c.slice(0, -1))}
               disabled={busy}
-              aria-label="Backspace"
+              aria-label={t("Backspace")}
             >
               <Delete className="h-7 w-7" />
             </KeypadKey>

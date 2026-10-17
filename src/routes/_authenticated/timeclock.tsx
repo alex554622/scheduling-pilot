@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { LeafletMap } from "@/components/leaflet-map";
 import { PaySettingsCard } from "@/components/pay-settings-card";
 import { readPaySettings, type PaySettings } from "@/lib/pay-settings";
+import { localeTag, translate, useLocaleTag, useT } from "@/lib/i18n";
 import {
   Clock,
   MapPin,
@@ -68,7 +69,7 @@ function fmtWorked(ms: number): string {
 
 /** Money with no currency symbol — the rate is whatever the user typed. */
 function fmtAmount(n: number): string {
-  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return n.toLocaleString(localeTag(), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 /** mm:ss, or h:mm:ss once a break runs past the hour. */
@@ -90,6 +91,8 @@ type Company = {
 };
 
 function TimeclockPage() {
+  const t = useT("time");
+  const tag = useLocaleTag();
   const { user, company, primaryRole, loading } = useAuth();
   const rules = useAppRules();
   const capBreaks = rules.cap_break_to_length;
@@ -228,7 +231,7 @@ function TimeclockPage() {
   // Watch position
   useEffect(() => {
     if (!("geolocation" in navigator)) {
-      setGeoErr("Geolocation not supported on this device.");
+      setGeoErr(translate("Geolocation not supported on this device."));
       return;
     }
     const id = navigator.geolocation.watchPosition(
@@ -240,7 +243,7 @@ function TimeclockPage() {
         });
         setGeoErr(null);
       },
-      (err) => setGeoErr(err.message || "Unable to read location"),
+      (err) => setGeoErr(err.message || translate("Unable to read location")),
       { enableHighAccuracy: true, maximumAge: 10_000, timeout: 15_000 },
     );
     return () => navigator.geolocation.clearWatch(id);
@@ -273,12 +276,12 @@ function TimeclockPage() {
       : [0, 0];
 
   const pins = [];
-  if (company_loc) pins.push({ lat: company_loc.lat, lng: company_loc.lng, label: "Worksite" });
-  if (coords) pins.push({ lat: coords.lat, lng: coords.lng, label: "You" });
+  if (company_loc) pins.push({ lat: company_loc.lat, lng: company_loc.lng, label: t("Worksite") });
+  if (coords) pins.push({ lat: coords.lat, lng: coords.lng, label: t("You") });
 
   const punchMut = useMutation({
     mutationFn: async () => {
-      if (!coords) throw new Error("Waiting for GPS location…");
+      if (!coords) throw new Error(translate("Waiting for GPS location…"));
       const { data, error } = await supabase.rpc("clock_punch", {
         _lat: coords.lat,
         _lng: coords.lng,
@@ -288,17 +291,17 @@ function TimeclockPage() {
       return data;
     },
     onSuccess: () => {
-      setFlash({ kind: "ok", msg: `Clocked ${nextKind === "in" ? "in" : "out"} successfully.` });
+      setFlash({ kind: "ok", msg: nextKind === "in" ? t("Clocked in successfully.") : t("Clocked out successfully.") });
       qc.invalidateQueries({ queryKey: ["my-punches-recent"] });
       qc.invalidateQueries({ queryKey: ["timecards"] });
     },
-    onError: (e: any) => setFlash({ kind: "err", msg: e.message || "Failed to punch" }),
+    onError: (e: any) => setFlash({ kind: "err", msg: e.message || t("Failed to punch") }),
     onSettled: () => setSubmitting(false),
   });
 
   const breakMut = useMutation({
     mutationFn: async (minutes: 10 | 30 | 60 | null) => {
-      if (!coords) throw new Error("Waiting for GPS location…");
+      if (!coords) throw new Error(translate("Waiting for GPS location…"));
       // Ending a break omits _minutes entirely (the SQL default is NULL);
       // break_punch only requires a length when starting one.
       const { data, error } = await supabase.rpc("break_punch", {
@@ -311,17 +314,17 @@ function TimeclockPage() {
       return data;
     },
     onSuccess: () => {
-      setFlash({ kind: "ok", msg: status === "on_break" ? "Break ended." : "Break started." });
+      setFlash({ kind: "ok", msg: status === "on_break" ? t("Break ended.") : t("Break started.") });
       qc.invalidateQueries({ queryKey: ["my-punches-recent"] });
       qc.invalidateQueries({ queryKey: ["timecards"] });
     },
-    onError: (e: any) => setFlash({ kind: "err", msg: e.message || "Failed" }),
+    onError: (e: any) => setFlash({ kind: "err", msg: e.message || t("Failed") }),
   });
 
-  if (loading) return <div className="text-sm text-muted-foreground">Loading…</div>;
+  if (loading) return <div className="text-sm text-muted-foreground">{t("Loading…")}</div>;
   if (!company)
     return (
-      <div className="text-sm text-muted-foreground">Join a company to use the time clock.</div>
+      <div className="text-sm text-muted-foreground">{t("Join a company to use the time clock.")}</div>
     );
 
   const locationMissing = !company_loc;
@@ -330,23 +333,23 @@ function TimeclockPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-foreground">Time clock</h1>
+          <h1 className="text-2xl font-semibold text-foreground">{t("Time clock")}</h1>
           <p className="text-sm text-muted-foreground">
-            Clock in and out — your location is recorded with each punch.
+            {t("Clock in and out — your location is recorded with each punch.")}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline" size="sm">
             <Link to="/timecards">
               <FileClock className="mr-2 h-4 w-4" />
-              My timecard
+              {t("My timecard")}
             </Link>
           </Button>
           {(primaryRole === "company_admin" || primaryRole === "super_admin") && (
             <Button asChild variant="outline" size="sm">
               <Link to="/whos-in">
                 <Users className="mr-2 h-4 w-4" />
-                Who's clocked in
+                {t("Who's clocked in")}
               </Link>
             </Button>
           )}
@@ -354,7 +357,7 @@ function TimeclockPage() {
             <Button asChild variant="outline" size="sm">
               <Link to="/worksite">
                 <SettingsIcon className="mr-2 h-4 w-4" />
-                Worksite settings
+                {t("Worksite settings")}
               </Link>
             </Button>
           )}
@@ -365,11 +368,11 @@ function TimeclockPage() {
         <div className="flex items-start gap-3 rounded-xl border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-200">
           <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
           <div>
-            <p className="font-medium">No worksite location set</p>
+            <p className="font-medium">{t("No worksite location set")}</p>
             <p>
-              Set your company's worksite location and geofence radius so employees can clock in.{" "}
+              {t("Set your company's worksite location and geofence radius so employees can clock in.")}{" "}
               <Link to="/worksite" className="underline">
-                Open worksite settings →
+                {t("Open worksite settings →")}
               </Link>
             </p>
           </div>
@@ -378,7 +381,7 @@ function TimeclockPage() {
       {locationMissing && primaryRole === "employee" && (
         <div className="flex items-start gap-3 rounded-xl border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-200">
           <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
-          <p>Your company hasn't set a worksite yet. Ask a manager to configure it.</p>
+          <p>{t("Your company hasn't set a worksite yet. Ask a manager to configure it.")}</p>
         </div>
       )}
 
@@ -392,7 +395,7 @@ function TimeclockPage() {
               <div className="grid h-[320px] place-items-center text-sm text-muted-foreground">
                 <div className="flex items-center gap-2">
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Waiting for GPS…
+                  {t("Waiting for GPS…")}
                 </div>
               </div>
             ) : (
@@ -409,7 +412,7 @@ function TimeclockPage() {
               />
             )}
             <div className="border-t border-border bg-muted/30 p-3 text-xs text-muted-foreground">
-              Map data © OpenStreetMap contributors
+              {t("Map data © OpenStreetMap contributors")}
             </div>
           </div>
         )}
@@ -417,13 +420,13 @@ function TimeclockPage() {
         <div className="space-y-4">
           <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
             <div className="mb-4 flex items-center gap-2 text-sm font-medium text-foreground">
-              <Clock className="h-4 w-4 text-primary" /> Current status
+              <Clock className="h-4 w-4 text-primary" /> {t("Current status")}
             </div>
             <div className="mb-4 flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Last punch</span>
+              <span className="text-muted-foreground">{t("Last punch")}</span>
               <span className="font-medium text-foreground">
                 {lastPunch
-                  ? `${PUNCH_LABEL[lastPunch.kind]} · ${new Date(lastPunch.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
+                  ? `${t(PUNCH_LABEL[lastPunch.kind])} · ${new Date(lastPunch.at).toLocaleTimeString(tag, { hour: "numeric", minute: "2-digit" })}`
                   : "—"}
               </span>
             </div>
@@ -432,26 +435,26 @@ function TimeclockPage() {
               <div className="mb-5 rounded-xl border border-border bg-secondary/40 p-3">
                 <div className="flex items-baseline justify-between">
                   <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Worked this shift
+                    {t("Worked this shift")}
                   </span>
                   <span className="font-mono text-2xl font-semibold tabular-nums text-foreground">
                     {fmtWorked(workedMs)}
                   </span>
                 </div>
                 <p className="mt-0.5 text-right text-xs text-muted-foreground">
-                  since{" "}
-                  {new Date(shift.startedAt).toLocaleTimeString([], {
+                  {t("since")}{" "}
+                  {new Date(shift.startedAt).toLocaleTimeString(tag, {
                     hour: "numeric",
                     minute: "2-digit",
                   })}
                   {shift.closedUnpaidMs + liveUnpaidMs > 0 &&
-                    ` · ${fmtWorked(shift.closedUnpaidMs + liveUnpaidMs)} unpaid break deducted`}
+                    ` · ${t("{time} unpaid break deducted", { time: fmtWorked(shift.closedUnpaidMs + liveUnpaidMs) })}`}
                 </p>
 
                 {earnings ? (
                   <div className="mt-3 space-y-1 border-t border-border pt-3 text-sm">
                     <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Gross</span>
+                      <span className="text-muted-foreground">{t("Gross")}</span>
                       <span className="font-mono tabular-nums text-foreground">
                         {fmtAmount(earnings.gross)}
                       </span>
@@ -459,7 +462,7 @@ function TimeclockPage() {
                     {pay!.taxPercent > 0 && (
                       <div className="flex items-center justify-between">
                         <span className="text-muted-foreground">
-                          Federal tax ({pay!.taxPercent}%)
+                          {t("Federal tax ({pct}%)", { pct: pay!.taxPercent })}
                         </span>
                         <span className="font-mono tabular-nums text-destructive">
                           −{fmtAmount(earnings.federalTax)}
@@ -469,7 +472,7 @@ function TimeclockPage() {
                     {pay!.statePercent > 0 && (
                       <div className="flex items-center justify-between">
                         <span className="text-muted-foreground">
-                          State tax ({pay!.statePercent}%)
+                          {t("State tax ({pct}%)", { pct: pay!.statePercent })}
                         </span>
                         <span className="font-mono tabular-nums text-destructive">
                           −{fmtAmount(earnings.stateTax)}
@@ -477,18 +480,18 @@ function TimeclockPage() {
                       </div>
                     )}
                     <div className="flex items-baseline justify-between pt-1">
-                      <span className="font-medium text-foreground">Take-home</span>
+                      <span className="font-medium text-foreground">{t("Take-home")}</span>
                       <span className="font-mono text-xl font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
                         {fmtAmount(earnings.net)}
                       </span>
                     </div>
                     <p className="pt-1 text-right text-[11px] text-muted-foreground">
-                      Estimate at {fmtAmount(pay!.hourlyRate)}/hr · visible only to you
+                      {t("Estimate at {rate}/hr · visible only to you", { rate: fmtAmount(pay!.hourlyRate) })}
                     </p>
                   </div>
                 ) : (
                   <p className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground">
-                    Add your hourly pay below to see what you've earned so far.
+                    {t("Add your hourly pay below to see what you've earned so far.")}
                   </p>
                 )}
               </div>
@@ -504,10 +507,10 @@ function TimeclockPage() {
               >
                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   {breakRemainingMs == null
-                    ? "On break for"
+                    ? t("On break for")
                     : breakRemainingMs > 0
-                      ? "Break ends in"
-                      : "Break over by"}
+                      ? t("Break ends in")
+                      : t("Break over by")}
                 </p>
                 <p
                   className={`mt-0.5 font-mono text-3xl font-semibold tabular-nums ${
@@ -524,9 +527,9 @@ function TimeclockPage() {
                 </p>
                 {breakStartedAt != null && (
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {breakMinutes != null ? `${breakMinutes}-minute break · ` : ""}
-                    started{" "}
-                    {new Date(breakStartedAt).toLocaleTimeString([], {
+                    {breakMinutes != null ? `${t("{n}-minute break", { n: breakMinutes })} · ` : ""}
+                    {t("started")}{" "}
+                    {new Date(breakStartedAt).toLocaleTimeString(tag, {
                       hour: "numeric",
                       minute: "2-digit",
                     })}
@@ -562,17 +565,17 @@ function TimeclockPage() {
               {punchMut.isPending ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Recording…
+                  {t("Recording…")}
                 </>
               ) : nextKind === "in" ? (
                 <>
                   <LogIn className="mr-2 h-4 w-4" />
-                  Clock IN
+                  {t("Clock IN")}
                 </>
               ) : (
                 <>
                   <LogOut className="mr-2 h-4 w-4" />
-                  Clock OUT
+                  {t("Clock OUT")}
                 </>
               )}
             </Button>
@@ -580,7 +583,7 @@ function TimeclockPage() {
             {status !== "off" && status !== "on_break" && allowedBreaks.length > 0 && (
               <div className="mt-2 space-y-2">
                 <p className="text-xs text-muted-foreground">
-                  Start a break — choose length (10-min is paid; 30 & 60-min are unpaid):
+                  {t("Start a break — choose length (10-min is paid; 30 & 60-min are unpaid):")}
                 </p>
                 <div className="grid grid-cols-3 gap-2">
                   {allowedBreaks.map((m) => (
@@ -595,7 +598,7 @@ function TimeclockPage() {
                       }}
                     >
                       <Coffee className="mr-1 h-3.5 w-3.5" />
-                      {m}m{m === 10 ? " · paid" : ""}
+                      {m === 10 ? t("{n}m · paid", { n: m }) : t("{n}m", { n: m })}
                     </Button>
                   ))}
                 </div>
@@ -603,7 +606,7 @@ function TimeclockPage() {
             )}
             {status !== "off" && status !== "on_break" && allowedBreaks.length === 0 && (
               <p className="mt-3 text-center text-xs text-muted-foreground">
-                Breaks are disabled by your company's App rules.
+                {t("Breaks are disabled by your company's App rules.")}
               </p>
             )}
             {status === "on_break" && (
@@ -622,12 +625,12 @@ function TimeclockPage() {
                 {breakMut.isPending ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Recording…
+                    {t("Recording…")}
                   </>
                 ) : (
                   <>
                     <Play className="mr-2 h-4 w-4" />
-                    End break
+                    {t("End break")}
                   </>
                 )}
               </Button>
@@ -636,18 +639,21 @@ function TimeclockPage() {
             {status === "on_break" && (
               <p className="mt-3 text-center text-xs text-amber-700 dark:text-amber-300">
                 {breakLocked
-                  ? `Your ${breakMinutes}-minute break has to run its full time. You can end it in ${fmtCountdown(breakRemainingMs!)} — only an admin can end it sooner.`
-                  : "You're on break. End your break before clocking out."}
+                  ? t("Your {n}-minute break has to run its full time. You can end it in {time} — only an admin can end it sooner.", {
+                      n: breakMinutes ?? 0,
+                      time: fmtCountdown(breakRemainingMs!),
+                    })
+                  : t("You're on break. End your break before clocking out.")}
               </p>
             )}
             {fenceBlocks && (
               <p className="mt-3 text-center text-xs text-destructive">
-                You're outside the allowed area. Move closer to the worksite to punch.
+                {t("You're outside the allowed area. Move closer to the worksite to punch.")}
               </p>
             )}
             {!rules.require_geofence && withinFence === false && (
               <p className="mt-3 text-center text-xs text-muted-foreground">
-                Geofence is off — punches allowed from any location.
+                {t("Geofence is off — punches allowed from any location.")}
               </p>
             )}
             {flash && (
@@ -663,11 +669,11 @@ function TimeclockPage() {
 
           <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
             <div className="mb-3 flex items-center gap-2 text-sm font-medium text-foreground">
-              <MapPin className="h-4 w-4 text-primary" /> Recent punches
+              <MapPin className="h-4 w-4 text-primary" /> {t("Recent punches")}
             </div>
             <ul className="divide-y divide-border text-sm">
               {(recentQ.data ?? []).length === 0 && (
-                <li className="py-3 text-muted-foreground">No punches yet.</li>
+                <li className="py-3 text-muted-foreground">{t("No punches yet.")}</li>
               )}
               {(recentQ.data ?? []).slice(0, 10).map((p) => {
                 const styles: Record<PunchKind, string> = {
@@ -682,10 +688,10 @@ function TimeclockPage() {
                       <span
                         className={`inline-block rounded px-1.5 py-0.5 text-xs font-medium ${styles[p.kind]}`}
                       >
-                        {PUNCH_LABEL[p.kind]}
+                        {t(PUNCH_LABEL[p.kind])}
                       </span>
                       <span className="ml-2 text-foreground">
-                        {new Date(p.at).toLocaleString()}
+                        {new Date(p.at).toLocaleString(tag)}
                       </span>
                     </div>
                     <span className="text-xs text-muted-foreground">

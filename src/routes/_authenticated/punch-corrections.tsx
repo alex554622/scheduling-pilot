@@ -12,6 +12,7 @@ import {
 } from "@/lib/timecard-totals";
 import { TimecardDayEditor, type EditablePunch } from "@/components/timecard-day-editor";
 import { Button } from "@/components/ui/button";
+import { localeTag, translate, useT } from "@/lib/i18n";
 import { ChevronLeft, ChevronRight, Pencil, History, Clock } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/punch-corrections")({
@@ -41,7 +42,7 @@ function startOfWeek(d: Date, weekStartDay = 1) {
   return x;
 }
 function fmtTime(s: string) {
-  return new Date(s).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return new Date(s).toLocaleTimeString(localeTag(), { hour: "numeric", minute: "2-digit" });
 }
 function fmtHours(ms: number) {
   const m = Math.round(ms / 60_000);
@@ -53,10 +54,10 @@ function addDays(d: Date, n: number) {
   return x;
 }
 function fmtDate(d: Date) {
-  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  return d.toLocaleDateString(localeTag(), { weekday: "short", month: "short", day: "numeric" });
 }
 function fmtDT(s: string) {
-  return new Date(s).toLocaleString([], {
+  return new Date(s).toLocaleString(localeTag(), {
     month: "short",
     day: "numeric",
     hour: "2-digit",
@@ -72,11 +73,12 @@ const KIND_LABEL: Record<string, string> = {
 
 /** One side of an audit entry: "Break start 12:00 PM, Sep 30 (30 min)". */
 function auditPunch(p: { kind: string; at: string; break_minutes?: number | null }) {
-  const len = p.break_minutes ? ` (${p.break_minutes} min)` : "";
-  return `${KIND_LABEL[p.kind] ?? p.kind} · ${fmtDT(p.at)}${len}`;
+  const len = p.break_minutes ? ` ${translate("({n} min)", { n: p.break_minutes })}` : "";
+  return `${KIND_LABEL[p.kind] ? translate(KIND_LABEL[p.kind]) : p.kind} · ${fmtDT(p.at)}${len}`;
 }
 
 function PunchCorrectionsPage() {
+  const t = useT("time");
   const qc = useQueryClient();
   const { user, company, primaryRole, loading } = useAuth();
   const isManager = primaryRole === "company_admin" || primaryRole === "super_admin";
@@ -192,30 +194,29 @@ function PunchCorrectionsPage() {
   const weekTotal = weekDays.reduce((n, d) => n + (d.detail?.workedMs ?? 0), 0);
   const rosterMap = useMemo(() => {
     const m = new Map<string, string>();
-    (rosterQ.data ?? []).forEach((r: any) => m.set(r.id, r.full_name || "Unnamed"));
+    (rosterQ.data ?? []).forEach((r: any) => m.set(r.id, r.full_name || t("Unnamed")));
     return m;
-  }, [rosterQ.data]);
+  }, [rosterQ.data, t]);
 
-  if (loading) return <div className="text-sm text-muted-foreground">Loading…</div>;
-  if (!company) return <div className="text-sm text-muted-foreground">Join a company first.</div>;
+  if (loading) return <div className="text-sm text-muted-foreground">{t("Loading…")}</div>;
+  if (!company) return <div className="text-sm text-muted-foreground">{t("Join a company first.")}</div>;
   if (!isManager)
-    return <div className="text-sm text-muted-foreground">Manager access required.</div>;
+    return <div className="text-sm text-muted-foreground">{t("Manager access required.")}</div>;
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-foreground">Punch corrections</h1>
+          <h1 className="text-2xl font-semibold text-foreground">{t("Punch corrections")}</h1>
           <p className="text-sm text-muted-foreground">
-            Override or correct employee time punches. Every change is logged with your name, the
-            time, and what the punch was before.
+            {t("Override or correct employee time punches. Every change is logged with your name, the time, and what the punch was before.")}
           </p>
         </div>
         <div className="flex items-center gap-2">
           <Button asChild variant="outline" size="sm">
             <Link to="/timecards">
               <Clock className="mr-2 h-4 w-4" />
-              Timecards
+              {t("Timecards")}
             </Link>
           </Button>
           <Button
@@ -224,7 +225,7 @@ function PunchCorrectionsPage() {
             onClick={() => setShowAudit((v) => !v)}
           >
             <History className="mr-2 h-4 w-4" />
-            Audit log
+            {t("Audit log")}
           </Button>
         </div>
       </div>
@@ -237,7 +238,7 @@ function PunchCorrectionsPage() {
         >
           {(rosterQ.data ?? []).map((m: any) => (
             <option key={m.id} value={m.id}>
-              {m.full_name || "Unnamed"}
+              {m.full_name || t("Unnamed")}
             </option>
           ))}
         </select>
@@ -250,7 +251,7 @@ function PunchCorrectionsPage() {
             size="sm"
             onClick={() => setAnchor(startOfWeek(new Date(), rules.week_start_day))}
           >
-            This week
+            {t("This week")}
           </Button>
           <Button variant="outline" size="icon" onClick={() => setAnchor((a) => addDays(a, 7))}>
             <ChevronRight className="h-4 w-4" />
@@ -260,10 +261,10 @@ function PunchCorrectionsPage() {
 
       <div className="flex items-baseline justify-between text-xs text-muted-foreground">
         <span>
-          Week of {fmtDate(rangeStart)} – {fmtDate(addDays(rangeEnd, -1))}
+          {t("Week of {start} – {end}", { start: fmtDate(rangeStart), end: fmtDate(addDays(rangeEnd, -1)) })}
         </span>
         <span>
-          Week total{" "}
+          {t("Week total")}{" "}
           <span className="font-semibold tabular-nums text-foreground">{fmtHours(weekTotal)}</span>
         </span>
       </div>
@@ -288,10 +289,10 @@ function PunchCorrectionsPage() {
                   detail.spans.map((s, i) => (
                     <div key={i} className="truncate">
                       <span className="text-foreground">
-                        {fmtTime(s.inAt)} – {s.outAt ? fmtTime(s.outAt) : "still in"}
+                        {fmtTime(s.inAt)} – {s.outAt ? fmtTime(s.outAt) : t("still in")}
                       </span>
                       {s.outAt && new Date(s.outAt).toDateString() !== date.toDateString() && (
-                        <span className="text-xs"> (next day)</span>
+                        <span className="text-xs"> {t("(next day)")}</span>
                       )}
                     </div>
                   ))
@@ -299,8 +300,8 @@ function PunchCorrectionsPage() {
                 {detail && (detail.unpaidMs > 0 || detail.paidMs > 0) && (
                   <div className="text-xs">
                     {[
-                      detail.unpaidMs > 0 && `${fmtHours(detail.unpaidMs)} unpaid break`,
-                      detail.paidMs > 0 && `${fmtHours(detail.paidMs)} paid break`,
+                      detail.unpaidMs > 0 && t("{time} unpaid break", { time: fmtHours(detail.unpaidMs) }),
+                      detail.paidMs > 0 && t("{time} paid break", { time: fmtHours(detail.paidMs) }),
                     ]
                       .filter(Boolean)
                       .join(" · ")}
@@ -315,10 +316,10 @@ function PunchCorrectionsPage() {
                 size="sm"
                 disabled={!targetUserId || punchesQ.isLoading}
                 onClick={() => setEditingDay(date)}
-                aria-label={`Edit ${fmtDate(date)}`}
+                aria-label={t("Edit {date}", { date: fmtDate(date) })}
               >
                 <Pencil className="h-3.5 w-3.5 sm:mr-1.5" />
-                <span className="hidden sm:inline">{punches.length ? "Edit" : "Add time"}</span>
+                <span className="hidden sm:inline">{punches.length ? t("Edit") : t("Add time")}</span>
               </Button>
             </div>
           );
@@ -328,10 +329,10 @@ function PunchCorrectionsPage() {
       {showAudit && (
         <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
           <div className="border-b border-border bg-muted/30 px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Recent audit entries (last 50)
+            {t("Recent audit entries (last 50)")}
           </div>
           {(auditQ.data ?? []).length === 0 && (
-            <div className="px-4 py-6 text-sm text-muted-foreground">No audit entries yet.</div>
+            <div className="px-4 py-6 text-sm text-muted-foreground">{t("No audit entries yet.")}</div>
           )}
           {(auditQ.data ?? []).map((a) => (
             <div key={a.id} className="border-b border-border px-4 py-3 text-sm last:border-0">
@@ -345,11 +346,11 @@ function PunchCorrectionsPage() {
                         : "bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-300"
                   }`}
                 >
-                  {a.action.toUpperCase()}
+                  {t(a.action.toUpperCase())}
                 </span>
                 <span className="text-xs text-muted-foreground">{fmtDT(a.created_at)}</span>
                 <span className="text-xs text-muted-foreground">
-                  by {rosterMap.get(a.actor_id) ?? a.actor_id.slice(0, 8)}
+                  {t("by {name}", { name: rosterMap.get(a.actor_id) ?? a.actor_id.slice(0, 8) })}
                 </span>
               </div>
               {/* A note is optional, so the before/after below is often the
@@ -357,19 +358,19 @@ function PunchCorrectionsPage() {
               <div
                 className={a.reason.trim() ? "mt-1 text-foreground" : "mt-1 text-muted-foreground"}
               >
-                {a.reason.trim() || "No note given"}
+                {a.reason.trim() || t("No note given")}
               </div>
               {(a.before || a.after) && (
                 <div className="mt-1 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                   {a.before && (
                     <div>
-                      <span className="font-medium">Before:</span>{" "}
+                      <span className="font-medium">{t("Before:")}</span>{" "}
                       {auditPunch(a.before)}
                     </div>
                   )}
                   {a.after && (
                     <div>
-                      <span className="font-medium">After:</span>{" "}
+                      <span className="font-medium">{t("After:")}</span>{" "}
                       {auditPunch(a.after)}
                     </div>
                   )}
@@ -386,7 +387,7 @@ function PunchCorrectionsPage() {
           onOpenChange={(next) => !next && setEditingDay(null)}
           day={editingDay}
           employeeId={targetUserId}
-          employeeName={rosterMap.get(targetUserId) ?? "Employee"}
+          employeeName={rosterMap.get(targetUserId) ?? t("Employee")}
           punches={
             weekDays.find((d) => d.date.toDateString() === editingDay.toDateString())?.punches ?? []
           }

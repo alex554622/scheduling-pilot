@@ -26,6 +26,7 @@ import {
   toDayString,
   type DayString,
 } from "@/lib/schedule-pattern";
+import { translate, useT } from "@/lib/i18n";
 
 /**
  * The posted duty roster: a month across the page, teams as banded sections,
@@ -80,6 +81,7 @@ interface SheetSettings {
 }
 
 function ScheduleSheetPage() {
+  const t = useT("timecards");
   const { company, primaryRole } = useAuth();
   const qc = useQueryClient();
   const isAdmin = primaryRole === "company_admin" || primaryRole === "super_admin";
@@ -120,7 +122,7 @@ function ScheduleSheetPage() {
   useEffect(() => {
     if (!settingsQ.data) return;
     setTitle(settings.sheet_title ?? company?.name ?? "");
-    setSubtitle(settings.sheet_subtitle ?? "PATROL SCHEDULE");
+    setSubtitle(settings.sheet_subtitle ?? translate("PATROL SCHEDULE"));
     setRevised(settings.sheet_revised ?? "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settingsQ.data]);
@@ -177,7 +179,7 @@ function ScheduleSheetPage() {
 
   const members = membersQ.data ?? [];
   const nameOf = (id: string | null) =>
-    id ? (members.find((m) => m.id === id)?.full_name ?? "Unknown") : "Open shift";
+    id ? (members.find((m) => m.id === id)?.full_name ?? t("Unknown")) : t("Open shift");
 
   /** One lookup for "does this person work this day on this team". */
   const byCell = useMemo(() => {
@@ -295,18 +297,20 @@ function ScheduleSheetPage() {
     onError: (e: Error) => setError(e.message),
   });
 
+  const monthLabel = `${t(MONTHS[month - 1])} ${year}`;
+
   async function downloadSheet() {
     setSavingPdf(true);
     try {
       const { downloadScheduleSheetPdf } = await import("@/lib/pdf");
       await downloadScheduleSheetPdf({
-        title: title || company?.name || "Schedule",
-        subtitle: `${MONTHS[month - 1]} ${year} ${subtitle}`.trim(),
+        title: title || company?.name || t("Schedule"),
+        subtitle: `${monthLabel} ${subtitle}`.trim(),
         revised,
-        monthLabel: `${MONTHS[month - 1]} ${year}`,
+        monthLabel,
         days: days.map((d) => ({
           day: Number(d.slice(-2)),
-          weekday: WEEKDAY[fromDayString(d).getDay()],
+          weekday: t(WEEKDAY[fromDayString(d).getDay()]),
         })),
         groups: groups.map((g) => ({
           name: g.name,
@@ -325,7 +329,7 @@ function ScheduleSheetPage() {
   if (!isAdmin) {
     return (
       <p className="text-sm text-muted-foreground">
-        Only a company admin can edit the schedule sheet.
+        {t("Only a company admin can edit the schedule sheet.")}
       </p>
     );
   }
@@ -340,10 +344,9 @@ function ScheduleSheetPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold text-foreground">Monthly schedule sheet</h1>
+          <h1 className="text-2xl font-semibold text-foreground">{t("Monthly schedule sheet")}</h1>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            The posted roster, laid out a month at a time. Click any square to put someone on or
-            take them off that day — it changes the real shift, not just this page.
+            {t("The posted roster, laid out a month at a time. Click any square to put someone on or take them off that day — it changes the real shift, not just this page.")}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -351,27 +354,27 @@ function ScheduleSheetPage() {
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <span className="min-w-36 text-center text-sm font-medium text-foreground">
-            {MONTHS[month - 1]} {year}
+            {monthLabel}
           </span>
           <Button variant="outline" size="sm" onClick={() => step(1)}>
             <ChevronRight className="h-4 w-4" />
           </Button>
           {!sel.active && (
-            <Button variant="outline" size="sm" onClick={sel.enable} title="Pick days to erase">
+            <Button variant="outline" size="sm" onClick={sel.enable} title={t("Pick days to erase")}>
               <CheckSquare className="mr-2 h-4 w-4" />
-              Select
+              {t("Select")}
             </Button>
           )}
           <Button asChild variant="outline" size="sm">
             <Link to="/schedule-templates">
               <CalendarRange className="mr-2 h-4 w-4" />
-              Templates
+              {t("Templates")}
             </Link>
           </Button>
           <ScheduleCopyPaste
             companyId={company!.id}
             rangeStart={rangeStart}
-            rangeLabel={`${MONTHS[month - 1]} ${year}`}
+            rangeLabel={monthLabel}
             scope="month"
             shifts={shiftsQ.data ?? []}
             members={members}
@@ -382,7 +385,7 @@ function ScheduleSheetPage() {
             ) : (
               <Download className="mr-2 h-4 w-4" />
             )}
-            Download PDF
+            {t("Download PDF")}
           </Button>
         </div>
       </div>
@@ -393,27 +396,27 @@ function ScheduleSheetPage() {
 
       <div className="grid gap-3 rounded-xl border border-border bg-card p-4 sm:grid-cols-3">
         <div className="space-y-1.5">
-          <Label htmlFor="sheet-title">Heading</Label>
+          <Label htmlFor="sheet-title">{t("Heading")}</Label>
           <Input
             id="sheet-title"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             onBlur={() => saveSettings.mutate({ sheet_title: title })}
-            placeholder={company?.name ?? "Department name"}
+            placeholder={company?.name ?? t("Department name")}
           />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="sheet-sub">Sub-heading</Label>
+          <Label htmlFor="sheet-sub">{t("Sub-heading")}</Label>
           <Input
             id="sheet-sub"
             value={subtitle}
             onChange={(e) => setSubtitle(e.target.value)}
             onBlur={() => saveSettings.mutate({ sheet_subtitle: subtitle })}
-            placeholder="PATROL SCHEDULE"
+            placeholder={t("PATROL SCHEDULE")}
           />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="sheet-rev">Revised</Label>
+          <Label htmlFor="sheet-rev">{t("Revised")}</Label>
           <Input
             id="sheet-rev"
             value={revised}
@@ -431,7 +434,7 @@ function ScheduleSheetPage() {
       <EraseSelectionBar
         selection={sel}
         shifts={shiftsQ.data ?? []}
-        scopeLabel={`${MONTHS[month - 1]} ${year}`}
+        scopeLabel={monthLabel}
       />
 
       <div className="overflow-x-auto rounded-xl border border-border bg-card">
@@ -439,7 +442,7 @@ function ScheduleSheetPage() {
           <thead>
             <tr>
               <th className="sticky left-0 z-10 border-b border-border bg-muted/40 px-2 py-2 text-left font-semibold text-foreground">
-                {MONTHS[month - 1].toUpperCase()} {year}
+                {t(MONTHS[month - 1]).toUpperCase()} {year}
               </th>
               {days.map((d) => (
                 <th
@@ -449,12 +452,12 @@ function ScheduleSheetPage() {
                   <button
                     type="button"
                     onClick={() => sel.toggleDay(d)}
-                    title="Click to pick this whole day"
+                    title={t("Click to pick this whole day")}
                     className="w-full px-1 py-2"
                   >
                     {Number(d.slice(-2))}
                     <div className="text-[10px] font-normal text-muted-foreground">
-                      {WEEKDAY[fromDayString(d).getDay()]}
+                      {t(WEEKDAY[fromDayString(d).getDay()])}
                     </div>
                   </button>
                 </th>
@@ -502,7 +505,11 @@ function ScheduleSheetPage() {
                 onRemovePerson={(employeeId) => {
                   if (
                     confirm(
-                      `Remove ${nameOf(employeeId === "open" ? null : employeeId)} from ${g.name} for ${MONTHS[month - 1]}?`,
+                      t("Remove {name} from {team} for {month}?", {
+                        name: nameOf(employeeId === "open" ? null : employeeId),
+                        team: g.name,
+                        month: t(MONTHS[month - 1]),
+                      }),
                     )
                   )
                     clearRow.mutate({ group: g.name, employeeId });
@@ -515,7 +522,7 @@ function ScheduleSheetPage() {
                   colSpan={days.length + 2}
                   className="px-3 py-6 text-center text-sm text-muted-foreground"
                 >
-                  No shifts this month yet. Add a team below, or build the month from a template.
+                  {t("No shifts this month yet. Add a team below, or build the month from a template.")}
                 </td>
               </tr>
             )}
@@ -525,12 +532,12 @@ function ScheduleSheetPage() {
 
       <div className="flex flex-wrap items-end gap-2">
         <div className="space-y-1.5">
-          <Label htmlFor="new-group">Add a team or unit</Label>
+          <Label htmlFor="new-group">{t("Add a team or unit")}</Label>
           <Input
             id="new-group"
             value={newGroup}
             onChange={(e) => setNewGroup(e.target.value)}
-            placeholder="e.g. TEAM #1"
+            placeholder={t("e.g. TEAM #1")}
             className="w-56"
           />
         </div>
@@ -543,10 +550,10 @@ function ScheduleSheetPage() {
             setNewGroup("");
           }}
         >
-          <Plus className="mr-2 h-4 w-4" /> Add team
+          <Plus className="mr-2 h-4 w-4" /> {t("Add team")}
         </Button>
         <p className="text-xs text-muted-foreground">
-          A team stays once someone on it has a day ticked.
+          {t("A team stays once someone on it has a day ticked.")}
         </p>
       </div>
     </div>
@@ -578,6 +585,7 @@ function GroupSection({
   onAddPerson: (employeeId: string) => void;
   onRemovePerson: (employeeId: string) => void;
 }) {
+  const t = useT("timecards");
   const [name, setName] = useState(group.name);
   const [start, setStart] = useState(group.start);
   const [end, setEnd] = useState(group.end);
@@ -628,7 +636,7 @@ function GroupSection({
                 type="button"
                 onClick={() => onRemovePerson(personId)}
                 className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                aria-label="Remove from this team"
+                aria-label={t("Remove from this team")}
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
@@ -667,15 +675,15 @@ function GroupSection({
             onChange={(e) => e.target.value && onAddPerson(e.target.value)}
             className="h-7 w-full rounded border border-input bg-background px-1 text-xs text-muted-foreground"
           >
-            <option value="">+ Add someone…</option>
+            <option value="">{t("+ Add someone…")}</option>
             {members
               .filter((m) => !group.rows.includes(m.id))
               .map((m) => (
                 <option key={m.id} value={m.id}>
-                  {m.full_name || "Unnamed"}
+                  {m.full_name || t("Unnamed")}
                 </option>
               ))}
-            {!group.rows.includes("open") && <option value="open">Open shift row</option>}
+            {!group.rows.includes("open") && <option value="open">{t("Open shift row")}</option>}
           </select>
         </td>
         <td colSpan={days.length + 1} className="border-b border-l border-border" />

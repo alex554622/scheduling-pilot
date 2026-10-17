@@ -6,6 +6,8 @@
  * any quote inside — is three lines.
  */
 
+import { translate, localeTag } from "@/lib/i18n";
+
 type Cell = string | number | boolean | null | undefined;
 
 function field(v: Cell): string {
@@ -47,13 +49,13 @@ export function slug(s: string): string {
 
 /** "just now", "12 min ago", "5 h ago", "3 d ago", then the date. */
 export function ago(iso: string | null | undefined, now = Date.now()): string {
-  if (!iso) return "never";
+  if (!iso) return translate("never");
   const mins = Math.round((now - new Date(iso).getTime()) / 60_000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins} min ago`;
+  if (mins < 1) return translate("just now");
+  if (mins < 60) return translate("{n} min ago", { n: mins });
   const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours} h ago`;
+  if (hours < 24) return translate("{n} h ago", { n: hours });
   const days = Math.round(hours / 24);
-  if (days < 14) return `${days} d ago`;
-  return new Date(iso).toLocaleDateString([], { dateStyle: "medium" });
+  if (days < 14) return translate("{n} d ago", { n: days });
+  return new Date(iso).toLocaleDateString(localeTag() ?? [], { dateStyle: "medium" });
 }

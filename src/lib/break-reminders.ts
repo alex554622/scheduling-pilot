@@ -8,6 +8,8 @@
  * silences the current alert without muting the next one.
  */
 
+import { translate } from "@/lib/i18n";
+
 export type ReminderKind = "break" | "lunch";
 
 export interface ReminderPunch {
@@ -113,7 +115,11 @@ export function breakAlertsFor(
       kind,
       stretchStart,
       workedMs,
-      message: `${label} — ${fmtDuration(workedMs)} since ${since ? "their last one" : "clocking in"}`,
+      message: translate("{label} — {duration} since {since}", {
+        label: translate(label),
+        duration: fmtDuration(workedMs),
+        since: since ? translate("their last one") : translate("clocking in"),
+      }),
     });
   };
 

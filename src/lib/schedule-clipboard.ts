@@ -10,6 +10,7 @@
  * between the schedule builder and the monthly sheet, and a custom event keeps
  * both screens showing the same clipboard in the same tab.
  */
+import { translate } from "@/lib/i18n";
 import { addDays, daysBetween, fromDayString, type DayString } from "@/lib/schedule-pattern";
 
 const KEY = "sp-schedule-clipboard";
@@ -161,9 +162,9 @@ export function subscribeClipboard(onChange: () => void): () => void {
 
 /** "3 shifts · week of Sep 7" — what the paste button should say it will do. */
 export function describeClipboard(clip: ScheduleClipboard | null): string {
-  if (!clip) return "Nothing copied yet";
+  if (!clip) return translate("Nothing copied yet");
   const n = clip.shifts.length;
-  return `${n} shift${n === 1 ? "" : "s"} · ${clip.label}`;
+  return `${n === 1 ? translate("1 shift") : translate("{n} shifts", { n })} · ${clip.label}`;
 }
 
 /** How many days a copied range covered, for a friendly warning on paste. */

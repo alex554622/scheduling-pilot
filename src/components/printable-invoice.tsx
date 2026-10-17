@@ -4,6 +4,8 @@
  * letter portrait in black and white.
  */
 
+import { useT, localeTag } from "@/lib/i18n";
+
 export interface InvoiceRecord {
   id: string;
   number: string;
@@ -19,11 +21,11 @@ export interface InvoiceRecord {
 
 function fmtDate(value: string | null | undefined): string {
   if (!value) return "—";
-  return new Date(value).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
+  return new Date(value).toLocaleDateString(localeTag(), { month: "long", day: "numeric", year: "numeric" });
 }
 
 function fmtAmount(cents: number): string {
-  return (cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (cents / 100).toLocaleString(localeTag(), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 export function PrintableInvoice({
@@ -39,6 +41,7 @@ export function PrintableInvoice({
   issuerName?: string;
   issuerLine?: string;
 }) {
+  const t = useT("admin");
   const paid = invoice.status === "paid";
 
   return (
@@ -49,11 +52,11 @@ export function PrintableInvoice({
           <p className="mt-0.5 text-[10px] text-neutral-600">{issuerLine}</p>
         </div>
         <div className="text-right">
-          <p className="text-[20px] font-bold uppercase tracking-wide">Invoice</p>
+          <p className="text-[20px] font-bold uppercase tracking-wide">{t("Invoice")}</p>
           <p className="font-mono text-[12px]">{invoice.number}</p>
           {paid && (
             <p className="mt-1 inline-block border border-black px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest">
-              Paid
+              {t("Paid")}
             </p>
           )}
         </div>
@@ -61,15 +64,15 @@ export function PrintableInvoice({
 
       <section className="mt-4 grid grid-cols-2 gap-8">
         <div>
-          <p className="text-[9px] uppercase tracking-wider text-neutral-500">Billed to</p>
+          <p className="text-[9px] uppercase tracking-wider text-neutral-500">{t("Billed to")}</p>
           <p className="mt-0.5 text-[13px] font-semibold">{companyName}</p>
           {billedTo && <p className="text-neutral-700">{billedTo}</p>}
         </div>
         <div className="text-right">
-          <Row label="Issued" value={fmtDate(invoice.issued_at)} />
-          {paid && <Row label="Paid" value={fmtDate(invoice.paid_at)} />}
+          <Row label={t("Issued")} value={fmtDate(invoice.issued_at)} />
+          {paid && <Row label={t("Paid")} value={fmtDate(invoice.paid_at)} />}
           <Row
-            label="Service period"
+            label={t("Service period")}
             value={`${fmtDate(invoice.period_start)} – ${fmtDate(invoice.period_end)}`}
           />
         </div>
@@ -79,17 +82,17 @@ export function PrintableInvoice({
         <thead>
           <tr className="bg-neutral-100">
             <th className="border-b border-black px-2 py-1.5 text-left text-[9px] font-semibold uppercase tracking-wider">
-              Description
+              {t("Description")}
             </th>
             <th className="w-40 border-b border-black px-2 py-1.5 text-right text-[9px] font-semibold uppercase tracking-wider">
-              Amount
+              {t("Amount")}
             </th>
           </tr>
         </thead>
         <tbody>
           <tr className="border-b border-neutral-300">
             <td className="px-2 py-2.5 align-top">
-              <p className="font-medium">{invoice.plan_name} subscription</p>
+              <p className="font-medium">{t("{plan} subscription", { plan: invoice.plan_name })}</p>
               <p className="text-neutral-600">
                 {fmtDate(invoice.period_start)} – {fmtDate(invoice.period_end)}
               </p>
@@ -100,7 +103,7 @@ export function PrintableInvoice({
         <tfoot>
           <tr className="border-t-2 border-black">
             <td className="px-2 py-2 text-right font-semibold uppercase tracking-wide">
-              {paid ? "Total paid" : "Amount due"}
+              {paid ? t("Total paid") : t("Amount due")}
             </td>
             <td className="px-2 py-2 text-right text-[14px] font-bold tabular-nums">
               {fmtAmount(invoice.amount_cents)}
@@ -111,7 +114,7 @@ export function PrintableInvoice({
 
       {invoice.note && (
         <section className="mt-5" data-print-keep>
-          <p className="text-[9px] uppercase tracking-wider text-neutral-500">Notes</p>
+          <p className="text-[9px] uppercase tracking-wider text-neutral-500">{t("Notes")}</p>
           <p className="mt-0.5 whitespace-pre-wrap">{invoice.note}</p>
         </section>
       )}
@@ -119,11 +122,11 @@ export function PrintableInvoice({
       <footer className="mt-10 border-t border-neutral-300 pt-2 text-[9px] text-neutral-500">
         <p>
           {paid
-            ? "This invoice has been paid in full. No further action is required."
-            : "Payment is due on receipt. Your next billing date is the end of the service period shown above."}
+            ? t("This invoice has been paid in full. No further action is required.")
+            : t("Payment is due on receipt. Your next billing date is the end of the service period shown above.")}
         </p>
         <p className="mt-1">
-          {issuerName} · invoice {invoice.number} · generated {new Date().toLocaleString()}
+          {t("{issuer} · invoice {number} · generated {date}", { issuer: issuerName, number: invoice.number, date: new Date().toLocaleString(localeTag()) })}
         </p>
       </footer>
     </div>

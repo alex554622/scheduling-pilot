@@ -12,6 +12,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
 import { CalendarOff, Plus, Loader2, Check, X, Clock } from "lucide-react";
+import { localeTag, useT } from "@/lib/i18n";
 
 export const Route = createFileRoute("/_authenticated/time-off")({
   component: TimeOffPage,
@@ -32,7 +33,7 @@ interface RequestRow {
 }
 
 function fmtDate(s: string) {
-  return new Date(s + "T00:00:00").toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+  return new Date(s + "T00:00:00").toLocaleDateString(localeTag(), { month: "short", day: "numeric", year: "numeric" });
 }
 /** A timestamp's calendar date in this browser's zone, as YYYY-MM-DD. */
 function localDate(iso: string) {
@@ -41,14 +42,19 @@ function localDate(iso: string) {
 }
 function fmtShift(a: string, b: string) {
   const s = new Date(a), e = new Date(b);
-  const t = (d: Date) => d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  return `${s.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })} ${t(s)}–${t(e)}`;
+  const t = (d: Date) => d.toLocaleTimeString(localeTag(), { hour: "numeric", minute: "2-digit" });
+  return `${s.toLocaleDateString(localeTag(), { weekday: "short", month: "short", day: "numeric" })} ${t(s)}–${t(e)}`;
 }
 function days(a: string, b: string) {
   return Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000) + 1;
 }
 
+/** Stored kinds and statuses stay English; these are the words shown for them. */
+const KIND_WORD: Record<string, string> = { vacation: "Vacation", sick: "Sick", personal: "Personal", other: "Other" };
+const STATUS_WORD: Record<string, string> = { pending: "Pending", approved: "Approved", denied: "Denied", cancelled: "Cancelled" };
+
 function TimeOffPage() {
+  const t = useT("time");
   const { user, profile, primaryRole, loading } = useAuth();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -84,9 +90,9 @@ function TimeOffPage() {
 
   const nameOf = useMemo(() => {
     const m = new Map<string, string>();
-    (peopleQ.data ?? []).forEach((p) => m.set(p.id, p.full_name || "Unnamed"));
+    (peopleQ.data ?? []).forEach((p) => m.set(p.id, p.full_name || t("Unnamed")));
     return m;
-  }, [peopleQ.data]);
+  }, [peopleQ.data, t]);
 
   // The shifts each pending request would take someone off, so an admin sees
   // the gap an approval opens before they approve it rather than after.
@@ -136,7 +142,11 @@ function TimeOffPage() {
     onMutate: () => { setActionError(null); setNotice(null); },
     onSuccess: ({ approve, opened }) => {
       if (approve && opened > 0) {
-        setNotice(`Approved. ${opened} shift${opened === 1 ? " is" : "s are"} now open on the schedule for someone to pick up.`);
+        setNotice(
+          opened === 1
+            ? t("Approved. 1 shift is now open on the schedule for someone to pick up.")
+            : t("Approved. {n} shifts are now open on the schedule for someone to pick up.", { n: opened }),
+        );
       }
       refresh();
     },
@@ -155,8 +165,8 @@ function TimeOffPage() {
 
   const busy = decideMut.isPending || cancelMut.isPending;
 
-  if (loading) return <div className="text-sm text-muted-foreground">Loading…</div>;
-  if (!companyId) return <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">Join a company to use time off.</div>;
+  if (loading) return <div className="text-sm text-muted-foreground">{t("Loading…")}</div>;
+  if (!companyId) return <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">{t("Join a company to use time off.")}</div>;
 
   const all = reqQ.data ?? [];
   const mine = all.filter((r) => r.employee_id === user?.id);
@@ -167,18 +177,18 @@ function TimeOffPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-semibold text-foreground">Time off</h2>
+          <h2 className="text-2xl font-semibold text-foreground">{t("Time off")}</h2>
           <p className="text-sm text-muted-foreground">
-            {canManage ? `Review your team's requests. ${pending.length} pending.` : "Submit and track your time-off requests."}
+            {canManage ? t("Review your team's requests. {n} pending.", { n: pending.length }) : t("Submit and track your time-off requests.")}
           </p>
         </div>
-        <Button onClick={() => setOpen(true)}><Plus className="h-4 w-4" /> New request</Button>
+        <Button onClick={() => setOpen(true)}><Plus className="h-4 w-4" /> {t("New request")}</Button>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <Stat label="Pending" value={pending.length} tone="warning" />
-        <Stat label="Approved" value={all.filter((r) => r.status === "approved").length} tone="success" />
-        <Stat label="Denied" value={all.filter((r) => r.status === "denied").length} tone="muted" />
+        <Stat label={t("Pending")} value={pending.length} tone="warning" />
+        <Stat label={t("Approved")} value={all.filter((r) => r.status === "approved").length} tone="success" />
+        <Stat label={t("Denied")} value={all.filter((r) => r.status === "denied").length} tone="muted" />
       </div>
 
       <div className="rounded-xl border border-border bg-card shadow-[var(--shadow-card)]">
@@ -189,12 +199,12 @@ function TimeOffPage() {
           <p className="border-b border-border bg-success-soft px-5 py-3 text-sm text-success">{notice}</p>
         )}
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
-          <h3 className="font-semibold text-foreground">{canManage ? "All requests" : "My requests"}</h3>
+          <h3 className="font-semibold text-foreground">{canManage ? t("All requests") : t("My requests")}</h3>
         </div>
         {reqQ.isLoading ? (
-          <p className="px-5 py-8 text-center text-sm text-muted-foreground">Loading…</p>
+          <p className="px-5 py-8 text-center text-sm text-muted-foreground">{t("Loading…")}</p>
         ) : visible.length === 0 ? (
-          <p className="px-5 py-8 text-center text-sm text-muted-foreground">No requests yet.</p>
+          <p className="px-5 py-8 text-center text-sm text-muted-foreground">{t("No requests yet.")}</p>
         ) : (
           <ul className="divide-y divide-border">
             {visible.map((r) => (
@@ -204,17 +214,23 @@ function TimeOffPage() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-foreground">
-                    {nameOf.get(r.employee_id) ?? "Member"} · <span className="capitalize text-muted-foreground">{r.kind}</span>
+                    {nameOf.get(r.employee_id) ?? t("Member")} · <span className="capitalize text-muted-foreground">{t(KIND_WORD[r.kind] ?? r.kind)}</span>
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {fmtDate(r.start_date)} – {fmtDate(r.end_date)} · {days(r.start_date, r.end_date)} day{days(r.start_date, r.end_date) === 1 ? "" : "s"}
+                    {fmtDate(r.start_date)} – {fmtDate(r.end_date)} · {days(r.start_date, r.end_date) === 1 ? t("1 day") : t("{n} days", { n: days(r.start_date, r.end_date) })}
                   </p>
                   {r.note && <p className="mt-1 text-xs text-muted-foreground italic">"{r.note}"</p>}
                   {canManage && r.status === "pending" && shiftsCovered(r).length > 0 && (
                     <p className="mt-1 text-xs text-warning-foreground">
-                      Scheduled for {shiftsCovered(r).length} shift{shiftsCovered(r).length === 1 ? "" : "s"} in this range
-                      ({shiftsCovered(r).map((s) => fmtShift(s.starts_at, s.ends_at)).join(", ")}). Approving
-                      makes {shiftsCovered(r).length === 1 ? "it an open shift" : "them open shifts"}.
+                      {t(
+                        shiftsCovered(r).length === 1
+                          ? "Scheduled for 1 shift in this range ({list}). Approving makes it an open shift."
+                          : "Scheduled for {n} shifts in this range ({list}). Approving makes them open shifts.",
+                        {
+                          n: shiftsCovered(r).length,
+                          list: shiftsCovered(r).map((s) => fmtShift(s.starts_at, s.ends_at)).join(", "),
+                        },
+                      )}
                     </p>
                   )}
                 </div>
@@ -222,15 +238,15 @@ function TimeOffPage() {
                 {canManage && r.status === "pending" && (
                   <div className="flex gap-1">
                     <Button size="sm" variant="outline" onClick={() => decideMut.mutate({ id: r.id, approve: true })} disabled={busy}>
-                      <Check className="h-4 w-4" /> Approve
+                      <Check className="h-4 w-4" /> {t("Approve")}
                     </Button>
                     <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => decideMut.mutate({ id: r.id, approve: false })} disabled={busy}>
-                      <X className="h-4 w-4" /> Deny
+                      <X className="h-4 w-4" /> {t("Deny")}
                     </Button>
                   </div>
                 )}
                 {r.employee_id === user?.id && r.status === "pending" && (
-                  <Button size="sm" variant="ghost" onClick={() => cancelMut.mutate(r.id)} disabled={busy}>Cancel</Button>
+                  <Button size="sm" variant="ghost" onClick={() => cancelMut.mutate(r.id)} disabled={busy}>{t("Cancel")}</Button>
                 )}
               </li>
             ))}
@@ -263,13 +279,14 @@ function Stat({ label, value, tone }: { label: string; value: number; tone: "suc
 }
 
 function StatusBadge({ status }: { status: string }) {
+  const t = useT("time");
   const styles: Record<string, string> = {
     pending: "bg-warning/20 text-warning-foreground",
     approved: "bg-success-soft text-success",
     denied: "bg-destructive/15 text-destructive",
     cancelled: "bg-muted text-muted-foreground",
   };
-  return <span className={`rounded-full px-2.5 py-1 text-xs font-medium capitalize ${styles[status] ?? "bg-muted text-muted-foreground"}`}>{status}</span>;
+  return <span className={`rounded-full px-2.5 py-1 text-xs font-medium capitalize ${styles[status] ?? "bg-muted text-muted-foreground"}`}>{t(STATUS_WORD[status] ?? status)}</span>;
 }
 
 /**
@@ -288,6 +305,7 @@ function toRuns(picked: Date[]): { start: string; end: string }[] {
 }
 
 function NewRequestDialog({ open, onClose, userId, companyId, onSaved }: { open: boolean; onClose: () => void; userId: string; companyId: string; onSaved: () => void }) {
+  const t = useT("time");
   const [mode, setMode] = useState<"days" | "range">("days");
   const [picked, setPicked] = useState<Date[]>([]);
   const [range, setRange] = useState<DateRange | undefined>();
@@ -309,7 +327,7 @@ function NewRequestDialog({ open, onClose, userId, companyId, onSaved }: { open:
 
   const submit = useMutation({
     mutationFn: async () => {
-      if (runs.length === 0) throw new Error("Pick at least one day");
+      if (runs.length === 0) throw new Error(t("Pick at least one day"));
       const { error } = await supabase.from("time_off_requests").insert(
         runs.map((r) => ({
           employee_id: userId,
@@ -333,8 +351,8 @@ function NewRequestDialog({ open, onClose, userId, companyId, onSaved }: { open:
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Request time off</DialogTitle>
-          <DialogDescription>Pick the days you need off. A company admin will review and respond.</DialogDescription>
+          <DialogTitle>{t("Request time off")}</DialogTitle>
+          <DialogDescription>{t("Pick the days you need off. A company admin will review and respond.")}</DialogDescription>
         </DialogHeader>
         <div className="max-h-[70vh] space-y-4 overflow-y-auto py-2">
           <div className="space-y-2">
@@ -346,14 +364,14 @@ function NewRequestDialog({ open, onClose, userId, companyId, onSaved }: { open:
                   onClick={() => setMode(m)}
                   className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${mode === m ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
                 >
-                  {label}
+                  {t(label)}
                 </button>
               ))}
             </div>
             <p className="text-xs text-muted-foreground">
               {mode === "days"
-                ? "Tap each day you need off — they don't have to be next to each other."
-                : "Tap the first day, then the last day."}
+                ? t("Tap each day you need off — they don't have to be next to each other.")
+                : t("Tap the first day, then the last day.")}
             </p>
             <div className="flex justify-center rounded-lg border border-border">
               {mode === "days" ? (
@@ -365,7 +383,7 @@ function NewRequestDialog({ open, onClose, userId, companyId, onSaved }: { open:
             {runs.length > 0 && (
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="text-xs font-medium text-foreground">
-                  {dayCount} day{dayCount === 1 ? "" : "s"}:
+                  {dayCount === 1 ? t("1 day:") : t("{n} days:", { n: dayCount })}
                 </span>
                 {runs.map((r) => (
                   <span key={r.start} className="rounded-full bg-primary-soft px-2 py-0.5 text-xs text-primary">
@@ -376,24 +394,24 @@ function NewRequestDialog({ open, onClose, userId, companyId, onSaved }: { open:
             )}
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="k">Type</Label>
+            <Label htmlFor="k">{t("Type")}</Label>
             <select id="k" value={kind} onChange={(e) => setKind(e.target.value as Kind)} className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm">
-              <option value="vacation">Vacation</option>
-              <option value="sick">Sick</option>
-              <option value="personal">Personal</option>
-              <option value="other">Other</option>
+              <option value="vacation">{t("Vacation")}</option>
+              <option value="sick">{t("Sick")}</option>
+              <option value="personal">{t("Personal")}</option>
+              <option value="other">{t("Other")}</option>
             </select>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="n">Note (optional)</Label>
-            <Textarea id="n" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Anything your manager should know?" rows={3} />
+            <Label htmlFor="n">{t("Note (optional)")}</Label>
+            <Textarea id="n" value={note} onChange={(e) => setNote(e.target.value)} placeholder={t("Anything your manager should know?")} rows={3} />
           </div>
           {err && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{err}</p>}
         </div>
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+          <Button type="button" variant="outline" onClick={onClose}>{t("Cancel")}</Button>
           <Button type="button" onClick={() => submit.mutate()} disabled={submit.isPending}>
-            {submit.isPending && <Loader2 className="h-4 w-4 animate-spin" />} Submit
+            {submit.isPending && <Loader2 className="h-4 w-4 animate-spin" />} {t("Submit")}
           </Button>
         </DialogFooter>
       </DialogContent>

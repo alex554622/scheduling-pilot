@@ -11,6 +11,8 @@
  * and cannot see a class name that was assembled at runtime.
  */
 
+import { translate } from "@/lib/i18n";
+
 export interface ShiftColor {
   key: string;
   label: string;
@@ -91,5 +93,5 @@ export function shiftColorHex(key: string | null | undefined): string {
 }
 
 export function shiftColorLabel(key: string | null | undefined): string {
-  return find(key).label;
+  return translate(find(key).label);
 }

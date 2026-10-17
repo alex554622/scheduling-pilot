@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth, ROLE_LABEL, type AppRole } from "@/lib/auth";
+import { useT, translate, localeTag } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -94,10 +95,11 @@ const needsCompany = (a: AccountRow) =>
   !a.company_id && !a.pending_company_id && !isPlatformAdmin(a) && !isRegisteringBusiness(a);
 
 function fmtDate(s: string | null): string {
-  return s ? new Date(s).toLocaleDateString([], { dateStyle: "medium" }) : "never";
+  return s ? new Date(s).toLocaleDateString(localeTag() ?? [], { dateStyle: "medium" }) : translate("never");
 }
 
 function AccountsPage() {
+  const t = useT("admin");
   const { primaryRole, loading, user } = useAuth();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -308,32 +310,31 @@ function AccountsPage() {
       }
     }
     const out: { key: string; label: string; rows: AccountRow[] }[] = [];
-    if (waiting.length) out.push({ key: "none", label: "Needs a company", rows: waiting });
+    if (waiting.length) out.push({ key: "none", label: t("Needs a company"), rows: waiting });
     if (registering.length)
-      out.push({ key: "registering", label: "Registering a business", rows: registering });
+      out.push({ key: "registering", label: t("Registering a business"), rows: registering });
     for (const [id, list] of byCompany) {
       out.push({
         key: id,
-        label: list[0].company_name ?? "Unnamed company",
+        label: list[0].company_name ?? t("Unnamed company"),
         rows: list,
       });
     }
     // Platform admins and anyone mid join request: no company, nothing wrong.
-    if (elsewhere.length) out.push({ key: "other", label: "No company needed", rows: elsewhere });
+    if (elsewhere.length) out.push({ key: "other", label: t("No company needed"), rows: elsewhere });
     return out;
   })();
 
-  if (loading || !isSuper) return <div className="text-sm text-muted-foreground">Loading…</div>;
+  if (loading || !isSuper) return <div className="text-sm text-muted-foreground">{t("Loading…")}</div>;
 
   const busy = setCompany.isPending || setRole.isPending || approve.isPending;
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-foreground">Accounts</h1>
+        <h1 className="text-2xl font-semibold text-foreground">{t("Accounts")}</h1>
         <p className="text-sm text-muted-foreground">
-          Every sign-in on the platform, including the ones that never reached a company. Place
-          them, give them a role, or remove them.
+          {t("Every sign-in on the platform, including the ones that never reached a company. Place them, give them a role, or remove them.")}
         </p>
       </div>
 
@@ -346,7 +347,7 @@ function AccountsPage() {
           <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             className="h-9 pl-8"
-            placeholder="Search name, email or company…"
+            placeholder={t("Search name, email or company…")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -369,7 +370,7 @@ function AccountsPage() {
                 : "bg-secondary text-muted-foreground hover:text-foreground"
             }`}
           >
-            {label} ({counts[key]})
+            {t(label)} ({counts[key]})
           </button>
         ))}
       </div>
@@ -378,23 +379,24 @@ function AccountsPage() {
         <div className="flex items-center gap-2 border-b border-border px-5 py-4">
           <Users className="h-4 w-4 text-muted-foreground" />
           <h2 className="text-sm font-semibold text-foreground">
-            {rows.length} of {accounts.length} account{accounts.length === 1 ? "" : "s"}
+            {accounts.length === 1
+              ? t("{n} of 1 account", { n: rows.length })
+              : t("{n} of {total} accounts", { n: rows.length, total: accounts.length })}
           </h2>
         </div>
 
         {accountsQ.isLoading ? (
-          <p className="py-10 text-center text-sm text-muted-foreground">Loading…</p>
+          <p className="py-10 text-center text-sm text-muted-foreground">{t("Loading…")}</p>
         ) : accountsQ.error ? (
           <p className="px-5 py-10 text-center text-sm text-destructive">
             {(accountsQ.error as Error).message}
             <br />
             <span className="text-xs text-muted-foreground">
-              If this says the function is missing, the account-administration migration hasn't been
-              applied to this database yet.
+              {t("If this says the function is missing, the account-administration migration hasn't been applied to this database yet.")}
             </span>
           </p>
         ) : rows.length === 0 ? (
-          <p className="py-10 text-center text-sm text-muted-foreground">No accounts match.</p>
+          <p className="py-10 text-center text-sm text-muted-foreground">{t("No accounts match.")}</p>
         ) : (
           <div className="divide-y divide-border">
             {groups.map((g) => {
@@ -444,30 +446,30 @@ function AccountsPage() {
                             <div className="flex flex-wrap items-start justify-between gap-3">
                               <div className="min-w-0">
                                 <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-foreground">
-                                  {a.full_name || "Unnamed"}
+                                  {a.full_name || t("Unnamed")}
                                   {isSelf && (
                                     <span className="rounded-full bg-primary-soft px-2 py-0.5 text-[11px] font-normal text-primary">
-                                      you
+                                      {t("you")}
                                     </span>
                                   )}
                                   {!a.email_confirmed && (
                                     <span className="rounded-full bg-warning/20 px-2 py-0.5 text-[11px] font-normal text-warning-foreground">
-                                      email unconfirmed
+                                      {t("email unconfirmed")}
                                     </span>
                                   )}
                                   {!a.has_profile && (
                                     <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-normal text-destructive">
-                                      no profile
+                                      {t("no profile")}
                                     </span>
                                   )}
                                   {!a.is_active && (
                                     <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-normal text-muted-foreground">
-                                      inactive
+                                      {t("inactive")}
                                     </span>
                                   )}
                                   {registering && (
                                     <span className="rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-normal text-success">
-                                      approved · naming their business
+                                      {t("approved · naming their business")}
                                     </span>
                                   )}
                                 </p>
@@ -480,22 +482,19 @@ function AccountsPage() {
                                       {a.email}
                                     </a>
                                   ) : (
-                                    "no email"
+                                    t("no email")
                                   )}
-                                  {" · signed up "}
-                                  {fmtDate(a.created_at)}
-                                  {" · last sign-in "}
-                                  {fmtDate(a.last_sign_in_at)}
+                                  {t(" · signed up {date}", { date: fmtDate(a.created_at) })}
+                                  {t(" · last sign-in {date}", { date: fmtDate(a.last_sign_in_at) })}
                                 </p>
                                 {a.pending_company_name && (
                                   <p className="mt-0.5 text-xs text-warning-foreground">
-                                    Asking to join {a.pending_company_name}
+                                    {t("Asking to join {name}", { name: a.pending_company_name })}
                                   </p>
                                 )}
                                 {registering && (
                                   <p className="mt-0.5 text-xs text-muted-foreground">
-                                    Approved as an admin. Waiting for them to sign in and name their
-                                    business — it comes back here for approval once they do.
+                                    {t("Approved as an admin. Waiting for them to sign in and name their business — it comes back here for approval once they do.")}
                                   </p>
                                 )}
                               </div>
@@ -512,7 +511,7 @@ function AccountsPage() {
                                     onClick={() => approve.mutate(a.user_id)}
                                   >
                                     <UserCheck className="mr-2 h-3.5 w-3.5" />
-                                    Approve
+                                    {t("Approve")}
                                   </Button>
                                 ) : (
                                   !a.company_id &&
@@ -527,12 +526,12 @@ function AccountsPage() {
                                       }}
                                       title={
                                         companies.length === 0
-                                          ? "There are no companies to approve into"
+                                          ? t("There are no companies to approve into")
                                           : ""
                                       }
                                     >
                                       <UserCheck className="mr-2 h-3.5 w-3.5" />
-                                      Approve
+                                      {t("Approve")}
                                     </Button>
                                   )
                                 )}
@@ -547,7 +546,7 @@ function AccountsPage() {
                                   }}
                                   title={
                                     isSelf
-                                      ? "You cannot delete the account you are signed in with"
+                                      ? t("You cannot delete the account you are signed in with")
                                       : ""
                                   }
                                 >
@@ -567,13 +566,13 @@ function AccountsPage() {
                               ) : (
                                 <ChevronRight className="h-3.5 w-3.5" />
                               )}
-                              {expanded ? "Hide" : "Company and role"}
+                              {expanded ? t("Hide") : t("Company and role")}
                             </button>
 
                             {expanded && (
                               <div className="grid gap-3 sm:grid-cols-2">
                                 <div className="space-y-1">
-                                  <Label className="text-xs">Company</Label>
+                                  <Label className="text-xs">{t("Company")}</Label>
                                   <select
                                     className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
                                     value={a.company_id ?? ""}
@@ -585,18 +584,18 @@ function AccountsPage() {
                                       })
                                     }
                                   >
-                                    <option value="">— no company —</option>
+                                    <option value="">{t("— no company —")}</option>
                                     {companies.map((c) => (
                                       <option key={c.id} value={c.id}>
                                         {c.name}
-                                        {c.status !== "active" ? ` (${c.status})` : ""}
+                                        {c.status !== "active" ? ` (${t(c.status)})` : ""}
                                       </option>
                                     ))}
                                   </select>
                                 </div>
 
                                 <div className="space-y-1">
-                                  <Label className="text-xs">Role</Label>
+                                  <Label className="text-xs">{t("Role")}</Label>
                                   <select
                                     className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
                                     value={role}
@@ -611,7 +610,7 @@ function AccountsPage() {
                                   >
                                     {ASSIGNABLE.map((r) => (
                                       <option key={r.value} value={r.value}>
-                                        {r.label}
+                                        {t(r.label)}
                                       </option>
                                     ))}
                                   </select>
@@ -619,20 +618,17 @@ function AccountsPage() {
                                       rejection from the database after the click. */}
                                   {!a.company_id && !platformAdmin && !registering && (
                                     <p className="text-[11px] text-muted-foreground">
-                                      Put them in a company first — only Platform Admin works
-                                      without one.
+                                      {t("Put them in a company first — only Platform Admin works without one.")}
                                     </p>
                                   )}
                                   {registering && (
                                     <p className="text-[11px] text-muted-foreground">
-                                      Theirs does not exist yet. Choosing a company here puts them
-                                      in that one instead, and they will not be asked to register.
+                                      {t("Theirs does not exist yet. Choosing a company here puts them in that one instead, and they will not be asked to register.")}
                                     </p>
                                   )}
                                   {platformAdmin && (
                                     <p className="text-[11px] text-muted-foreground">
-                                      Platform admins run the whole platform and belong to no
-                                      company.
+                                      {t("Platform admins run the whole platform and belong to no company.")}
                                     </p>
                                   )}
                                 </div>
@@ -642,8 +638,7 @@ function AccountsPage() {
                             {expanded && a.roles.length > 1 && (
                               <p className="text-[11px] text-muted-foreground">
                                 <ShieldCheck className="mr-1 inline h-3 w-3" />
-                                Also holds:{" "}
-                                {a.roles.map((r) => ROLE_LABEL[r as AppRole] ?? r).join(", ")}
+                                {t("Also holds: {roles}", { roles: a.roles.map((r) => (ROLE_LABEL[r as AppRole] ? t(ROLE_LABEL[r as AppRole]) : r)).join(", ") })}
                               </p>
                             )}
                           </li>
@@ -694,6 +689,7 @@ function DeleteAccountDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const t = useT("admin");
   const [typed, setTyped] = useState("");
   useEffect(() => setTyped(""), [account?.user_id]);
   const target = account?.email ?? account?.full_name ?? "";
@@ -705,28 +701,26 @@ function DeleteAccountDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-destructive">
             <AlertTriangle className="h-5 w-5" />
-            Delete this account
+            {t("Delete this account")}
           </DialogTitle>
           <DialogDescription asChild>
             <div className="space-y-2 text-sm text-muted-foreground">
               <p>
                 <span className="font-medium text-foreground">
-                  {account?.full_name || "Unnamed"}
+                  {account?.full_name || t("Unnamed")}
                 </span>{" "}
-                ({target}) will be removed from the platform and will not be able to sign in again.
+                {t("({target}) will be removed from the platform and will not be able to sign in again.", { target })}
               </p>
               <p>
-                Everything scoped to them goes too: shifts, time punches, time off, shift trades and
-                availability. Timecards for the period they worked will no longer show them. Audit
-                log entries stay, without a name attached.
+                {t("Everything scoped to them goes too: shifts, time punches, time off, shift trades and availability. Timecards for the period they worked will no longer show them. Audit log entries stay, without a name attached.")}
               </p>
-              <p className="font-medium text-foreground">This cannot be undone.</p>
+              <p className="font-medium text-foreground">{t("This cannot be undone.")}</p>
             </div>
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-1.5">
           <Label htmlFor="confirm-account">
-            Type <span className="font-mono text-foreground">{target}</span> to confirm
+            {t("Type")} <span className="font-mono text-foreground">{target}</span> {t("to confirm")}
           </Label>
           <Input
             id="confirm-account"
@@ -737,7 +731,7 @@ function DeleteAccountDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onCancel} disabled={pending}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button
             variant="outline"
@@ -750,7 +744,7 @@ function DeleteAccountDialog({
             ) : (
               <Check className="mr-2 h-4 w-4" />
             )}
-            Delete permanently
+            {t("Delete permanently")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -781,6 +775,7 @@ function ApproveAccountDialog({
   onCancel: () => void;
   onConfirm: (companyId: string | null, role: AppRole | null) => void;
 }) {
+  const t = useT("admin");
   const [companyId, setCompanyId] = useState("");
   const [role, setRole] = useState<AppRole | "">("employee");
   // A fresh decision each time this opens, rather than the last one left over.
@@ -800,28 +795,24 @@ function ApproveAccountDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <UserCheck className="h-5 w-5 text-primary" />
-            Approve this account
+            {t("Approve this account")}
           </DialogTitle>
           <DialogDescription asChild>
             <div className="space-y-2 text-sm text-muted-foreground">
               <p>
                 <span className="font-medium text-foreground">
-                  {account?.full_name || "Unnamed"}
-                </span>
-                {account?.email ? ` (${account.email})` : ""} belongs to no company. Approving puts
-                them in one and gives them their role there.
+                  {account?.full_name || t("Unnamed")}
+                </span>{" "}
+                {t("{who} belongs to no company. Approving puts them in one and gives them their role there.", { who: account?.email ? `(${account.email})` : "" })}
               </p>
               {ownBusiness && (
                 <p className="text-foreground">
-                  They will be asked to name their business the next time they sign in, and nothing
-                  else opens until they have. The company they create still comes back here for
-                  approval.
+                  {t("They will be asked to name their business the next time they sign in, and nothing else opens until they have. The company they create still comes back here for approval.")}
                 </p>
               )}
               {account && !account.email_confirmed && (
                 <p className="text-warning-foreground">
-                  Their email address is still unconfirmed — they will not be able to sign in until
-                  they confirm it, approved or not.
+                  {t("Their email address is still unconfirmed — they will not be able to sign in until they confirm it, approved or not.")}
                 </p>
               )}
             </div>
@@ -830,32 +821,31 @@ function ApproveAccountDialog({
 
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="approve-company">Company</Label>
+            <Label htmlFor="approve-company">{t("Company")}</Label>
             <select
               id="approve-company"
               className="h-10 w-full rounded-md border border-input bg-background px-2 text-sm"
               value={companyId}
               onChange={(e) => setCompanyId(e.target.value)}
             >
-              <option value="">— choose a company —</option>
-              <option value={OWN_BUSINESS}>— none yet, they register their own business —</option>
+              <option value="">{t("— choose a company —")}</option>
+              <option value={OWN_BUSINESS}>{t("— none yet, they register their own business —")}</option>
               {companies.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
-                  {c.status !== "active" ? ` (${c.status})` : ""}
+                  {c.status !== "active" ? ` (${t(c.status)})` : ""}
                 </option>
               ))}
             </select>
             {companyId === OWN_BUSINESS && role !== "company_admin" && (
               <p className="text-[11px] text-warning-foreground">
-                Only a Company Admin can be approved without a company — an employee with no company
-                has nowhere to work.
+                {t("Only a Company Admin can be approved without a company — an employee with no company has nowhere to work.")}
               </p>
             )}
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="approve-role">Role</Label>
+            <Label htmlFor="approve-role">{t("Role")}</Label>
             <select
               id="approve-role"
               className="h-10 w-full rounded-md border border-input bg-background px-2 text-sm"
@@ -864,20 +854,19 @@ function ApproveAccountDialog({
             >
               {ASSIGNABLE.filter((r) => r.value !== "super_admin").map((r) => (
                 <option key={r.value} value={r.value}>
-                  {r.label}
+                  {t(r.label)}
                 </option>
               ))}
             </select>
             <p className="text-[11px] text-muted-foreground">
-              Platform Admin is not granted inside a company — set that from the row's Role list
-              instead.
+              {t("Platform Admin is not granted inside a company — set that from the row's Role list instead.")}
             </p>
           </div>
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={onCancel} disabled={pending}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button
             disabled={!canApprove || pending}
@@ -893,7 +882,7 @@ function ApproveAccountDialog({
             ) : (
               <UserCheck className="mr-2 h-4 w-4" />
             )}
-            Approve
+            {t("Approve")}
           </Button>
         </DialogFooter>
       </DialogContent>

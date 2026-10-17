@@ -20,6 +20,7 @@ import {
   type ScheduleClipboard,
   type SourceShift,
 } from "@/lib/schedule-clipboard";
+import { useT, useLocaleTag, translate } from "@/lib/i18n";
 
 /**
  * Last week, laid down again on this one — the job most weeks start with.
@@ -54,6 +55,9 @@ export function CopyLastWeekButton({
   weekStart: Date;
   disabled?: boolean;
 }) {
+  const t = useT("schedule");
+  const tag = useLocaleTag();
+  const nShifts = (n: number) => (n === 1 ? t("1 shift") : t("{n} shifts", { n }));
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   // Only asked when this week already has shifts; see the note above.
@@ -85,7 +89,7 @@ export function CopyLastWeekButton({
       const [lastWeek, thisWeek] = await Promise.all([read(source), read(target)]);
 
       const clip: ScheduleClipboard = {
-        label: "last week",
+        label: translate("last week"),
         scope: "week",
         singleEmployee: null,
         dayCount: 7,
@@ -123,7 +127,10 @@ export function CopyLastWeekButton({
         const { error: delErr } = await supabase.from("shifts").delete().in("id", p.existingIds);
         if (delErr) {
           throw new Error(
-            `Last week was copied, but this week's old shifts could not be removed: ${delErr.message}. Both are on the schedule now — clear the old ones by hand.`,
+            translate(
+              "Last week was copied, but this week's old shifts could not be removed: {message}. Both are on the schedule now — clear the old ones by hand.",
+              { message: delErr.message },
+            ),
           );
         }
       }
@@ -133,8 +140,8 @@ export function CopyLastWeekButton({
       void qc.invalidateQueries({ queryKey: ["shifts"] });
       void qc.invalidateQueries({ queryKey: ["copy-last-week"] });
       setOpen(false);
-      toast.success(`Copied ${n} shift${n === 1 ? "" : "s"} from last week`, {
-        description: "They are drafts — nobody sees them until you publish.",
+      toast.success(t("Copied {shifts} from last week", { shifts: nShifts(n) }), {
+        description: t("They are drafts — nobody sees them until you publish."),
       });
     },
   });
@@ -150,7 +157,7 @@ export function CopyLastWeekButton({
   }, [open]);
 
   const fmt = (d: DayString) =>
-    fromDayString(d).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+    fromDayString(d).toLocaleDateString(tag ?? [], { weekday: "short", month: "short", day: "numeric" });
   const p = previewQ.data;
   const occupied = (p?.existingIds.length ?? 0) > 0;
   const toAdd = !p ? 0 : occupied && mode === "replace" ? p.replaceRows.length : p.addRows.length;
@@ -164,26 +171,27 @@ export function CopyLastWeekButton({
         size="sm"
         disabled={disabled}
         onClick={() => setOpen(true)}
-        title="Lay last week's shifts onto this week, as drafts"
+        title={t("Lay last week's shifts onto this week, as drafts")}
       >
         <CalendarClock className="mr-2 h-4 w-4" />
-        Copy last week
+        {t("Copy last week")}
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Copy last week onto this one</DialogTitle>
+            <DialogTitle>{t("Copy last week onto this one")}</DialogTitle>
             <DialogDescription>
-              From the week of <span className="font-medium text-foreground">{fmt(source)}</span> to
-              the week of <span className="font-medium text-foreground">{fmt(target)}</span> — same
-              people, same days, same times.
+              {t(
+                "From the week of {from} to the week of {to} — same people, same days, same times.",
+                { from: fmt(source), to: fmt(target) },
+              )}
             </DialogDescription>
           </DialogHeader>
 
           {previewQ.isLoading ? (
             <p className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Reading both weeks…
+              <Loader2 className="h-4 w-4 animate-spin" /> {t("Reading both weeks…")}
             </p>
           ) : previewQ.error ? (
             <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -191,38 +199,45 @@ export function CopyLastWeekButton({
             </p>
           ) : !p || p.lastWeek === 0 ? (
             <p className="py-2 text-sm text-muted-foreground">
-              Last week has no shifts, so there is nothing to copy.
+              {t("Last week has no shifts, so there is nothing to copy.")}
             </p>
           ) : !occupied ? (
             // The common case, and the easy one: an empty week gets last week.
             <p className="text-sm text-foreground">
-              This week is empty. <span className="font-semibold">{p.lastWeek}</span> shift
-              {p.lastWeek === 1 ? "" : "s"} will be laid onto it as drafts.
+              {t("This week is empty. {shifts} will be laid onto it as drafts.", {
+                shifts: nShifts(p.lastWeek),
+              })}
             </p>
           ) : (
             // A week that already has a schedule. What happens to it is the one
             // thing most likely to surprise, so it is chosen, not defaulted.
             <div className="space-y-3 text-sm">
               <p className="rounded-md bg-warning/10 px-3 py-2 text-xs text-warning-foreground">
-                This week already has {p.existingIds.length} shift
-                {p.existingIds.length === 1 ? "" : "s"}
-                {p.existingPublished > 0 ? `, ${p.existingPublished} of them published` : ""}.
-                Choose what happens to them.
+                {t("This week already has {shifts}{published}. Choose what happens to them.", {
+                  shifts: nShifts(p.existingIds.length),
+                  published:
+                    p.existingPublished > 0
+                      ? t(", {n} of them published", { n: p.existingPublished })
+                      : "",
+                })}
               </p>
 
               <ChoiceRow
                 selected={mode === "replace"}
                 onSelect={() => setMode("replace")}
-                title="Replace this week with last week"
+                title={t("Replace this week with last week")}
                 detail={
                   <>
-                    The {p.existingIds.length} shift{p.existingIds.length === 1 ? "" : "s"} on this
-                    week are removed and last week's {p.replaceRows.length} take their place — this
-                    week ends up exactly like last week.
+                    {t(
+                      "The {existing} on this week are removed and last week's {incoming} take their place — this week ends up exactly like last week.",
+                      { existing: nShifts(p.existingIds.length), incoming: nShifts(p.replaceRows.length) },
+                    )}
                     {p.existingPublished > 0 && (
                       <span className="mt-1 block font-medium text-warning-foreground">
-                        {p.existingPublished} of them are published, so the people on those shifts
-                        are told a shift was removed.
+                        {t(
+                          "{n} of them are published, so the people on those shifts are told a shift was removed.",
+                          { n: p.existingPublished },
+                        )}
                       </span>
                     )}
                   </>
@@ -231,18 +246,19 @@ export function CopyLastWeekButton({
               <ChoiceRow
                 selected={mode === "add"}
                 onSelect={() => setMode("add")}
-                title="Add last week on top"
+                title={t("Add last week on top")}
                 detail={
                   p.addRows.length === 0 ? (
-                    "Every one of last week's shifts is already on this week, so nothing would be added."
+                    t("Every one of last week's shifts is already on this week, so nothing would be added.")
                   ) : (
                     <>
-                      This week's shifts stay, and {p.addRows.length} from last week are added
-                      beside them
+                      {t("This week's shifts stay, and {n} from last week are added beside them", {
+                        n: p.addRows.length,
+                      })}
                       {p.replaceRows.length - p.addRows.length > 0
-                        ? ` (${p.replaceRows.length - p.addRows.length} exact repeats skipped)`
+                        ? ` (${t("{n} exact repeats skipped", { n: p.replaceRows.length - p.addRows.length })})`
                         : ""}
-                      . Anyone whose two weeks differ ends up with both.
+                      {t(". Anyone whose two weeks differ ends up with both.")}
                     </>
                   )
                 }
@@ -258,19 +274,21 @@ export function CopyLastWeekButton({
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)} disabled={copy.isPending}>
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button onClick={() => copy.mutate()} disabled={!ready || copy.isPending}>
               {copy.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {/* Checked first: with nothing to copy there are no choices
                   either, and asking for one would point at an empty space. */}
               {!p || p.lastWeek === 0
-                ? "Nothing to copy"
+                ? t("Nothing to copy")
                 : occupied && mode === null
-                  ? "Choose one above"
+                  ? t("Choose one above")
                   : occupied && mode === "replace"
-                    ? "Replace this week"
-                    : `Copy ${toAdd > 0 ? `${toAdd} shift${toAdd === 1 ? "" : "s"}` : ""}`}
+                    ? t("Replace this week")
+                    : toAdd > 0
+                      ? t("Copy {shifts}", { shifts: nShifts(toAdd) })
+                      : t("Copy")}
             </Button>
           </DialogFooter>
         </DialogContent>

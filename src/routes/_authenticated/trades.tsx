@@ -10,6 +10,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
 import { RefreshCw, Plus, Loader2, Check, X, ArrowRight } from "lucide-react";
+import { localeTag, useT } from "@/lib/i18n";
 
 export const Route = createFileRoute("/_authenticated/trades")({
   component: TradesPage,
@@ -36,10 +37,13 @@ interface ShiftRow {
 
 function fmtRange(a: string, b: string) {
   const s = new Date(a), e = new Date(b);
-  return `${s.toLocaleDateString([], { month: "short", day: "numeric" })} · ${s.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} – ${e.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+  const tag = localeTag();
+  return `${s.toLocaleDateString(tag, { month: "short", day: "numeric" })} · ${s.toLocaleTimeString(tag, { hour: "numeric", minute: "2-digit" })} – ${e.toLocaleTimeString(tag, { hour: "numeric", minute: "2-digit" })}`;
 }
 
 function TradesPage() {
+  // Not `t`: the trade rows below are mapped as `t`.
+  const tx = useT("time");
   const { user, profile, primaryRole, loading } = useAuth();
   const staff = useStaffVisibility();
   const qc = useQueryClient();
@@ -97,9 +101,9 @@ function TradesPage() {
   }, [shiftsQ.data]);
   const nameOf = useMemo(() => {
     const m = new Map<string, string>();
-    (peopleQ.data ?? []).forEach((p) => m.set(p.id, p.full_name || "Unnamed"));
+    (peopleQ.data ?? []).forEach((p) => m.set(p.id, p.full_name || tx("Unnamed")));
     return m;
-  }, [peopleQ.data]);
+  }, [peopleQ.data, tx]);
 
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -144,8 +148,8 @@ function TradesPage() {
 
   const busy = respondMut.isPending || approveMut.isPending || cancelMut.isPending;
 
-  if (loading) return <div className="text-sm text-muted-foreground">Loading…</div>;
-  if (!companyId) return <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">Join a company to use shift trades.</div>;
+  if (loading) return <div className="text-sm text-muted-foreground">{tx("Loading…")}</div>;
+  if (!companyId) return <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">{tx("Join a company to use shift trades.")}</div>;
 
   const trades = tradesQ.data ?? [];
   const myShifts = (shiftsQ.data ?? []).filter((s) => s.employee_id === user?.id && s.published);
@@ -154,11 +158,11 @@ function TradesPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-semibold text-foreground">Shift trades</h2>
-          <p className="text-sm text-muted-foreground">Propose a swap with a teammate. Both they and a company admin must approve.</p>
+          <h2 className="text-2xl font-semibold text-foreground">{tx("Shift trades")}</h2>
+          <p className="text-sm text-muted-foreground">{tx("Propose a swap with a teammate. Both they and a company admin must approve.")}</p>
         </div>
         <Button onClick={() => setOpen(true)} disabled={myShifts.length === 0}>
-          <Plus className="h-4 w-4" /> Propose trade
+          <Plus className="h-4 w-4" /> {tx("Propose trade")}
         </Button>
       </div>
 
@@ -166,8 +170,7 @@ function TradesPage() {
           which reads as broken rather than "there's nothing to trade yet". */}
       {!shiftsQ.isLoading && myShifts.length === 0 && (
         <p className="rounded-xl border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
-          You have no upcoming published shifts, so there's nothing to trade yet. Shifts appear here once a
-          manager builds the schedule and posts it.
+          {tx("You have no upcoming published shifts, so there's nothing to trade yet. Shifts appear here once a manager builds the schedule and posts it.")}
         </p>
       )}
 
@@ -176,12 +179,12 @@ function TradesPage() {
           <p className="border-b border-border bg-destructive/10 px-5 py-3 text-sm text-destructive">{actionError}</p>
         )}
         <div className="border-b border-border px-5 py-4">
-          <h3 className="font-semibold text-foreground">All trade requests</h3>
+          <h3 className="font-semibold text-foreground">{tx("All trade requests")}</h3>
         </div>
         {tradesQ.isLoading ? (
-          <p className="px-5 py-8 text-center text-sm text-muted-foreground">Loading…</p>
+          <p className="px-5 py-8 text-center text-sm text-muted-foreground">{tx("Loading…")}</p>
         ) : trades.length === 0 ? (
-          <p className="px-5 py-8 text-center text-sm text-muted-foreground">No trade requests yet.</p>
+          <p className="px-5 py-8 text-center text-sm text-muted-foreground">{tx("No trade requests yet.")}</p>
         ) : (
           <ul className="divide-y divide-border">
             {trades.map((t) => {
@@ -200,15 +203,15 @@ function TradesPage() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-foreground">
-                      {nameOf.get(t.from_employee_id) ?? "Member"} <ArrowRight className="inline h-3 w-3 text-muted-foreground" /> {nameOf.get(t.to_employee_id) ?? "Member"}
+                      {nameOf.get(t.from_employee_id) ?? tx("Member")} <ArrowRight className="inline h-3 w-3 text-muted-foreground" /> {nameOf.get(t.to_employee_id) ?? tx("Member")}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Gives: {shift ? `${fmtRange(shift.starts_at, shift.ends_at)}${shift.position ? " · " + shift.position : ""}` : "Shift no longer available"}
+                      {tx("Gives:")} {shift ? `${fmtRange(shift.starts_at, shift.ends_at)}${shift.position ? " · " + shift.position : ""}` : tx("Shift no longer available")}
                     </p>
                     {/* Only a two-way swap has a return leg; a hand-off has none. */}
                     {t.to_shift_id && (
                       <p className="text-xs text-muted-foreground">
-                        Takes: {returnShift ? `${fmtRange(returnShift.starts_at, returnShift.ends_at)}${returnShift.position ? " · " + returnShift.position : ""}` : "Shift no longer available"}
+                        {tx("Takes:")} {returnShift ? `${fmtRange(returnShift.starts_at, returnShift.ends_at)}${returnShift.position ? " · " + returnShift.position : ""}` : tx("Shift no longer available")}
                       </p>
                     )}
                   </div>
@@ -216,25 +219,25 @@ function TradesPage() {
                   {canEmployeeAct && (
                     <div className="flex gap-1">
                       <Button size="sm" variant="outline" disabled={busy} onClick={() => respondMut.mutate({ id: t.id, accept: true })}>
-                        <Check className="h-4 w-4" /> Accept
+                        <Check className="h-4 w-4" /> {tx("Accept")}
                       </Button>
                       <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" disabled={busy} onClick={() => respondMut.mutate({ id: t.id, accept: false })}>
-                        <X className="h-4 w-4" /> Decline
+                        <X className="h-4 w-4" /> {tx("Decline")}
                       </Button>
                     </div>
                   )}
                   {canAdminAct && (
                     <div className="flex gap-1">
                       <Button size="sm" variant="outline" disabled={busy} onClick={() => approveMut.mutate({ id: t.id, approve: true })}>
-                        <Check className="h-4 w-4" /> Approve
+                        <Check className="h-4 w-4" /> {tx("Approve")}
                       </Button>
                       <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" disabled={busy} onClick={() => approveMut.mutate({ id: t.id, approve: false })}>
-                        <X className="h-4 w-4" /> Deny
+                        <X className="h-4 w-4" /> {tx("Deny")}
                       </Button>
                     </div>
                   )}
                   {isFrom && t.status === "pending_employee" && (
-                    <Button size="sm" variant="ghost" disabled={busy} onClick={() => cancelMut.mutate(t.id)}>Cancel</Button>
+                    <Button size="sm" variant="ghost" disabled={busy} onClick={() => cancelMut.mutate(t.id)}>{tx("Cancel")}</Button>
                   )}
                 </li>
               );
@@ -263,6 +266,7 @@ function TradesPage() {
 }
 
 function TradeBadge({ status }: { status: string }) {
+  const t = useT("time");
   const map: Record<string, [string, string]> = {
     pending_employee: ["bg-warning/20 text-warning-foreground", "Awaiting teammate"],
     pending_supervisor: ["bg-primary-soft text-primary", "Awaiting admin"],
@@ -271,7 +275,7 @@ function TradeBadge({ status }: { status: string }) {
     cancelled: ["bg-muted text-muted-foreground", "Cancelled"],
   };
   const [cls, label] = map[status] ?? ["bg-muted text-muted-foreground", status];
-  return <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${cls}`}>{label}</span>;
+  return <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${cls}`}>{t(label)}</span>;
 }
 
 function ProposeTradeDialog({ open, onClose, userId, companyId, myShifts, allShifts, teammates, onSaved }: {
@@ -279,6 +283,7 @@ function ProposeTradeDialog({ open, onClose, userId, companyId, myShifts, allShi
   myShifts: ShiftRow[]; allShifts: ShiftRow[];
   teammates: { id: string; full_name: string }[]; onSaved: () => void;
 }) {
+  const t = useT("time");
   const [shiftId, setShiftId] = useState("");
   const [toId, setToId] = useState("");
   const [toShiftId, setToShiftId] = useState("");
@@ -288,7 +293,7 @@ function ProposeTradeDialog({ open, onClose, userId, companyId, myShifts, allShi
 
   const submit = useMutation({
     mutationFn: async () => {
-      if (!shiftId || !toId) throw new Error("Pick a shift and a teammate");
+      if (!shiftId || !toId) throw new Error(t("Pick a shift and a teammate"));
       const { error } = await supabase.from("shift_trades").insert({
         shift_id: shiftId,
         from_employee_id: userId,
@@ -307,29 +312,29 @@ function ProposeTradeDialog({ open, onClose, userId, companyId, myShifts, allShi
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Propose a shift trade</DialogTitle>
-          <DialogDescription>Pick one of your published shifts and who you want to trade with. Optionally take one of theirs in return.</DialogDescription>
+          <DialogTitle>{t("Propose a shift trade")}</DialogTitle>
+          <DialogDescription>{t("Pick one of your published shifts and who you want to trade with. Optionally take one of theirs in return.")}</DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
-            <Label htmlFor="sh">Your shift to trade away</Label>
+            <Label htmlFor="sh">{t("Your shift to trade away")}</Label>
             <select id="sh" value={shiftId} onChange={(e) => setShiftId(e.target.value)} className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm">
-              <option value="">Select a shift…</option>
+              <option value="">{t("Select a shift…")}</option>
               {myShifts.map((s) => (
                 <option key={s.id} value={s.id}>{fmtRange(s.starts_at, s.ends_at)}{s.position ? ` · ${s.position}` : ""}</option>
               ))}
             </select>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="to">Trade with</Label>
+            <Label htmlFor="to">{t("Trade with")}</Label>
             <select
               id="to"
               value={toId}
               onChange={(e) => { setToId(e.target.value); setToShiftId(""); }}
               className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
             >
-              <option value="">Select teammate…</option>
-              {teammates.map((p) => (<option key={p.id} value={p.id}>{p.full_name || "Unnamed"}</option>))}
+              <option value="">{t("Select teammate…")}</option>
+              {teammates.map((p) => (<option key={p.id} value={p.id}>{p.full_name || t("Unnamed")}</option>))}
             </select>
           </div>
 
@@ -337,7 +342,7 @@ function ProposeTradeDialog({ open, onClose, userId, companyId, myShifts, allShi
               they cover your shift and give nothing up. */}
           {toId && (
             <div className="space-y-1.5">
-              <Label htmlFor="toshift">Take their shift in return (optional)</Label>
+              <Label htmlFor="toshift">{t("Take their shift in return (optional)")}</Label>
               <select
                 id="toshift"
                 value={toShiftId}
@@ -346,23 +351,23 @@ function ProposeTradeDialog({ open, onClose, userId, companyId, myShifts, allShi
                 disabled={theirShifts.length === 0}
               >
                 <option value="">
-                  {theirShifts.length === 0 ? "They have no upcoming shifts" : "Nothing — just cover mine"}
+                  {theirShifts.length === 0 ? t("They have no upcoming shifts") : t("Nothing — just cover mine")}
                 </option>
                 {theirShifts.map((s) => (
                   <option key={s.id} value={s.id}>{fmtRange(s.starts_at, s.ends_at)}{s.position ? ` · ${s.position}` : ""}</option>
                 ))}
               </select>
               <p className="text-xs text-muted-foreground">
-                Pick one to make it a straight swap; leave it blank to just hand yours over.
+                {t("Pick one to make it a straight swap; leave it blank to just hand yours over.")}
               </p>
             </div>
           )}
           {err && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{err}</p>}
         </div>
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+          <Button type="button" variant="outline" onClick={onClose}>{t("Cancel")}</Button>
           <Button type="button" onClick={() => submit.mutate()} disabled={submit.isPending}>
-            {submit.isPending && <Loader2 className="h-4 w-4 animate-spin" />} Send request
+            {submit.isPending && <Loader2 className="h-4 w-4 animate-spin" />} {t("Send request")}
           </Button>
         </DialogFooter>
       </DialogContent>

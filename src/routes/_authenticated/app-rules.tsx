@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { useT } from "@/lib/i18n";
 import { Loader2, Check, Clock, FileClock, Calendar, ShieldAlert, EyeOff } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/app-rules")({
@@ -23,6 +24,7 @@ type AppRules = LibAppRules;
 const DEFAULTS = DEFAULT_APP_RULES;
 
 function AppRulesPage() {
+  const t = useT("people");
   const { primaryRole, company, loading } = useAuth();
   const qc = useQueryClient();
   const isAdmin = primaryRole === "company_admin" || primaryRole === "super_admin";
@@ -66,18 +68,18 @@ function AppRulesPage() {
     onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
   });
 
-  if (loading) return <div className="text-sm text-muted-foreground">Loading…</div>;
+  if (loading) return <div className="text-sm text-muted-foreground">{t("Loading…")}</div>;
 
   if (!isAdmin) {
     return (
       <div className="max-w-xl rounded-xl border border-border bg-card p-8 text-center shadow-[var(--shadow-card)]">
         <ShieldAlert className="mx-auto h-10 w-10 text-muted-foreground" />
-        <h2 className="mt-3 text-lg font-semibold text-foreground">Admin only</h2>
+        <h2 className="mt-3 text-lg font-semibold text-foreground">{t("Admin only")}</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Only company admins can manage app rules. Contact your administrator if you need a change.
+          {t("Only company admins can manage app rules. Contact your administrator if you need a change.")}
         </p>
         <Link to="/dashboard" className="mt-4 inline-block text-sm text-primary underline">
-          Back to Dashboard
+          {t("Back to Dashboard")}
         </Link>
       </div>
     );
@@ -89,29 +91,26 @@ function AppRulesPage() {
   return (
     <div className="max-w-3xl space-y-6">
       <div>
-        <h2 className="text-2xl font-semibold text-foreground">App rules</h2>
+        <h2 className="text-2xl font-semibold text-foreground">{t("App rules")}</h2>
         <p className="text-sm text-muted-foreground">
-          Admin-only controls for timecards, clock-in behavior, and scheduling across{" "}
-          {company?.name ?? "your company"}.
+          {t("Admin-only controls for timecards, clock-in behavior, and scheduling across {company}.", { company: company?.name ?? t("your company") })}
         </p>
       </div>
 
       {settingsQ.isLoading ? (
-        <div className="text-sm text-muted-foreground">Loading settings…</div>
+        <div className="text-sm text-muted-foreground">{t("Loading settings…")}</div>
       ) : (
         <>
           {/* Timecard rules */}
           <section className="rounded-xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
             <div className="mb-4 flex items-center gap-2">
               <FileClock className="h-5 w-5 text-primary" />
-              <h3 className="font-semibold text-foreground">Timecard rules</h3>
+              <h3 className="font-semibold text-foreground">{t("Timecard rules")}</h3>
             </div>
             <div className="mb-4 rounded-lg border border-border bg-muted/30 p-3">
-              <p className="text-sm font-medium text-foreground">Overtime</p>
+              <p className="text-sm font-medium text-foreground">{t("Overtime")}</p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Daily rules apply first; the weekly threshold then promotes whatever regular hours
-                are left, so a long day is never counted twice. Any field set to 0 turns that rule
-                off.
+                {t("Daily rules apply first; the weekly threshold then promotes whatever regular hours are left, so a long day is never counted twice. Any field set to 0 turns that rule off.")}
               </p>
               <div className="mt-3 grid gap-4 sm:grid-cols-3">
                 <Field label="Overtime after (hours/day)">
@@ -149,12 +148,9 @@ function AppRulesPage() {
             {/* Rounding is nearest, never up or never down, so it costs the
                 employee no more than it costs the company. */}
             <div className="mb-4 rounded-lg border border-border bg-muted/30 p-3">
-              <p className="text-sm font-medium text-foreground">Punch rounding</p>
+              <p className="text-sm font-medium text-foreground">{t("Punch rounding")}</p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Clock-in, clock-out and break punches all read to the nearest mark, and hours are
-                paid from those times. On a 5-minute rule 2:23 reads 2:25 and 2:22 reads 2:20; on a
-                10-minute rule 2:23 reads 2:20. The punch the clock recorded is never changed — a
-                manager editing a day still sees the real time.
+                {t("Clock-in, clock-out and break punches all read to the nearest mark, and hours are paid from those times. On a 5-minute rule 2:23 reads 2:25 and 2:22 reads 2:20; on a 10-minute rule 2:23 reads 2:20. The punch the clock recorded is never changed — a manager editing a day still sees the real time.")}
               </p>
               <div className="mt-2 grid gap-2 sm:grid-cols-3">
                 <ModeChoice
@@ -182,8 +178,7 @@ function AppRulesPage() {
                 rules.punch_round_minutes !== 5 &&
                 rules.punch_round_minutes !== 10 && (
                   <p className="mt-2 text-xs text-warning-foreground">
-                    Currently set to {rules.punch_round_minutes} minutes. Picking one of the options
-                    above replaces it.
+                    {t("Currently set to {n} minutes. Picking one of the options above replaces it.", { n: rules.punch_round_minutes })}
                   </p>
                 )}
             </div>
@@ -205,17 +200,16 @@ function AppRulesPage() {
           <section className="rounded-xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
             <div className="mb-4 flex items-center gap-2">
               <Clock className="h-5 w-5 text-primary" />
-              <h3 className="font-semibold text-foreground">Clock-in rules</h3>
+              <h3 className="font-semibold text-foreground">{t("Clock-in rules")}</h3>
             </div>
             <div className="space-y-4">
               {/* Two ways to use the worksite location. Either way the punch
                   records where it happened; this only decides whether being
                   too far away stops the punch or is simply noted. */}
               <div className="rounded-md border border-border bg-secondary/30 px-3 py-2">
-                <div className="text-sm font-medium text-foreground">Clock-in location</div>
+                <div className="text-sm font-medium text-foreground">{t("Clock-in location")}</div>
                 <div className="text-xs text-muted-foreground">
-                  Every punch records where it was made. Only company admins can see those
-                  locations.
+                  {t("Every punch records where it was made. Only company admins can see those locations.")}
                 </div>
                 <div className="mt-2 grid gap-2 sm:grid-cols-2">
                   <ModeChoice
@@ -257,13 +251,10 @@ function AppRulesPage() {
                   onChange={(v) => set("cap_break_to_length", v)}
                 />
                 <p className="mt-1.5 text-xs text-muted-foreground">
-                  A 30-minute break that ran 37 comes off the shift as 30, so an overrun is yours
-                  to manage rather than theirs to pay for. Timecards still show how far over it
-                  went. Switch this off to charge the clock time as it was recorded.
+                  {t("A 30-minute break that ran 37 comes off the shift as 30, so an overrun is yours to manage rather than theirs to pay for. Timecards still show how far over it went. Switch this off to charge the clock time as it was recorded.")}
                 </p>
                 <p className="mt-1.5 text-xs text-muted-foreground">
-                  Coming back early is never rounded up: a 30 taken in 22 counts as 22 and the day
-                  is flagged as an incomplete break, whichever way this is set.
+                  {t("Coming back early is never rounded up: a 30 taken in 22 counts as 22 and the day is flagged as an incomplete break, whichever way this is set.")}
                 </p>
               </div>
               <Field label="Auto clock-out after (hours, 0 = off)">
@@ -277,10 +268,9 @@ function AppRulesPage() {
               </Field>
 
               <div className="rounded-lg border border-border bg-muted/30 p-3">
-                <p className="text-sm font-medium text-foreground">Break reminders</p>
+                <p className="text-sm font-medium text-foreground">{t("Break reminders")}</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  Flags anyone on the dashboard who has been working this long without a break.
-                  Taking one clears the flag; a manager can also dismiss it.
+                  {t("Flags anyone on the dashboard who has been working this long without a break. Taking one clears the flag; a manager can also dismiss it.")}
                 </p>
                 <div className="mt-3 grid gap-4 sm:grid-cols-2">
                   <Field label="Remind about a break after (hours, 0 = off)">
@@ -312,15 +302,15 @@ function AppRulesPage() {
           <section className="rounded-xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
             <div className="mb-4 flex items-center gap-2">
               <Calendar className="h-5 w-5 text-primary" />
-              <h3 className="font-semibold text-foreground">Scheduling options</h3>
+              <h3 className="font-semibold text-foreground">{t("Scheduling options")}</h3>
             </div>
             <div className="space-y-4">
               {/* Two ways to run a schedule. Showing both in the menu only
                   makes an admin choose the same thing twice. */}
               <div className="rounded-md border border-border bg-secondary/30 px-3 py-2">
-                <div className="text-sm font-medium text-foreground">Schedule screen</div>
+                <div className="text-sm font-medium text-foreground">{t("Schedule screen")}</div>
                 <div className="text-xs text-muted-foreground">
-                  Which one appears in your menu. Employees always keep their own schedule view.
+                  {t("Which one appears in your menu. Employees always keep their own schedule view.")}
                 </div>
                 <div className="mt-2 grid gap-2 sm:grid-cols-2">
                   <ModeChoice
@@ -354,7 +344,7 @@ function AppRulesPage() {
                     "Saturday",
                   ].map((d, i) => (
                     <option key={d} value={i}>
-                      {d}
+                      {t(d)}
                     </option>
                   ))}
                 </select>
@@ -387,7 +377,7 @@ function AppRulesPage() {
           <section className="rounded-xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
             <div className="mb-4 flex items-center gap-2">
               <EyeOff className="h-5 w-5 text-primary" />
-              <h3 className="font-semibold text-foreground">What employees see</h3>
+              <h3 className="font-semibold text-foreground">{t("What employees see")}</h3>
             </div>
             <ToggleRow
               label="Hide admins from the rosters"
@@ -403,12 +393,12 @@ function AppRulesPage() {
 
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => settingsQ.data && setRules(settingsQ.data)}>
-              Reset
+              {t("Reset")}
             </Button>
             <Button onClick={() => save.mutate()} disabled={save.isPending}>
               {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
               {saved && <Check className="h-4 w-4" />}
-              {saved ? "Saved" : "Save rules"}
+              {saved ? t("Saved") : t("Save rules")}
             </Button>
           </div>
         </>
@@ -418,9 +408,10 @@ function AppRulesPage() {
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  const t = useT("people");
   return (
     <div className="space-y-1.5">
-      <Label>{label}</Label>
+      <Label>{t(label)}</Label>
       {children}
     </div>
   );
@@ -438,6 +429,7 @@ function ModeChoice({
   title: string;
   detail: string;
 }) {
+  const t = useT("people");
   return (
     <button
       type="button"
@@ -448,9 +440,9 @@ function ModeChoice({
       }`}
     >
       <div className={`text-sm font-medium ${active ? "text-primary" : "text-foreground"}`}>
-        {title}
+        {t(title)}
       </div>
-      <div className="mt-0.5 text-xs text-muted-foreground">{detail}</div>
+      <div className="mt-0.5 text-xs text-muted-foreground">{t(detail)}</div>
     </button>
   );
 }
@@ -466,11 +458,12 @@ function ToggleRow({
   checked: boolean;
   onChange: (v: boolean) => void;
 }) {
+  const t = useT("people");
   return (
     <div className="flex items-start justify-between gap-4 rounded-md border border-border bg-secondary/30 px-3 py-2">
       <div>
-        <div className="text-sm font-medium text-foreground">{label}</div>
-        {description && <div className="text-xs text-muted-foreground">{description}</div>}
+        <div className="text-sm font-medium text-foreground">{t(label)}</div>
+        {description && <div className="text-xs text-muted-foreground">{t(description)}</div>}
       </div>
       <Switch checked={checked} onCheckedChange={onChange} />
     </div>

@@ -4,6 +4,7 @@ import { AlertTriangle, CalendarClock, Receipt } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { billingDueLabel, fmtBillingDate } from "@/lib/billing";
+import { useT } from "@/lib/i18n";
 
 interface BillingRow {
   company_id: string;
@@ -24,6 +25,7 @@ interface BillingRow {
  * only says who needs attention and sends you there.
  */
 export function BillingRenewalsPanel() {
+  const t = useT("admin");
   const q = useQuery({
     queryKey: ["billing-overview"],
     queryFn: async () => {
@@ -46,13 +48,13 @@ export function BillingRenewalsPanel() {
             <Receipt className="h-5 w-5" />
           </div>
           <div>
-            <h2 className="text-sm font-semibold text-foreground">Billing &amp; renewals</h2>
+            <h2 className="text-sm font-semibold text-foreground">{t("Billing & renewals")}</h2>
             <p className="text-sm text-muted-foreground">
-              {q.isLoading ? "Checking…" : "Nothing due in the next week."}
+              {q.isLoading ? t("Checking…") : t("Nothing due in the next week.")}
             </p>
           </div>
           <Button asChild size="sm" variant="outline" className="ml-auto">
-            <Link to="/companies">Open Companies</Link>
+            <Link to="/companies">{t("Open Companies")}</Link>
           </Button>
         </div>
       </div>
@@ -71,20 +73,20 @@ export function BillingRenewalsPanel() {
             {overdue.length > 0 ? <AlertTriangle className="h-5 w-5" /> : <CalendarClock className="h-5 w-5" />}
           </div>
           <div>
-            <h2 className="text-sm font-semibold text-foreground">Billing &amp; renewals</h2>
+            <h2 className="text-sm font-semibold text-foreground">{t("Billing & renewals")}</h2>
             <p className="text-sm text-muted-foreground">
               {overdue.length > 0 && (
                 <span className="font-medium text-destructive">
-                  {overdue.length} past the billing date
+                  {t("{n} past the billing date", { n: overdue.length })}
                 </span>
               )}
               {overdue.length > 0 && soon.length > 0 && " · "}
-              {soon.length > 0 && <>{soon.length} due within a week</>}
+              {soon.length > 0 && <>{t("{n} due within a week", { n: soon.length })}</>}
             </p>
           </div>
         </div>
         <Button asChild size="sm" variant="outline">
-          <Link to="/companies">Manage in Companies</Link>
+          <Link to="/companies">{t("Manage in Companies")}</Link>
         </Button>
       </div>
 
@@ -99,7 +101,7 @@ export function BillingRenewalsPanel() {
         ))}
         {needsAttention.length > 6 && (
           <li className="pt-1 text-xs text-muted-foreground">
-            and {needsAttention.length - 6} more
+            {t("and {n} more", { n: needsAttention.length - 6 })}
           </li>
         )}
       </ul>

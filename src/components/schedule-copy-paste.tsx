@@ -27,6 +27,7 @@ import {
   type ScheduleClipboard,
   type SourceShift,
 } from "@/lib/schedule-clipboard";
+import { useT } from "@/lib/i18n";
 
 /**
  * Copy and paste a stretch of schedule, shared by the builder and the monthly
@@ -61,6 +62,7 @@ export function ScheduleCopyPaste({
   invalidateKeys = ["shifts", "sheet-shifts"],
   size = "sm",
 }: CopyPasteProps) {
+  const t = useT("schedule");
   const qc = useQueryClient();
   const [clip, setClip] = useState<ScheduleClipboard | null>(null);
   const [copyOpen, setCopyOpen] = useState(false);
@@ -83,7 +85,7 @@ export function ScheduleCopyPaste({
     const label =
       who === "all"
         ? rangeLabel
-        : `${members.find((m) => m.id === who)?.full_name ?? "One person"} · ${rangeLabel}`;
+        : `${members.find((m) => m.id === who)?.full_name ?? t("One person")} · ${rangeLabel}`;
     writeClipboard({
       label,
       scope: who === "all" ? scope : "person",
@@ -127,8 +129,10 @@ export function ScheduleCopyPaste({
     onSuccess: (n) => {
       setResult(
         n === 0
-          ? "Everything on the clipboard is already on those days — nothing to add."
-          : `Pasted ${n} shift${n === 1 ? "" : "s"} as drafts.`,
+          ? t("Everything on the clipboard is already on those days — nothing to add.")
+          : n === 1
+            ? t("Pasted 1 shift as a draft.")
+            : t("Pasted {n} shifts as drafts.", { n }),
       );
       for (const key of invalidateKeys) void qc.invalidateQueries({ queryKey: [key] });
     },
@@ -145,9 +149,9 @@ export function ScheduleCopyPaste({
           setCopyOpen(true);
         }}
         disabled={shifts.length === 0}
-        title="Copy what is on screen"
+        title={t("Copy what is on screen")}
       >
-        <Copy className="mr-2 h-4 w-4" /> Copy
+        <Copy className="mr-2 h-4 w-4" /> {t("Copy")}
       </Button>
       <Button
         variant="outline"
@@ -162,33 +166,34 @@ export function ScheduleCopyPaste({
         disabled={!clip}
         title={describeClipboard(clip)}
       >
-        <ClipboardPaste className="mr-2 h-4 w-4" /> Paste
+        <ClipboardPaste className="mr-2 h-4 w-4" /> {t("Paste")}
       </Button>
 
       {copyOpen && (
         <Dialog open onOpenChange={(o) => !o && setCopyOpen(false)}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Copy {rangeLabel}</DialogTitle>
+              <DialogTitle>{t("Copy {range}", { range: rangeLabel })}</DialogTitle>
               <DialogDescription>
-                Copies the shifts you can see. Paste them onto another day, week or month — here or
-                on the other schedule screen.
+                {t(
+                  "Copies the shifts you can see. Paste them onto another day, week or month — here or on the other schedule screen.",
+                )}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-1.5">
-              <Label htmlFor="copy-who">What to copy</Label>
+              <Label htmlFor="copy-who">{t("What to copy")}</Label>
               <select
                 id="copy-who"
                 value={who}
                 onChange={(e) => setWho(e.target.value)}
                 className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
               >
-                <option value="all">Everyone ({shifts.length} shifts)</option>
+                <option value="all">{t("Everyone ({n} shifts)", { n: shifts.length })}</option>
                 {members.map((m) => {
                   const n = shifts.filter((s) => s.employee_id === m.id).length;
                   return (
                     <option key={m.id} value={m.id} disabled={n === 0}>
-                      {m.full_name || "Unnamed"} ({n} shift{n === 1 ? "" : "s"})
+                      {m.full_name || t("Unnamed")} ({n === 1 ? t("1 shift") : t("{n} shifts", { n })})
                     </option>
                   );
                 })}
@@ -196,9 +201,9 @@ export function ScheduleCopyPaste({
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setCopyOpen(false)}>
-                Cancel
+                {t("Cancel")}
               </Button>
-              <Button onClick={doCopy}>Copy</Button>
+              <Button onClick={doCopy}>{t("Copy")}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -208,7 +213,7 @@ export function ScheduleCopyPaste({
         <Dialog open onOpenChange={(o) => !o && setPasteOpen(false)}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Paste schedule</DialogTitle>
+              <DialogTitle>{t("Paste schedule")}</DialogTitle>
               <DialogDescription>{describeClipboard(clip)}</DialogDescription>
             </DialogHeader>
 
@@ -217,7 +222,7 @@ export function ScheduleCopyPaste({
             ) : (
               <div className="space-y-4">
                 <div className="space-y-1.5">
-                  <Label htmlFor="paste-target">Starting on</Label>
+                  <Label htmlFor="paste-target">{t("Starting on")}</Label>
                   <Input
                     id="paste-target"
                     type="date"
@@ -225,26 +230,30 @@ export function ScheduleCopyPaste({
                     onChange={(e) => setTarget(e.target.value)}
                   />
                   <p className="text-xs text-muted-foreground">
-                    The copied days are laid down from here, keeping their order and times.
+                    {t("The copied days are laid down from here, keeping their order and times.")}
                     {clip
-                      ? ` Covers ${clipboardSpan(clip)} day${clipboardSpan(clip) === 1 ? "" : "s"}.`
+                      ? ` ${
+                          clipboardSpan(clip) === 1
+                            ? t("Covers 1 day.")
+                            : t("Covers {n} days.", { n: clipboardSpan(clip) })
+                        }`
                       : ""}
                   </p>
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="paste-who">Give these shifts to</Label>
+                  <Label htmlFor="paste-who">{t("Give these shifts to")}</Label>
                   <select
                     id="paste-who"
                     value={assignTo}
                     onChange={(e) => setAssignTo(e.target.value)}
                     className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
                   >
-                    <option value="keep">The same people as the copy</option>
-                    <option value="open">Nobody — create open shifts</option>
+                    <option value="keep">{t("The same people as the copy")}</option>
+                    <option value="open">{t("Nobody — create open shifts")}</option>
                     {members.map((m) => (
                       <option key={m.id} value={m.id}>
-                        {m.full_name || "Unnamed"}
+                        {m.full_name || t("Unnamed")}
                       </option>
                     ))}
                   </select>
@@ -260,14 +269,14 @@ export function ScheduleCopyPaste({
 
             <DialogFooter>
               {result ? (
-                <Button onClick={() => setPasteOpen(false)}>Done</Button>
+                <Button onClick={() => setPasteOpen(false)}>{t("Done")}</Button>
               ) : (
                 <>
                   <Button variant="outline" onClick={() => setPasteOpen(false)}>
-                    Cancel
+                    {t("Cancel")}
                   </Button>
                   <Button onClick={() => paste.mutate()} disabled={paste.isPending || !clip}>
-                    {paste.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Paste
+                    {paste.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} {t("Paste")}
                   </Button>
                 </>
               )}

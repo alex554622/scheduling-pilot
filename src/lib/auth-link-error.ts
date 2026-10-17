@@ -9,6 +9,8 @@
  * here until the sign-in form shows it.
  */
 
+import { translate } from "@/lib/i18n";
+
 const KEY = "sp-auth-link-error";
 
 /** Everything Supabase Auth adds to a failed redirect, including its `sb` marker. */
@@ -19,9 +21,18 @@ const SELF_HANDLED = new Set(["/reset-password"]);
 
 function describe(code: string | null, description: string | null): string {
   if (code === "otp_expired") {
-    return "That email link has expired or was already used. If you've already confirmed your email, sign in below. If not, create your account again with the same email and we'll send you a new link.";
+    return translate(
+      "That email link has expired or was already used. If you've already confirmed your email, sign in below. If not, create your account again with the same email and we'll send you a new link.",
+    );
   }
-  return `That email link didn't work${description ? ` (${description})` : ""}. Sign in below, or create your account again to get a new link.`;
+  return description
+    ? translate(
+        "That email link didn't work ({description}). Sign in below, or create your account again to get a new link.",
+        { description },
+      )
+    : translate(
+        "That email link didn't work. Sign in below, or create your account again to get a new link.",
+      );
 }
 
 /**

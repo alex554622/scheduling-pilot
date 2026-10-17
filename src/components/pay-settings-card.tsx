@@ -3,6 +3,7 @@ import { Wallet, Check, ChevronDown, EyeOff, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useT } from "@/lib/i18n";
 import { clearPaySettings, writePaySettings, type PaySettings } from "@/lib/pay-settings";
 
 /**
@@ -19,6 +20,7 @@ export function PaySettingsCard({
   settings: PaySettings | null;
   onChange: (next: PaySettings | null) => void;
 }) {
+  const t = useT("shell");
   const [rate, setRate] = useState("");
   const [tax, setTax] = useState("");
   const [state, setState] = useState("");
@@ -42,7 +44,7 @@ export function PaySettingsCard({
     const taxPercent = tax.trim() === "" ? 0 : Number(tax);
     const statePercent = state.trim() === "" ? 0 : Number(state);
     if (!Number.isFinite(hourlyRate) || hourlyRate <= 0) {
-      setError("Enter your hourly pay as a number greater than zero.");
+      setError(t("Enter your hourly pay as a number greater than zero."));
       return;
     }
     for (const [label, value] of [
@@ -50,12 +52,14 @@ export function PaySettingsCard({
       ["State tax", statePercent],
     ] as const) {
       if (!Number.isFinite(value) || value < 0 || value > 100) {
-        setError(`${label} must be between 0 and 100 percent.`);
+        setError(t("{label} must be between 0 and 100 percent.", { label: t(label) }));
         return;
       }
     }
     if (taxPercent + statePercent > 100) {
-      setError("Federal and state tax add up to more than 100% — take-home would be negative.");
+      setError(
+        t("Federal and state tax add up to more than 100% — take-home would be negative."),
+      );
       return;
     }
     const next: PaySettings = { hourlyRate, taxPercent, statePercent };
@@ -81,10 +85,10 @@ export function PaySettingsCard({
         className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left"
       >
         <span className="flex items-center gap-2 text-sm font-medium text-foreground">
-          <Wallet className="h-4 w-4 text-primary" /> My pay
+          <Wallet className="h-4 w-4 text-primary" /> {t("My pay")}
         </span>
         <span className="flex items-center gap-2 text-xs text-muted-foreground">
-          {settings ? `${settings.hourlyRate}/hr` : "Not set"}
+          {settings ? t("{rate}/hr", { rate: settings.hourlyRate }) : t("Not set")}
           <ChevronDown className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} />
         </span>
       </button>
@@ -93,12 +97,12 @@ export function PaySettingsCard({
         <div className="border-t border-border p-5">
           <p className="mb-4 flex items-start gap-1.5 text-xs text-muted-foreground">
             <EyeOff className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            Only you can see this. It is stored on this device and never sent to your company.
+            {t("Only you can see this. It is stored on this device and never sent to your company.")}
           </p>
 
           <form className="space-y-3" onSubmit={save}>
             <div className="space-y-1.5">
-              <Label htmlFor="hourly-rate">Hourly pay</Label>
+              <Label htmlFor="hourly-rate">{t("Hourly pay")}</Label>
               <Input
                 id="hourly-rate"
                 inputMode="decimal"
@@ -109,7 +113,7 @@ export function PaySettingsCard({
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label htmlFor="tax-percent">Federal tax %</Label>
+                <Label htmlFor="tax-percent">{t("Federal tax %")}</Label>
                 <Input
                   id="tax-percent"
                   inputMode="decimal"
@@ -119,7 +123,7 @@ export function PaySettingsCard({
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="state-percent">State tax %</Label>
+                <Label htmlFor="state-percent">{t("State tax %")}</Label>
                 <Input
                   id="state-percent"
                   inputMode="decimal"
@@ -137,16 +141,16 @@ export function PaySettingsCard({
                 {saved ? (
                   <>
                     <Check className="mr-1.5 h-3.5 w-3.5" />
-                    Saved
+                    {t("Saved")}
                   </>
                 ) : (
-                  "Save"
+                  t("Save")
                 )}
               </Button>
               {settings && (
                 <Button type="button" size="sm" variant="ghost" onClick={reset}>
                   <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-                  Clear
+                  {t("Clear")}
                 </Button>
               )}
             </div>

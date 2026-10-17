@@ -4,6 +4,7 @@ import { z } from "zod";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth, ROLE_LABEL, type AppRole } from "@/lib/auth";
+import { useT, translate, localeTag, type TFunction } from "@/lib/i18n";
 import { ago, downloadCsv, slug } from "@/lib/admin-export";
 import { CompanyBillingSection } from "@/components/company-billing";
 import { Button } from "@/components/ui/button";
@@ -212,11 +213,32 @@ function matchesFilter(c: CompanyRow, f: StatusFilter): boolean {
 }
 
 const fmtDateTime = (iso: string) =>
-  new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+  new Date(iso).toLocaleString(localeTag() ?? [], { dateStyle: "medium", timeStyle: "short" });
 const fmtDate = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleDateString([], { dateStyle: "medium" }) : "—";
+  iso ? new Date(iso).toLocaleDateString(localeTag() ?? [], { dateStyle: "medium" }) : "—";
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+const memberCount = (t: TFunction, n: number) => (n === 1 ? t("1 member") : t("{n} members", { n }));
+const joinRequestCount = (t: TFunction, n: number) =>
+  n === 1 ? t("1 join request") : t("{n} join requests", { n });
+
+/** A subscription's status, as the label it shows under. */
+const SUB_LABEL: Record<string, string> = {
+  none: "None",
+  trialing: "Trial",
+  active: "Active",
+  past_due: "Past due",
+  inactive: "Inactive",
+  canceled: "Canceled",
+};
+
+/** The label a status shows under. Unknown ones fall back to the raw value, spaced. */
+const STATUS_LABEL: Record<string, string> = {
+  active: "Active",
+  pending: "Pending",
+  past_due: "Past due",
+  suspended: "Suspended",
+  rejected: "Rejected",
+};
 
 function push<K, V>(map: Map<K, V[]>, key: K, value: V) {
   const list = map.get(key);
@@ -233,6 +255,7 @@ function byRank(a: Member, b: Member): number {
 /* ================================================================== page == */
 
 function CompaniesPage() {
+  const t = useT("admin");
   const { primaryRole, loading } = useAuth();
   const navigate = useNavigate({ from: Route.fullPath });
   const search = Route.useSearch();
@@ -314,7 +337,7 @@ function CompaniesPage() {
       const p = extra.get(a.user_id);
       const m: Member = {
         id: a.user_id,
-        full_name: a.full_name || "Unnamed",
+        full_name: a.full_name || t("Unnamed"),
         email: a.email,
         email_confirmed: a.email_confirmed,
         last_sign_in_at: a.last_sign_in_at,
@@ -325,16 +348,16 @@ function CompaniesPage() {
         phone: p?.phone ?? null,
         employee_code: p?.employee_code ?? null,
       };
-      names.set(a.user_id, a.full_name || a.email || "Unknown");
+      names.set(a.user_id, a.full_name || a.email || t("Unknown"));
       if (a.company_id) push(members, a.company_id, m);
       if (a.pending_company_id) push(joins, a.pending_company_id, m);
       if (!a.company_id && !a.pending_company_id && !a.roles.includes("super_admin")) unplaced++;
     }
     for (const list of members.values()) list.sort(byRank);
     return { members, joins, names, unplaced };
-  }, [accountsQ.data, profilesQ.data]);
+  }, [accountsQ.data, profilesQ.data, t]);
 
-  if (loading || !isSuper) return <div className="text-sm text-muted-foreground">Loading…</div>;
+  if (loading || !isSuper) return <div className="text-sm text-muted-foreground">{t("Loading…")}</div>;
 
   const pending = all.filter((c) => c.status === "pending");
   const counts: Record<StatusFilter, number> = {
@@ -419,15 +442,14 @@ function CompaniesPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-foreground">Companies</h1>
+          <h1 className="text-2xl font-semibold text-foreground">{t("Companies")}</h1>
           <p className="text-sm text-muted-foreground">
-            Every business on the platform — approve new ones, and look up anyone behind any of
-            them.
+            {t("Every business on the platform — approve new ones, and look up anyone behind any of them.")}
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={exportDirectory} disabled={!rows.length}>
           <Download className="mr-2 h-4 w-4" />
-          Export CSV
+          {t("Export CSV")}
         </Button>
       </div>
 
@@ -438,35 +460,35 @@ function CompaniesPage() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <Stat
           icon={Hourglass}
-          label="Awaiting approval"
+          label={t("Awaiting approval")}
           value={counts.pending}
           tone={counts.pending ? "warning" : "muted"}
           onClick={() => navigate({ search: (s) => ({ ...s, view: "queue" }) })}
         />
         <Stat
           icon={CheckCircle2}
-          label="Active"
+          label={t("Active")}
           value={counts.active}
           tone="success"
           onClick={() => showAll("active")}
         />
         <Stat
           icon={AlertTriangle}
-          label="Past due / suspended"
+          label={t("Past due / suspended")}
           value={counts.attention}
           tone={counts.attention ? "danger" : "muted"}
           onClick={() => showAll("attention")}
         />
         <Stat
           icon={XCircle}
-          label="Rejected"
+          label={t("Rejected")}
           value={counts.rejected}
           tone="muted"
           onClick={() => showAll("rejected")}
         />
         <Stat
           icon={Building2}
-          label="New this week"
+          label={t("New this week")}
           value={newThisWeek}
           tone="primary"
           onClick={() => showAll("all")}
@@ -477,12 +499,12 @@ function CompaniesPage() {
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
           <p className="text-sm text-muted-foreground">
             <span className="font-medium text-foreground">
-              {plural(people.unplaced, "signed-up account")}
+              {people.unplaced === 1 ? t("1 signed-up account") : t("{n} signed-up accounts", { n: people.unplaced })}
             </span>{" "}
-            {people.unplaced === 1 ? "belongs" : "belong"} to no company yet.
+            {people.unplaced === 1 ? t("belongs to no company yet.") : t("belong to no company yet.")}
           </p>
           <Button asChild variant="outline" size="sm">
-            <Link to="/accounts">Review in Accounts</Link>
+            <Link to="/accounts">{t("Review in Accounts")}</Link>
           </Button>
         </div>
       )}
@@ -491,9 +513,9 @@ function CompaniesPage() {
         <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-5 text-sm">
           <p className="font-medium text-destructive">{errText(directoryQ.error)}</p>
           <p className="mt-1 text-muted-foreground">
-            If this says <span className="font-mono">admin_companies</span> is missing, apply{" "}
-            <span className="font-mono">20260930150000_company_review_and_directory.sql</span> to
-            this database.
+            {t("If this says")} <span className="font-mono">admin_companies</span> {t("is missing, apply")}{" "}
+            <span className="font-mono">20260930150000_company_review_and_directory.sql</span>{" "}
+            {t("to this database.")}
           </p>
         </div>
       ) : (
@@ -504,7 +526,7 @@ function CompaniesPage() {
           <TabsList>
             <TabsTrigger value="queue" className="gap-2">
               <Inbox className="h-4 w-4" />
-              Approval queue
+              {t("Approval queue")}
               {pending.length > 0 && (
                 <span className="rounded-full bg-warning px-1.5 text-[11px] font-semibold text-warning-foreground">
                   {pending.length}
@@ -513,19 +535,19 @@ function CompaniesPage() {
             </TabsTrigger>
             <TabsTrigger value="all" className="gap-2">
               <Building2 className="h-4 w-4" />
-              All companies
+              {t("All companies")}
             </TabsTrigger>
           </TabsList>
 
           <TabsContent value="queue" className="mt-4 space-y-3">
             {directoryQ.isLoading ? (
-              <p className="py-10 text-center text-sm text-muted-foreground">Loading…</p>
+              <p className="py-10 text-center text-sm text-muted-foreground">{t("Loading…")}</p>
             ) : pending.length === 0 ? (
               <div className="rounded-2xl border border-border bg-card px-5 py-12 text-center">
                 <CheckCircle2 className="mx-auto h-8 w-8 text-success" />
-                <p className="mt-2 text-sm font-medium text-foreground">Nothing waiting</p>
+                <p className="mt-2 text-sm font-medium text-foreground">{t("Nothing waiting")}</p>
                 <p className="text-xs text-muted-foreground">
-                  New registrations land here, and you get a notification the moment one does.
+                  {t("New registrations land here, and you get a notification the moment one does.")}
                 </p>
               </div>
             ) : (
@@ -552,7 +574,7 @@ function CompaniesPage() {
                 <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   className="h-9 pl-8"
-                  placeholder="Company, owner name or email, join code…"
+                  placeholder={t("Company, owner name or email, join code…")}
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                 />
@@ -567,7 +589,7 @@ function CompaniesPage() {
                       : "bg-secondary text-muted-foreground hover:text-foreground"
                   }`}
                 >
-                  {f.label} ({counts[f.key]})
+                  {t(f.label)} ({counts[f.key]})
                 </button>
               ))}
             </div>
@@ -576,14 +598,14 @@ function CompaniesPage() {
               <div className="flex items-center gap-2 border-b border-border px-5 py-3">
                 <Building2 className="h-4 w-4 text-muted-foreground" />
                 <h2 className="text-sm font-semibold text-foreground">
-                  {rows.length} of {plural(all.length, "company", "companies")}
+                  {all.length === 1 ? t("{n} of 1 company", { n: rows.length }) : t("{n} of {total} companies", { n: rows.length, total: all.length })}
                 </h2>
               </div>
               {directoryQ.isLoading ? (
-                <p className="py-10 text-center text-sm text-muted-foreground">Loading…</p>
+                <p className="py-10 text-center text-sm text-muted-foreground">{t("Loading…")}</p>
               ) : rows.length === 0 ? (
                 <p className="py-10 text-center text-sm text-muted-foreground">
-                  No companies match.
+                  {t("No companies match.")}
                 </p>
               ) : (
                 <ul className="divide-y divide-border">
@@ -687,11 +709,12 @@ function Stat({
 }
 
 function StatusBadge({ status }: { status: string }) {
+  const t = useT("admin");
   return (
     <span
       className={`rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ${STATUS_CLS[status] ?? "bg-secondary text-muted-foreground"}`}
     >
-      {status.replace("_", " ")}
+      {t(STATUS_LABEL[status] ?? status.replace("_", " "))}
     </span>
   );
 }
@@ -716,8 +739,9 @@ function Pill({
 
 /** Name, then a mailto — or a plain "unknown" when the account is gone. */
 function Creator({ company }: { company: CompanyRow }) {
+  const t = useT("admin");
   if (!company.created_by && !company.creator_email) {
-    return <span className="text-muted-foreground">creator unknown</span>;
+    return <span className="text-muted-foreground">{t("creator unknown")}</span>;
   }
   return (
     <>
@@ -751,6 +775,7 @@ function ReviewCard({
   onApprove: () => void;
   onReject: () => void;
 }) {
+  const t = useT("admin");
   return (
     <div className="rounded-2xl border border-warning/40 bg-card shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3">
@@ -760,13 +785,13 @@ function ReviewCard({
             <StatusBadge status={c.status} />
           </p>
           <p className="text-xs text-muted-foreground">
-            Registered {fmtDateTime(c.created_at)} ({ago(c.created_at)})
-            {c.plan_name && <> · trial of {c.plan_name}</>}
+            {t("Registered {date} ({ago})", { date: fmtDateTime(c.created_at), ago: ago(c.created_at) })}
+            {c.plan_name && <> · {t("trial of {plan}", { plan: c.plan_name })}</>}
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           <Button variant="ghost" size="sm" onClick={onOpen}>
-            Details
+            {t("Details")}
           </Button>
           <Button
             variant="outline"
@@ -776,7 +801,7 @@ function ReviewCard({
             className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
           >
             <Ban className="mr-2 h-3.5 w-3.5" />
-            Reject
+            {t("Reject")}
           </Button>
           <Button size="sm" disabled={busy} onClick={onApprove}>
             {busy ? (
@@ -784,7 +809,7 @@ function ReviewCard({
             ) : (
               <CheckCircle2 className="mr-2 h-3.5 w-3.5" />
             )}
-            Approve
+            {t("Approve")}
           </Button>
         </div>
       </div>
@@ -796,29 +821,29 @@ function ReviewCard({
 
       <div className="border-t border-border px-4 py-3">
         <p className="text-xs font-medium text-muted-foreground">
-          People attached so far ({members.length})
-          {c.pending_join_count > 0 && <> · {plural(c.pending_join_count, "join request")}</>}
+          {t("People attached so far ({n})", { n: members.length })}
+          {c.pending_join_count > 0 && <> · {joinRequestCount(t, c.pending_join_count)}</>}
         </p>
-        <PeopleList people={members} empty="Nobody is attached to this company yet." compact />
+        <PeopleList people={members} empty={t("Nobody is attached to this company yet.")} compact />
       </div>
       <p className="border-t border-border px-4 py-2 text-[11px] text-muted-foreground">
-        Approving unlocks the workspace, starts the free trial and issues a join code. The owner is
-        notified either way.
+        {t("Approving unlocks the workspace, starts the free trial and issues a join code. The owner is notified either way.")}
       </p>
     </div>
   );
 }
 
 function OwnerBlock({ company: c }: { company: CompanyRow }) {
+  const t = useT("admin");
   return (
     <div className="min-w-0 space-y-1">
       <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        Registered by
+        {t("Registered by")}
       </p>
       {c.creator_email || c.creator_name ? (
         <>
           <p className="truncate text-sm font-medium text-foreground">
-            {c.creator_name ?? "No name given"}
+            {c.creator_name ?? t("No name given")}
           </p>
           {c.creator_email && (
             <p className="flex flex-wrap items-center gap-1.5 text-sm">
@@ -830,9 +855,9 @@ function OwnerBlock({ company: c }: { company: CompanyRow }) {
                 {c.creator_email}
               </a>
               {c.creator_email_confirmed ? (
-                <Pill tone="success">confirmed</Pill>
+                <Pill tone="success">{t("confirmed")}</Pill>
               ) : (
-                <Pill tone="warning">unconfirmed</Pill>
+                <Pill tone="warning">{t("unconfirmed")}</Pill>
               )}
             </p>
           )}
@@ -845,12 +870,12 @@ function OwnerBlock({ company: c }: { company: CompanyRow }) {
             </p>
           )}
           <p className="text-xs text-muted-foreground">
-            Last sign-in {ago(c.creator_last_sign_in_at)}
+            {t("Last sign-in {when}", { when: ago(c.creator_last_sign_in_at) })}
           </p>
         </>
       ) : (
         <p className="text-sm text-muted-foreground">
-          Not recorded — the account that registered it has been deleted.
+          {t("Not recorded — the account that registered it has been deleted.")}
         </p>
       )}
     </div>
@@ -858,9 +883,10 @@ function OwnerBlock({ company: c }: { company: CompanyRow }) {
 }
 
 function BusinessBlock({ company: c }: { company: CompanyRow }) {
+  const t = useT("admin");
   return (
     <div className="min-w-0 space-y-1">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Business</p>
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("Business")}</p>
       {c.business_phone ? (
         <p className="flex items-center gap-1.5 text-sm">
           <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -869,7 +895,7 @@ function BusinessBlock({ company: c }: { company: CompanyRow }) {
           </a>
         </p>
       ) : (
-        <p className="text-sm text-muted-foreground">No business phone given</p>
+        <p className="text-sm text-muted-foreground">{t("No business phone given")}</p>
       )}
       {c.business_address ? (
         <p className="flex items-start gap-1.5 text-sm text-foreground">
@@ -877,9 +903,9 @@ function BusinessBlock({ company: c }: { company: CompanyRow }) {
           <span className="whitespace-pre-line">{c.business_address}</span>
         </p>
       ) : (
-        <p className="text-sm text-muted-foreground">No address given</p>
+        <p className="text-sm text-muted-foreground">{t("No address given")}</p>
       )}
-      <p className="text-xs text-muted-foreground">Time zone {c.timezone}</p>
+      <p className="text-xs text-muted-foreground">{t("Time zone {tz}", { tz: c.timezone })}</p>
     </div>
   );
 }
@@ -887,6 +913,7 @@ function BusinessBlock({ company: c }: { company: CompanyRow }) {
 /* ======================================================== the directory == */
 
 function CompanyListRow({ company: c, onOpen }: { company: CompanyRow; onOpen: () => void }) {
+  const t = useT("admin");
   return (
     <button
       onClick={onOpen}
@@ -896,19 +923,19 @@ function CompanyListRow({ company: c, onOpen }: { company: CompanyRow; onOpen: (
         <div className="flex flex-wrap items-center gap-2">
           <span className="truncate text-sm font-medium text-foreground">{c.name}</span>
           <StatusBadge status={c.status} />
-          {c.sub_status !== "none" && <Pill>sub: {c.sub_status}</Pill>}
+          {c.sub_status !== "none" && <Pill>{t("sub: {status}", { status: t(SUB_LABEL[c.sub_status] ?? c.sub_status.replace("_", " ")) })}</Pill>}
           {c.pending_join_count > 0 && (
-            <Pill tone="warning">{plural(c.pending_join_count, "join request")}</Pill>
+            <Pill tone="warning">{joinRequestCount(t, c.pending_join_count)}</Pill>
           )}
         </div>
         <p className="mt-0.5 truncate text-xs text-foreground/80">
           <Creator company={c} />
         </p>
         <p className="mt-0.5 truncate text-xs text-muted-foreground">
-          {plural(c.member_count, "member")}
+          {memberCount(t, c.member_count)}
           {c.plan_name && <> · {c.plan_name}</>}
-          {" · "}registered {fmtDate(c.created_at)}
-          {" · "}last clock-in {ago(c.last_punch_at)}
+          {" · "}{t("registered {date}", { date: fmtDate(c.created_at) })}
+          {" · "}{t("last clock-in {when}", { when: ago(c.last_punch_at) })}
         </p>
       </div>
       <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -937,6 +964,7 @@ function CompanyPanel({
   onReject: () => void;
   onDeleted: () => void;
 }) {
+  const t = useT("admin");
   const undecided = company.status === "pending" || company.status === "rejected";
   const [copied, setCopied] = useState(false);
 
@@ -948,10 +976,10 @@ function CompanyPanel({
           <StatusBadge status={company.status} />
         </SheetTitle>
         <SheetDescription className="text-xs">
-          {plural(company.member_count, "member")} · registered {fmtDate(company.created_at)}
+          {memberCount(t, company.member_count)} · {t("registered {date}", { date: fmtDate(company.created_at) })}
           {company.join_code && (
             <>
-              {" · "}join code{" "}
+              {" · "}{t("join code")}{" "}
               <button
                 type="button"
                 className="inline-flex items-center gap-1 font-mono text-foreground hover:underline"
@@ -960,12 +988,12 @@ function CompanyPanel({
                   setCopied(true);
                   setTimeout(() => setCopied(false), 1200);
                 }}
-                title="Copy join code"
+                title={t("Copy join code")}
               >
                 {company.join_code}
                 <Copy className="h-3 w-3" />
               </button>
-              {copied && <span className="ml-1 text-success">copied</span>}
+              {copied && <span className="ml-1 text-success">{t("copied")}</span>}
             </>
           )}
         </SheetDescription>
@@ -977,7 +1005,7 @@ function CompanyPanel({
               ) : (
                 <CheckCircle2 className="mr-2 h-3.5 w-3.5" />
               )}
-              {company.status === "rejected" ? "Approve after all" : "Approve"}
+              {company.status === "rejected" ? t("Approve after all") : t("Approve")}
             </Button>
             {company.status === "pending" && (
               <Button
@@ -988,7 +1016,7 @@ function CompanyPanel({
                 className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
               >
                 <Ban className="mr-2 h-3.5 w-3.5" />
-                Reject
+                {t("Reject")}
               </Button>
             )}
           </div>
@@ -997,14 +1025,14 @@ function CompanyPanel({
 
       <Tabs defaultValue="overview" className="flex-1 px-5 py-4">
         <TabsList className="flex h-auto w-full flex-wrap justify-start">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="overview">{t("Overview")}</TabsTrigger>
           <TabsTrigger value="people">
-            People ({members.length}
+            {t("People")} ({members.length}
             {joins.length ? ` + ${joins.length}` : ""})
           </TabsTrigger>
-          <TabsTrigger value="billing">Billing</TabsTrigger>
-          <TabsTrigger value="settings">Settings</TabsTrigger>
-          <TabsTrigger value="activity">Activity</TabsTrigger>
+          <TabsTrigger value="billing">{t("Billing")}</TabsTrigger>
+          <TabsTrigger value="settings">{t("Settings")}</TabsTrigger>
+          <TabsTrigger value="activity">{t("Activity")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="mt-4 space-y-4">
@@ -1057,44 +1085,45 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 }
 
 function OverviewTab({ company: c }: { company: CompanyRow }) {
+  const t = useT("admin");
   return (
     <>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Section title="Owner" icon={KeyRound}>
+        <Section title={t("Owner")} icon={KeyRound}>
           <OwnerBlock company={c} />
         </Section>
-        <Section title="Contact" icon={Building2}>
+        <Section title={t("Contact")} icon={Building2}>
           <BusinessBlock company={c} />
         </Section>
       </div>
 
-      <Section title="At a glance" icon={Activity}>
+      <Section title={t("At a glance")} icon={Activity}>
         <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <Fact label="Members">{c.member_count}</Fact>
-          <Fact label="Admins">{c.admin_count}</Fact>
-          <Fact label="Inactive">{c.inactive_count}</Fact>
-          <Fact label="Join requests">{c.pending_join_count}</Fact>
-          <Fact label="Last clock-in">{ago(c.last_punch_at)}</Fact>
-          <Fact label="Subscription">
-            <span className="capitalize">{c.sub_status}</span>
+          <Fact label={t("Members")}>{c.member_count}</Fact>
+          <Fact label={t("Admins")}>{c.admin_count}</Fact>
+          <Fact label={t("Inactive members")}>{c.inactive_count}</Fact>
+          <Fact label={t("Join requests")}>{c.pending_join_count}</Fact>
+          <Fact label={t("Last clock-in")}>{ago(c.last_punch_at)}</Fact>
+          <Fact label={t("Subscription")}>
+            <span className="capitalize">{t(SUB_LABEL[c.sub_status] ?? c.sub_status.replace("_", " "))}</span>
             {c.plan_name && <> · {c.plan_name}</>}
           </Fact>
-          <Fact label="Period ends">{fmtDate(c.period_end)}</Fact>
-          <Fact label="Billing mode">
-            {BILLING_MODES.find((b) => b.value === c.billing_mode)?.label ?? c.billing_mode}
+          <Fact label={t("Period ends")}>{fmtDate(c.period_end)}</Fact>
+          <Fact label={t("Billing mode")}>
+            {t(BILLING_MODES.find((b) => b.value === c.billing_mode)?.label ?? c.billing_mode)}
           </Fact>
-          <Fact label="History kept">
-            {c.data_retention_months ? `${c.data_retention_months} months` : "Unlimited"}
+          <Fact label={t("History kept")}>
+            {c.data_retention_months ? t("{n} months", { n: c.data_retention_months }) : t("Unlimited")}
           </Fact>
         </dl>
       </Section>
 
-      <Section title="Review" icon={ShieldCheck}>
+      <Section title={t("Review")} icon={ShieldCheck}>
         {c.reviewed_at ? (
           <div className="space-y-1 text-sm">
             <p className="text-foreground">
-              {c.status === "rejected" ? "Rejected" : "Approved"} by{" "}
-              <span className="font-medium">{c.reviewed_by_name ?? "a deleted account"}</span> on{" "}
+              {c.status === "rejected" ? t("Rejected by") : t("Approved by")}{" "}
+              <span className="font-medium">{c.reviewed_by_name ?? t("a deleted account")}</span> {t("on")}{" "}
               {fmtDateTime(c.reviewed_at)}.
             </p>
             {c.review_note && (
@@ -1105,10 +1134,10 @@ function OverviewTab({ company: c }: { company: CompanyRow }) {
           </div>
         ) : c.status === "pending" ? (
           <p className="text-sm text-muted-foreground">
-            Waiting for a decision since {fmtDateTime(c.created_at)}.
+            {t("Waiting for a decision since {date}.", { date: fmtDateTime(c.created_at) })}
           </p>
         ) : (
-          <p className="text-sm text-muted-foreground">Reviewed before decisions were recorded.</p>
+          <p className="text-sm text-muted-foreground">{t("Reviewed before decisions were recorded.")}</p>
         )}
       </Section>
     </>
@@ -1126,6 +1155,7 @@ function PeopleTab({
   members: Member[];
   joins: Member[];
 }) {
+  const t = useT("admin");
   const qc = useQueryClient();
   const [err, setErr] = useState<string | null>(null);
 
@@ -1179,13 +1209,12 @@ function PeopleTab({
     <>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">
-          {plural(members.length, "member")}, {company.admin_count} admin
-          {company.admin_count === 1 ? "" : "s"}
-          {company.inactive_count > 0 && <>, {company.inactive_count} inactive</>}
+          {memberCount(t, members.length)}, {company.admin_count === 1 ? t("1 admin") : t("{n} admins", { n: company.admin_count })}
+          {company.inactive_count > 0 && <>, {t("{n} inactive", { n: company.inactive_count })}</>}
         </p>
         <div className="flex gap-2">
           <Button asChild variant="ghost" size="sm">
-            <Link to="/accounts">Manage roles</Link>
+            <Link to="/accounts">{t("Manage roles")}</Link>
           </Button>
           <Button
             variant="outline"
@@ -1194,7 +1223,7 @@ function PeopleTab({
             disabled={!members.length && !joins.length}
           >
             <Download className="mr-2 h-3.5 w-3.5" />
-            Export
+            {t("Export")}
           </Button>
         </div>
       </div>
@@ -1206,7 +1235,7 @@ function PeopleTab({
       {joins.length > 0 && (
         <div className="rounded-xl border border-warning/40 bg-warning/5 p-3">
           <p className="text-sm font-medium text-warning-foreground">
-            {plural(joins.length, "person", "people")} asking to join
+            {joins.length === 1 ? t("1 person asking to join") : t("{n} people asking to join", { n: joins.length })}
           </p>
           <PeopleList
             people={joins}
@@ -1216,18 +1245,18 @@ function PeopleTab({
                 size="sm"
                 variant="outline"
                 disabled={approveJoin.isPending || company.status !== "active"}
-                title={company.status !== "active" ? "Approve the company first" : ""}
+                title={company.status !== "active" ? t("Approve the company first") : ""}
                 onClick={() => approveJoin.mutate(m.id)}
               >
                 <UserCheck className="mr-1.5 h-3.5 w-3.5" />
-                Let in
+                {t("Let in")}
               </Button>
             )}
           />
         </div>
       )}
 
-      <PeopleList people={members} empty="Nobody has joined yet." />
+      <PeopleList people={members} empty={t("Nobody has joined yet.")} />
     </>
   );
 }
@@ -1250,6 +1279,7 @@ function PeopleList({
   compact?: boolean;
   action?: (m: Member) => ReactNode;
 }) {
+  const t = useT("admin");
   if (people.length === 0) {
     return empty ? <p className="mt-2 text-xs text-muted-foreground">{empty}</p> : null;
   }
@@ -1263,9 +1293,9 @@ function PeopleList({
           <div className="min-w-0 flex-1">
             <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-foreground">
               <span className="truncate">{p.full_name}</span>
-              {p.roles.includes("company_admin") && <Pill tone="primary">admin</Pill>}
-              {!p.is_active && <Pill>inactive</Pill>}
-              {!p.email_confirmed && <Pill tone="warning">email unconfirmed</Pill>}
+              {p.roles.includes("company_admin") && <Pill tone="primary">{t("admin")}</Pill>}
+              {!p.is_active && <Pill>{t("inactive")}</Pill>}
+              {!p.email_confirmed && <Pill tone="warning">{t("email unconfirmed")}</Pill>}
             </p>
             {p.email && (
               <a
@@ -1277,7 +1307,7 @@ function PeopleList({
             )}
             {!compact && (
               <p className="truncate text-xs text-muted-foreground">
-                {p.roles.length ? p.roles.map((r) => ROLE_LABEL[r]).join(", ") : "No role"}
+                {p.roles.length ? p.roles.map((r) => t(ROLE_LABEL[r])).join(", ") : t("No role")}
                 {p.position && <> · {p.position}</>}
                 {p.employee_code && <> · #{p.employee_code}</>}
               </p>
@@ -1295,8 +1325,8 @@ function PeopleList({
               )}
               <p className="text-[11px] text-muted-foreground">
                 {compact
-                  ? `signed up ${fmtDate(p.created_at)}`
-                  : `last sign-in ${ago(p.last_sign_in_at)}`}
+                  ? t("signed up {date}", { date: fmtDate(p.created_at) })
+                  : t("last sign-in {when}", { when: ago(p.last_sign_in_at) })}
               </p>
             </div>
             {action?.(p)}
@@ -1310,6 +1340,7 @@ function PeopleList({
 /* --------------------------------------------------------------- billing -- */
 
 function BillingTab({ company }: { company: CompanyRow }) {
+  const t = useT("admin");
   const qc = useQueryClient();
   const [err, setErr] = useState<string | null>(null);
 
@@ -1372,16 +1403,15 @@ function BillingTab({ company }: { company: CompanyRow }) {
 
   return (
     <>
-      <Section title="Subscription" icon={CreditCard}>
+      <Section title={t("Subscription")} icon={CreditCard}>
         {!subQ.isLoading && !subscription && (
           <p className="mb-3 rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
-            No subscription record — treated as a trial, so scheduling still works. Setting anything
-            below creates one.
+            {t("No subscription record — treated as a trial, so scheduling still works. Setting anything below creates one.")}
           </p>
         )}
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <Label className="text-xs">Status</Label>
+            <Label className="text-xs">{t("Status")}</Label>
             <select
               className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm capitalize shadow-sm"
               value={subscription?.status ?? "trialing"}
@@ -1390,20 +1420,20 @@ function BillingTab({ company }: { company: CompanyRow }) {
             >
               {SUB_STATUSES.map((s) => (
                 <option key={s} value={s}>
-                  {s.replace("_", " ")}
+                  {t(SUB_LABEL[s])}
                 </option>
               ))}
             </select>
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">Plan</Label>
+            <Label className="text-xs">{t("Plan")}</Label>
             <select
               className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
               value={subscription?.plan_id ?? ""}
               disabled={saveSub.isPending || subQ.isLoading}
               onChange={(e) => saveSub.mutate({ plan_id: e.target.value || null })}
             >
-              <option value="">— none —</option>
+              <option value="">{t("— none —")}</option>
               {plans.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name} (${(p.price_cents / 100).toFixed(0)})
@@ -1413,8 +1443,7 @@ function BillingTab({ company }: { company: CompanyRow }) {
           </div>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
-          Setting the subscription to inactive or canceled stops new schedules being created;
-          existing ones stay visible to employees.
+          {t("Setting the subscription to inactive or canceled stops new schedules being created; existing ones stay visible to employees.")}
         </p>
         {err && (
           <p className="mt-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -1442,6 +1471,7 @@ function BillingTab({ company }: { company: CompanyRow }) {
 /* -------------------------------------------------------------- settings -- */
 
 function SettingsTab({ company, onDeleted }: { company: CompanyRow; onDeleted: () => void }) {
+  const t = useT("admin");
   const qc = useQueryClient();
   const [err, setErr] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -1520,18 +1550,18 @@ function SettingsTab({ company, onDeleted }: { company: CompanyRow; onDeleted: (
         <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{err}</p>
       )}
 
-      <Section title="Account" icon={KeyRound}>
+      <Section title={t("Account")} icon={KeyRound}>
         <div className="space-y-4">
           <div className="space-y-1.5">
             <Label className="text-xs" htmlFor="org-name">
-              Organization name
+              {t("Organization name")}
             </Label>
             <div className="flex gap-2">
               <Input
                 id="org-name"
                 value={nameDraft}
                 maxLength={120}
-                placeholder="e.g. City of Calexico"
+                placeholder={t("e.g. City of Calexico")}
                 onChange={(e) => setNameDraft(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && nameDraft.trim() && nameDraft.trim() !== company.name) {
@@ -1547,35 +1577,35 @@ function SettingsTab({ company, onDeleted }: { company: CompanyRow; onDeleted: (
                 onClick={() => updateCompany.mutate({ name: nameDraft.trim() })}
               >
                 {updateCompany.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Save
+                {t("Save")}
               </Button>
             </div>
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs">Account status</Label>
+            <Label className="text-xs">{t("Account status")}</Label>
             <select
               className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm capitalize shadow-sm"
               value={company.status}
               disabled={updateCompany.isPending || undecided}
               onChange={(e) => updateCompany.mutate({ status: e.target.value })}
             >
-              {undecided && <option value={company.status}>{company.status}</option>}
+              {undecided && <option value={company.status}>{t(STATUS_LABEL[company.status] ?? company.status)}</option>}
               {LIVE_STATUSES.map((s) => (
                 <option key={s} value={s}>
-                  {s.replace("_", " ")}
+                  {t(STATUS_LABEL[s])}
                 </option>
               ))}
             </select>
             <p className="text-xs text-muted-foreground">
               {undecided
-                ? "A registration is decided with Approve or Reject at the top, so the decision is recorded."
-                : "Anything other than active blocks sign-in for this company and notifies its members."}
+                ? t("A registration is decided with Approve or Reject at the top, so the decision is recorded.")
+                : t("Anything other than active blocks sign-in for this company and notifies its members.")}
             </p>
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs">Billing mode</Label>
+            <Label className="text-xs">{t("Billing mode")}</Label>
             <select
               className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
               value={company.billing_mode ?? "pending"}
@@ -1584,7 +1614,7 @@ function SettingsTab({ company, onDeleted }: { company: CompanyRow; onDeleted: (
             >
               {BILLING_MODES.map((b) => (
                 <option key={b.value} value={b.value}>
-                  {b.label}
+                  {t(b.label)}
                 </option>
               ))}
             </select>
@@ -1599,11 +1629,10 @@ function SettingsTab({ company, onDeleted }: { company: CompanyRow; onDeleted: (
           <div className="min-w-0">
             <Label className="flex items-center gap-1.5 text-sm">
               <Volume2 className="h-4 w-4 text-primary" />
-              Break alert sound
+              {t("Break alert sound")}
             </Label>
             <p className="mt-1 text-xs text-muted-foreground">
-              This company's two-minute break reminder plays a loud recorded alert instead of the
-              standard chime, for crews who cannot hear a phone in a pocket.
+              {t("This company's two-minute break reminder plays a loud recorded alert instead of the standard chime, for crews who cannot hear a phone in a pocket.")}
             </p>
           </div>
           <Switch
@@ -1612,12 +1641,12 @@ function SettingsTab({ company, onDeleted }: { company: CompanyRow; onDeleted: (
               breakAlertQ.isLoading || breakAlertQ.data?.unavailable || setBreakAlert.isPending
             }
             onCheckedChange={(v) => setBreakAlert.mutate(v)}
-            aria-label="Break alert sound"
+            aria-label={t("Break alert sound")}
           />
         </div>
         {breakAlertQ.data?.unavailable ? (
           <p className="text-xs text-warning-foreground">
-            Not available yet — this database is still waiting on the migration that adds it.
+            {t("Not available yet — this database is still waiting on the migration that adds it.")}
           </p>
         ) : (
           <button
@@ -1625,7 +1654,7 @@ function SettingsTab({ company, onDeleted }: { company: CompanyRow; onDeleted: (
             onClick={() => playBreakAlert(true)}
             className="text-xs font-medium text-primary hover:underline"
           >
-            Hear it
+            {t("Hear it")}
           </button>
         )}
       </section>
@@ -1638,11 +1667,10 @@ function SettingsTab({ company, onDeleted }: { company: CompanyRow; onDeleted: (
       <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4">
         <p className="flex items-center gap-2 text-sm font-medium text-destructive">
           <AlertTriangle className="h-4 w-4" />
-          Danger zone
+          {t("Danger zone")}
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
-          Deleting removes the company and everything scoped to it — schedules, shifts, punches,
-          time off, and role assignments. Sign-in accounts survive but are left with no company.
+          {t("Deleting removes the company and everything scoped to it — schedules, shifts, punches, time off, and role assignments. Sign-in accounts survive but are left with no company.")}
         </p>
         <Button
           variant="outline"
@@ -1654,7 +1682,7 @@ function SettingsTab({ company, onDeleted }: { company: CompanyRow; onDeleted: (
           }}
         >
           <Trash2 className="mr-2 h-3.5 w-3.5" />
-          Delete company
+          {t("Delete company")}
         </Button>
       </div>
 
@@ -1687,6 +1715,7 @@ function ActivityTab({
   company: CompanyRow;
   nameOf: (userId: string) => string | null;
 }) {
+  const t = useT("admin");
   const q = useQuery({
     queryKey: ["company-activity", company.id],
     queryFn: async () => {
@@ -1705,14 +1734,14 @@ function ActivityTab({
   return (
     <div className="space-y-2">
       <p className="text-xs text-muted-foreground">
-        The last 100 recorded changes — approvals, billing, schedules, roles and time off.
+        {t("The last 100 recorded changes — approvals, billing, schedules, roles and time off.")}
       </p>
       {q.isLoading ? (
-        <p className="py-6 text-center text-sm text-muted-foreground">Loading…</p>
+        <p className="py-6 text-center text-sm text-muted-foreground">{t("Loading…")}</p>
       ) : q.error ? (
         <p className="text-sm text-destructive">{errText(q.error)}</p>
       ) : entries.length === 0 ? (
-        <p className="py-6 text-center text-sm text-muted-foreground">Nothing recorded yet.</p>
+        <p className="py-6 text-center text-sm text-muted-foreground">{t("Nothing recorded yet.")}</p>
       ) : (
         <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border">
           {entries.map((e) => (
@@ -1723,7 +1752,7 @@ function ActivityTab({
               <div className="min-w-0">
                 <p className="truncate font-mono text-xs text-foreground">{e.action}</p>
                 <p className="text-[11px] text-muted-foreground">
-                  {e.actor_id ? (nameOf(e.actor_id) ?? "a deleted account") : "the system"}
+                  {e.actor_id ? (nameOf(e.actor_id) ?? t("a deleted account")) : t("the system")}
                 </p>
               </div>
               <span
@@ -1760,6 +1789,7 @@ function RejectDialog({
   onCancel: () => void;
   onConfirm: (note: string) => void;
 }) {
+  const t = useT("admin");
   const [note, setNote] = useState("");
   useEffect(() => setNote(""), [company?.id]);
 
@@ -1769,29 +1799,28 @@ function RejectDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <UserX className="h-5 w-5 text-destructive" />
-            Reject {company?.name}?
+            {t("Reject {name}?", { name: company?.name ?? "" })}
           </DialogTitle>
           <DialogDescription>
             {company?.creator_email ? (
               <>
-                <span className="font-medium text-foreground">{company.creator_email}</span> and
-                anyone attached
+                <span className="font-medium text-foreground">{company.creator_email}</span>{" "}
+                {t("and anyone attached")}
               </>
             ) : (
-              "Everyone attached"
+              t("Everyone attached")
             )}{" "}
-            will be told it was not approved, with the reason below. They stay locked out. You can
-            still approve it later from the company's panel.
+            {t("will be told it was not approved, with the reason below. They stay locked out. You can still approve it later from the company's panel.")}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-1.5">
-          <Label htmlFor="reject-note">Reason</Label>
+          <Label htmlFor="reject-note">{t("Reason")}</Label>
           <Textarea
             id="reject-note"
             rows={3}
             value={note}
             maxLength={500}
-            placeholder="e.g. We couldn't verify this business. Reply with your business license and we'll take another look."
+            placeholder={t("e.g. We couldn't verify this business. Reply with your business license and we'll take another look.")}
             onChange={(e) => setNote(e.target.value)}
           />
         </div>
@@ -1800,7 +1829,7 @@ function RejectDialog({
         )}
         <DialogFooter>
           <Button variant="outline" onClick={onCancel} disabled={pending}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button
             variant="destructive"
@@ -1808,7 +1837,7 @@ function RejectDialog({
             onClick={() => onConfirm(note.trim())}
           >
             {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Reject
+            {t("Reject")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1828,6 +1857,7 @@ function RetentionCard({
   company: Pick<CompanyRow, "id" | "name" | "data_retention_months">;
   onChange: (months: number | null) => void;
 }) {
+  const t = useT("admin");
   const qc = useQueryClient();
   const [confirming, setConfirming] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -1849,7 +1879,7 @@ function RetentionCard({
       return data as unknown as { punches_deleted: number; shifts_deleted: number };
     },
     onSuccess: (r) => {
-      setDone(`Deleted ${r.punches_deleted} punches and ${r.shifts_deleted} shifts.`);
+      setDone(translate("Deleted {punches} punches and {shifts} shifts.", { punches: r.punches_deleted, shifts: r.shifts_deleted }));
       setConfirming(false);
       void qc.invalidateQueries({ queryKey: ["company-history-stats"] });
     },
@@ -1859,15 +1889,15 @@ function RetentionCard({
   const s = statsQ.data;
   const beyond = (s?.punches_past_window ?? 0) + (s?.shifts_past_window ?? 0);
   const since = (iso: string | null | undefined) =>
-    iso ? new Date(iso).toLocaleDateString(undefined, { month: "short", year: "numeric" }) : "—";
+    iso ? new Date(iso).toLocaleDateString(localeTag(), { month: "short", year: "numeric" }) : "—";
 
   return (
     <div className="rounded-xl border border-border bg-card p-4">
       <p className="flex items-center gap-2 text-sm font-medium text-foreground">
-        <Clock className="h-4 w-4 text-primary" /> History kept
+        <Clock className="h-4 w-4 text-primary" /> {t("History kept")}
       </p>
       <p className="mt-1 text-xs text-muted-foreground">
-        How far back this company's admins can see schedules and timecards.
+        {t("How far back this company's admins can see schedules and timecards.")}
       </p>
 
       <div className="mt-2 flex flex-wrap gap-2">
@@ -1884,7 +1914,7 @@ function RetentionCard({
                   : "border-border bg-background text-muted-foreground hover:bg-accent"
               }`}
             >
-              {c.label}
+              {t(c.label)}
             </button>
           );
         })}
@@ -1892,19 +1922,19 @@ function RetentionCard({
 
       <dl className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
         <div>
-          <dt className="text-muted-foreground">Punches</dt>
+          <dt className="text-muted-foreground">{t("Punches")}</dt>
           <dd className="font-medium text-foreground">{s?.punches ?? "—"}</dd>
         </div>
         <div>
-          <dt className="text-muted-foreground">Shifts</dt>
+          <dt className="text-muted-foreground">{t("Shifts")}</dt>
           <dd className="font-medium text-foreground">{s?.shifts ?? "—"}</dd>
         </div>
         <div>
-          <dt className="text-muted-foreground">Oldest punch</dt>
+          <dt className="text-muted-foreground">{t("Oldest punch")}</dt>
           <dd className="font-medium text-foreground">{since(s?.oldest_punch)}</dd>
         </div>
         <div>
-          <dt className="text-muted-foreground">Oldest shift</dt>
+          <dt className="text-muted-foreground">{t("Oldest shift")}</dt>
           <dd className="font-medium text-foreground">{since(s?.oldest_shift)}</dd>
         </div>
       </dl>
@@ -1916,8 +1946,8 @@ function RetentionCard({
         <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border pt-3">
           <p className="text-xs text-muted-foreground">
             {beyond > 0
-              ? `${s?.punches_past_window ?? 0} punches and ${s?.shifts_past_window ?? 0} shifts are older than ${company.data_retention_months} months.`
-              : "Nothing is older than the window."}
+              ? t("{punches} punches and {shifts} shifts are older than {months} months.", { punches: s?.punches_past_window ?? 0, shifts: s?.shifts_past_window ?? 0, months: company.data_retention_months })
+              : t("Nothing is older than the window.")}
           </p>
           <Button
             variant="outline"
@@ -1930,7 +1960,7 @@ function RetentionCard({
               setConfirming(true);
             }}
           >
-            <Trash2 className="mr-2 h-4 w-4" /> Delete older than window
+            <Trash2 className="mr-2 h-4 w-4" /> {t("Delete older than window")}
           </Button>
         </div>
       )}
@@ -1939,24 +1969,25 @@ function RetentionCard({
         <Dialog open onOpenChange={(o) => !o && setConfirming(false)}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Delete {company.name}&rsquo;s older records?</DialogTitle>
+              <DialogTitle>{t("Delete {name}’s older records?", { name: company.name })}</DialogTitle>
               <DialogDescription>
-                {s?.punches_past_window ?? 0} punches and {s?.shifts_past_window ?? 0} shifts from
-                before {s?.cutoff ? new Date(s.cutoff).toLocaleDateString() : "the window"} are
-                removed for good. Timecards that have already been paid rely on these records, so
-                check with the company first.
+                {t("{punches} punches and {shifts} shifts from before {when} are removed for good. Timecards that have already been paid rely on these records, so check with the company first.", {
+                  punches: s?.punches_past_window ?? 0,
+                  shifts: s?.shifts_past_window ?? 0,
+                  when: s?.cutoff ? new Date(s.cutoff).toLocaleDateString(localeTag()) : t("the window"),
+                })}
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
               <Button variant="outline" onClick={() => setConfirming(false)}>
-                Cancel
+                {t("Cancel")}
               </Button>
               <Button
                 variant="destructive"
                 onClick={() => purge.mutate()}
                 disabled={purge.isPending}
               >
-                {purge.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Delete them
+                {purge.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} {t("Delete them")}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -1979,6 +2010,7 @@ function DeleteCompanyDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const t = useT("admin");
   const [typed, setTyped] = useState("");
   useEffect(() => {
     if (open) setTyped("");
@@ -1989,15 +2021,14 @@ function DeleteCompanyDialog({
     <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Delete {companyName}?</DialogTitle>
+          <DialogTitle>{t("Delete {name}?", { name: companyName })}</DialogTitle>
           <DialogDescription>
-            This cannot be undone. Every schedule, shift, timecard, punch, time-off request and role
-            assignment belonging to this company is permanently removed.
+            {t("This cannot be undone. Every schedule, shift, timecard, punch, time-off request and role assignment belonging to this company is permanently removed.")}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2 py-2">
           <Label htmlFor="confirm-name" className="text-xs">
-            Type <span className="font-medium text-foreground">{companyName}</span> to confirm
+            {t("Type")} <span className="font-medium text-foreground">{companyName}</span> {t("to confirm")}
           </Label>
           <Input
             id="confirm-name"
@@ -2008,14 +2039,14 @@ function DeleteCompanyDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onCancel}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             disabled={!matches || pending}
             onClick={onConfirm}
           >
-            {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Delete permanently
+            {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{t("Delete permanently")}
           </Button>
         </DialogFooter>
       </DialogContent>

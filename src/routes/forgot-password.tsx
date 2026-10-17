@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { noindexSeo } from "@/lib/seo";
+import { useT } from "@/lib/i18n";
 
 export const Route = createFileRoute("/forgot-password")({
   head: () => noindexSeo("Reset your password | Scheduling Pilot", { follow: true }),
@@ -14,6 +15,7 @@ export const Route = createFileRoute("/forgot-password")({
 });
 
 function ForgotPasswordPage() {
+  const t = useT("shell");
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,24 +43,25 @@ function ForgotPasswordPage() {
           <BrandLogo className="h-16" />
         </Link>
 
-        <h1 className="mb-1 text-xl font-semibold text-foreground">Reset your password</h1>
+        <h1 className="mb-1 text-xl font-semibold text-foreground">{t("Reset your password")}</h1>
         <p className="mb-6 text-sm text-muted-foreground">
-          Enter your work email and we'll send a link to choose a new password.
+          {t("Enter your work email and we'll send a link to choose a new password.")}
         </p>
 
         {sent ? (
           <div className="space-y-4">
             <p className="rounded-md bg-primary-soft px-3 py-2 text-sm text-primary">
-              If an account exists for <strong>{email}</strong>, a reset link is on its way. Check your inbox (and spam folder).
+              {t("If an account exists for")} <strong>{email}</strong>,{" "}
+              {t("a reset link is on its way. Check your inbox (and spam folder).")}
             </p>
             <Link to="/login" className="block text-sm text-primary hover:underline">
-              Back to sign in
+              {t("Back to sign in")}
             </Link>
           </div>
         ) : (
           <form className="space-y-4" onSubmit={handleSubmit}>
             <div className="space-y-1.5">
-              <Label htmlFor="email">Work email</Label>
+              <Label htmlFor="email">{t("Work email")}</Label>
               <Input
                 id="email"
                 type="email"
@@ -69,13 +72,13 @@ function ForgotPasswordPage() {
               />
             </div>
             <Button type="submit" className="w-full" disabled={busy}>
-              {busy && <Loader2 className="h-4 w-4 animate-spin" />} Send reset link
+              {busy && <Loader2 className="h-4 w-4 animate-spin" />} {t("Send reset link")}
             </Button>
             {error && (
               <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>
             )}
             <Link to="/login" className="block text-center text-sm text-muted-foreground hover:text-foreground">
-              Back to sign in
+              {t("Back to sign in")}
             </Link>
           </form>
         )}

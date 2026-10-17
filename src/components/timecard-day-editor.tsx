@@ -4,6 +4,7 @@ import { AlertTriangle, Coffee, Loader2, LogIn, LogOut, Plus, Trash2, X } from "
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAppRules } from "@/lib/app-rules";
+import { localeTag, useT } from "@/lib/i18n";
 import {
   diffDay,
   newKey,
@@ -94,6 +95,7 @@ export function TimecardDayEditor({
   employeeId: string;
   employeeName: string;
 }) {
+  const t = useT("timecards");
   const qc = useQueryClient();
   const rules = useAppRules();
   const [shifts, setShifts] = useState<DraftShift[]>(() => toShifts(punches));
@@ -159,12 +161,14 @@ export function TimecardDayEditor({
       }
     },
     onSuccess: () => {
-      toast.success(`Saved ${employeeName}'s day`);
+      toast.success(t("Saved {name}'s day", { name: employeeName }));
       refresh();
       onOpenChange(false);
     },
     onError: (e: Error) => {
-      setError(`${e.message} — some changes may not have been saved; the day has been reloaded.`);
+      setError(
+        `${e.message} — ${t("some changes may not have been saved; the day has been reloaded.")}`,
+      );
       reloadRef.current = true;
       refresh();
     },
@@ -172,7 +176,7 @@ export function TimecardDayEditor({
 
   function close(next: boolean) {
     if (next) return onOpenChange(true);
-    if (dirty && !saveMut.isPending && !window.confirm("Discard your changes to this day?")) return;
+    if (dirty && !saveMut.isPending && !window.confirm(t("Discard your changes to this day?"))) return;
     onOpenChange(false);
   }
 
@@ -206,23 +210,23 @@ export function TimecardDayEditor({
     <Dialog open={open} onOpenChange={close}>
       <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Edit time — {employeeName}</DialogTitle>
+          <DialogTitle>{t("Edit time — {name}", { name: employeeName })}</DialogTitle>
           <DialogDescription>
-            {day.toLocaleDateString(undefined, {
+            {day.toLocaleDateString(localeTag(), {
               weekday: "long",
               month: "long",
               day: "numeric",
               year: "numeric",
             })}
             {" · "}
-            A time earlier than the clock-in counts as the next morning.
+            {t("A time earlier than the clock-in counts as the next morning.")}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
           {shifts.length === 0 && (
             <p className="rounded-lg border border-dashed border-border py-6 text-center text-sm text-muted-foreground">
-              No time recorded for this day.
+              {t("No time recorded for this day.")}
             </p>
           )}
 
@@ -238,22 +242,24 @@ export function TimecardDayEditor({
               >
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <span className="text-sm font-semibold text-foreground">
-                    {shifts.length > 1 ? `Shift ${i + 1}` : "Shift"}
+                    {shifts.length > 1 ? t("Shift {n}", { n: i + 1 }) : t("Shift")}
                   </span>
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium tabular-nums text-foreground">
                       {hours.open ? (
-                        <span className="text-amber-600 dark:text-amber-400">Still clocked in</span>
+                        <span className="text-amber-600 dark:text-amber-400">
+                          {t("Still clocked in")}
+                        </span>
                       ) : (
-                        `${fmtHours(hours.workedMs)} worked`
+                        t("{time} worked", { time: fmtHours(hours.workedMs) })
                       )}
                     </span>
                     <Button
                       size="icon"
                       variant="ghost"
                       className="h-8 w-8 text-destructive"
-                      aria-label="Remove this shift"
-                      title="Remove this shift"
+                      aria-label={t("Remove this shift")}
+                      title={t("Remove this shift")}
                       onClick={() => setShifts((all) => all.filter((x) => x.key !== s.key))}
                     >
                       <Trash2 className="h-4 w-4" />
@@ -263,21 +269,21 @@ export function TimecardDayEditor({
 
                 <div className="grid grid-cols-2 gap-3">
                   <TimeField
-                    label="Clock in"
+                    label={t("Clock in")}
                     icon={<LogIn className="h-3.5 w-3.5" />}
                     value={s.inTime}
                     onChange={(v) => patchShift(s.key, { inTime: v })}
                     onNow={isToday ? () => patchShift(s.key, { inTime: nowTime() }) : undefined}
                   />
                   <TimeField
-                    label="Clock out"
+                    label={t("Clock out")}
                     icon={<LogOut className="h-3.5 w-3.5" />}
                     value={s.outTime}
                     onChange={(v) => patchShift(s.key, { outTime: v })}
                     onNow={isToday ? () => patchShift(s.key, { outTime: nowTime() }) : undefined}
                     onClear={s.outTime ? () => patchShift(s.key, { outTime: "" }) : undefined}
                     nextDay={nextDay(r.outAt)}
-                    placeholder="Still clocked in"
+                    placeholder={t("Still clocked in")}
                   />
                 </div>
 
@@ -291,7 +297,7 @@ export function TimecardDayEditor({
                       >
                         <div className="w-28 space-y-1">
                           <Label className="flex items-center gap-1 text-xs">
-                            <Coffee className="h-3.5 w-3.5" /> Break
+                            <Coffee className="h-3.5 w-3.5" /> {t("Break")}
                           </Label>
                           <select
                             className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
@@ -305,14 +311,14 @@ export function TimecardDayEditor({
                             {b.minutes == null && <option value="">—</option>}
                             {BREAK_LENGTHS.map((m) => (
                               <option key={m} value={m}>
-                                {m} min{m === 10 ? " · paid" : ""}
+                                {m === 10 ? t("{n} min · paid", { n: m }) : t("{n} min", { n: m })}
                               </option>
                             ))}
                           </select>
                         </div>
                         <div className="min-w-[7.5rem] flex-1">
                           <TimeField
-                            label="Start"
+                            label={t("Start")}
                             value={b.start}
                             onChange={(v) => patchBreak(s.key, b.key, { start: v })}
                             nextDay={nextDay(rb.startAt)}
@@ -321,14 +327,14 @@ export function TimecardDayEditor({
                         </div>
                         <div className="min-w-[7.5rem] flex-1">
                           <TimeField
-                            label="End"
+                            label={t("End")}
                             value={b.end}
                             onChange={(v) => patchBreak(s.key, b.key, { end: v })}
                             onNow={
                               isToday ? () => patchBreak(s.key, b.key, { end: nowTime() }) : undefined
                             }
                             nextDay={nextDay(rb.endAt)}
-                            placeholder={s.outTime ? undefined : "On break"}
+                            placeholder={s.outTime ? undefined : t("On break")}
                             compact
                           />
                         </div>
@@ -336,8 +342,8 @@ export function TimecardDayEditor({
                           size="icon"
                           variant="ghost"
                           className="h-9 w-9 text-muted-foreground hover:text-destructive"
-                          aria-label="Remove this break"
-                          title="Remove this break"
+                          aria-label={t("Remove this break")}
+                          title={t("Remove this break")}
                           onClick={() =>
                             patchShift(s.key, { breaks: s.breaks.filter((x) => x.key !== b.key) })
                           }
@@ -355,15 +361,15 @@ export function TimecardDayEditor({
                       patchShift(s.key, { breaks: [...s.breaks, suggestBreak(s, day)] })
                     }
                   >
-                    <Plus className="mr-1 h-3.5 w-3.5" /> Add break
+                    <Plus className="mr-1 h-3.5 w-3.5" /> {t("Add break")}
                   </Button>
                 </div>
 
                 {(hours.unpaidMs > 0 || hours.paidMs > 0) && (
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {hours.unpaidMs > 0 && `${fmtHours(hours.unpaidMs)} unpaid break`}
+                    {hours.unpaidMs > 0 && t("{time} unpaid break", { time: fmtHours(hours.unpaidMs) })}
                     {hours.unpaidMs > 0 && hours.paidMs > 0 && " · "}
-                    {hours.paidMs > 0 && `${fmtHours(hours.paidMs)} paid break`}
+                    {hours.paidMs > 0 && t("{time} paid break", { time: fmtHours(hours.paidMs) })}
                   </p>
                 )}
                 {issues.length > 0 && (
@@ -382,11 +388,11 @@ export function TimecardDayEditor({
 
           <div className="flex items-center justify-between">
             <Button variant="outline" size="sm" onClick={addShift}>
-              <Plus className="mr-1.5 h-4 w-4" /> Add shift
+              <Plus className="mr-1.5 h-4 w-4" /> {t("Add shift")}
             </Button>
             {shifts.length > 0 && (
               <span className="text-sm text-muted-foreground">
-                Day total{" "}
+                {t("Day total")}{" "}
                 <span className="font-semibold tabular-nums text-foreground">
                   {fmtHours(dayTotal)}
                 </span>
@@ -395,15 +401,15 @@ export function TimecardDayEditor({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="correction-reason">Note (optional)</Label>
+            <Label htmlFor="correction-reason">{t("Note (optional)")}</Label>
             <Input
               id="correction-reason"
-              placeholder="e.g. Forgot to clock out — confirmed with supervisor"
+              placeholder={t("e.g. Forgot to clock out — confirmed with supervisor")}
               value={reason}
               onChange={(e) => setReason(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              Every change is logged with your name, the time, and what it was before.
+              {t("Every change is logged with your name, the time, and what it was before.")}
             </p>
           </div>
 
@@ -415,12 +421,18 @@ export function TimecardDayEditor({
         <DialogFooter className="items-center gap-2 sm:justify-between">
           <span className="text-xs text-muted-foreground">
             {!dirty
-              ? "No changes yet"
-              : `${changes.length} change${changes.length === 1 ? "" : "s"}${removed ? ` · ${removed} punch${removed === 1 ? "" : "es"} removed` : ""}`}
+              ? t("No changes yet")
+              : (changes.length === 1 ? t("1 change") : t("{n} changes", { n: changes.length })) +
+                (removed
+                  ? " · " +
+                    (removed === 1
+                      ? t("1 punch removed")
+                      : t("{n} punches removed", { n: removed }))
+                  : "")}
           </span>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => close(false)} disabled={saveMut.isPending}>
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button
               onClick={() => {
@@ -430,7 +442,7 @@ export function TimecardDayEditor({
               disabled={!dirty || problems.size > 0 || saveMut.isPending}
             >
               {saveMut.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
-              Save
+              {t("Save")}
             </Button>
           </div>
         </DialogFooter>
@@ -460,6 +472,7 @@ function TimeField({
   placeholder?: string;
   compact?: boolean;
 }) {
+  const t = useT("timecards");
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between gap-1">
@@ -468,7 +481,7 @@ function TimeField({
           {label}
           {nextDay && (
             <span className="rounded bg-blue-100 px-1 text-[10px] font-medium text-blue-700 dark:bg-blue-500/15 dark:text-blue-300">
-              next day
+              {t("next day")}
             </span>
           )}
         </Label>
@@ -479,7 +492,7 @@ function TimeField({
               onClick={onNow}
               className="text-[11px] font-medium text-primary hover:underline"
             >
-              Now
+              {t("Now")}
             </button>
           )}
           {onClear && (
@@ -488,7 +501,7 @@ function TimeField({
               onClick={onClear}
               className="text-[11px] font-medium text-muted-foreground hover:text-destructive hover:underline"
             >
-              Clear
+              {t("Clear")}
             </button>
           )}
         </div>

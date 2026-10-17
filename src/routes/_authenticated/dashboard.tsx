@@ -9,6 +9,7 @@ import { PAID_BREAK_MINUTES, readBreak, roundPunches } from "@/lib/timecard-tota
 import { toDayString } from "@/lib/schedule-pattern";
 import { breakAlertsFor, type BreakAlert, type ReminderDismissal, type ReminderKind } from "@/lib/break-reminders";
 import { Button } from "@/components/ui/button";
+import { localeTag, translate, useLocaleTag, useT } from "@/lib/i18n";
 import { Clock, Coffee, LogOut, Users, RefreshCw, CalendarDays, FileClock, AlertTriangle, X } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
@@ -46,12 +47,12 @@ type Status = "working" | "on_break" | "clocked_out" | "no_show" | "due";
 type PresenceRow = { user_id: string; full_name: string; job_title: string | null; status: string };
 
 function fmtTime(s: string) {
-  return new Date(s).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return new Date(s).toLocaleTimeString(localeTag(), { hour: "2-digit", minute: "2-digit" });
 }
 /** "Shift started 9:00" once the start has passed, "Shift starts 9:00" before it. */
 function shiftStartLabel(startsAt: string, now: number) {
-  const verb = new Date(startsAt).getTime() <= now ? "started" : "starts";
-  return `Shift ${verb} ${fmtTime(startsAt)}`;
+  const started = new Date(startsAt).getTime() <= now;
+  return translate(started ? "Shift started {time}" : "Shift starts {time}", { time: fmtTime(startsAt) });
 }
 function fmtHours(ms: number) {
   if (ms <= 0) return "0h 00m";
@@ -77,6 +78,8 @@ function startOfDay(d = new Date()) { const x = new Date(d); x.setHours(0, 0, 0,
 function endOfDay(d = new Date()) { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; }
 
 function DashboardPage() {
+  const t = useT("time");
+  const tag = useLocaleTag();
   const { company, primaryRole, loading, user } = useAuth();
   const rules = useAppRules();
   const staff = useStaffVisibility();
@@ -351,7 +354,9 @@ function DashboardPage() {
         const liveBreak = live.countedMs;
         if (live.paid) currentPaid += liveBreak;
         else currentUnpaid += liveBreak;
-        breakLabel = openBreak.break_minutes ? `${openBreak.break_minutes}m${openBreak.break_minutes === 10 ? " · paid" : " · unpaid"}` : "Break";
+        breakLabel = openBreak.break_minutes
+          ? t(openBreak.break_minutes === 10 ? "{n}m · paid" : "{n}m · unpaid", { n: openBreak.break_minutes })
+          : t("Break");
       } else if (openIn) {
         status = "working";
         const live = Math.max(0, now - new Date(openIn.at).getTime() - currentUnpaid);
@@ -373,7 +378,7 @@ function DashboardPage() {
 
       return {
         id: m.id,
-        name: m.full_name || "Unnamed",
+        name: m.full_name || t("Unnamed"),
         position: m.position,
         status,
         firstIn,
@@ -415,7 +420,7 @@ function DashboardPage() {
         a.name.localeCompare(b.name),
     );
     return list;
-  }, [membersQ.data, punchesQ.data, dismissalsQ.data, dueToday, rules, staff, now]);
+  }, [membersQ.data, punchesQ.data, dismissalsQ.data, dueToday, rules, staff, now, t]);
 
 
   const overdueCount = rows.filter((r) => r.alerts.length > 0).length;
@@ -434,17 +439,17 @@ function DashboardPage() {
     return { counts, workedMs, unpaidMs, paidMs };
   }, [rows]);
 
-  if (loading) return <div className="text-sm text-muted-foreground">Loading…</div>;
+  if (loading) return <div className="text-sm text-muted-foreground">{t("Loading…")}</div>;
   // Only a super admin gets this far without a company — everyone else is caught
   // by the join gate in the authenticated layout.
   if (!company) {
     return (
       <div className="text-sm text-muted-foreground">
-        This roster belongs to a company.{" "}
+        {t("This roster belongs to a company.")}{" "}
         <Link to="/platform" className="text-primary underline">
-          Open the platform overview
+          {t("Open the platform overview")}
         </Link>{" "}
-        to pick one.
+        {t("to pick one.")}
       </div>
     );
   }
@@ -494,10 +499,10 @@ function DashboardPage() {
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold text-foreground">Who's on duty</h1>
+            <h1 className="text-2xl font-semibold text-foreground">{t("Who's on duty")}</h1>
             <p className="text-sm text-muted-foreground">
               <CalendarDays className="mr-1 inline h-4 w-4 align-text-bottom" />
-              {today.toLocaleDateString(undefined, {
+              {today.toLocaleDateString(tag, {
                 weekday: "long",
                 month: "long",
                 day: "numeric",
@@ -507,12 +512,17 @@ function DashboardPage() {
             {/* Scheduled, not clocked: what time they are due in today. */}
             {mine && (
               <p className="mt-1 text-sm font-medium text-primary">
-                Your {shiftStartLabel(mine.starts_at, now).toLowerCase()} — until {fmtTime(mine.ends_at)}
-                {!mine.published && <span className="text-muted-foreground"> (not published yet)</span>}
+                {t(
+                  new Date(mine.starts_at).getTime() <= now
+                    ? "Your shift started {start} — until {end}"
+                    : "Your shift starts {start} — until {end}",
+                  { start: fmtTime(mine.starts_at), end: fmtTime(mine.ends_at) },
+                )}
+                {!mine.published && <span className="text-muted-foreground"> {t("(not published yet)")}</span>}
                 {mine.more > 0 && (
                   <span className="text-muted-foreground">
                     {" "}
-                    · {mine.more} more {mine.more === 1 ? "shift" : "shifts"} today
+                    · {mine.more === 1 ? t("1 more shift today") : t("{n} more shifts today", { n: mine.more })}
                   </span>
                 )}
               </p>
@@ -528,10 +538,10 @@ function DashboardPage() {
                 }`}
               >
                 {me.breakRemainingMs == null
-                  ? "On break for"
+                  ? t("On break for")
                   : me.breakRemainingMs > 0
-                    ? "Break ends in"
-                    : "Break over by"}{" "}
+                    ? t("Break ends in")
+                    : t("Break over by")}{" "}
                 <span className="font-mono text-base font-semibold tabular-nums">
                   {fmtCountdown(
                     me.breakRemainingMs == null
@@ -543,12 +553,12 @@ function DashboardPage() {
             )}
             {me && (me.status === "working" || me.status === "on_break") && (
               <p className="mt-1 text-sm text-muted-foreground">
-                On the clock{" "}
+                {t("On the clock")}{" "}
                 <span className="font-mono font-semibold tabular-nums text-foreground">
                   {fmtHours(me.workedMs)}
                   {me.workedLive && ` ${fmtSeconds(me.workedMs)}`}
                 </span>
-                {me.firstIn && <> · in at {fmtTime(me.firstIn)}</>}
+                {me.firstIn && <> · {t("in at {time}", { time: fmtTime(me.firstIn) })}</>}
               </p>
             )}
           </div>
@@ -556,13 +566,13 @@ function DashboardPage() {
             <Button asChild className="shadow">
               <Link to="/timeclock">
                 <Clock className="mr-2 h-4 w-4" />
-                Time clock
+                {t("Time clock")}
               </Link>
             </Button>
             <Button asChild variant="outline" size="sm">
               <Link to="/timecards">
                 <FileClock className="mr-2 h-4 w-4" />
-                My timecard
+                {t("My timecard")}
               </Link>
             </Button>
             <Button
@@ -571,26 +581,26 @@ function DashboardPage() {
               onClick={() => qc.invalidateQueries({ queryKey: ["company-presence", company.id] })}
             >
               <RefreshCw className="mr-2 h-4 w-4" />
-              Refresh
+              {t("Refresh")}
             </Button>
           </div>
         </div>
 
         <div className="grid grid-cols-3 gap-3">
           <Stat
-            label="Working"
+            label={t("Working")}
             value={present.working}
             icon={<Clock className="h-4 w-4" />}
             color="emerald"
           />
           <Stat
-            label="On break"
+            label={t("On break")}
             value={present.onBreak}
             icon={<Coffee className="h-4 w-4" />}
             color="amber"
           />
           <Stat
-            label="Off"
+            label={t("Off")}
             value={present.off}
             icon={<LogOut className="h-4 w-4" />}
             color="slate"
@@ -599,15 +609,15 @@ function DashboardPage() {
 
         <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
           <div className="grid grid-cols-[2fr_1fr] border-b border-border bg-muted/30 px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            <div>Employee</div>
-            <div className="text-right">Status</div>
+            <div>{t("Employee")}</div>
+            <div className="text-right">{t("Status")}</div>
           </div>
           {presenceLoading && (
-            <div className="px-4 py-6 text-center text-sm text-muted-foreground">Loading…</div>
+            <div className="px-4 py-6 text-center text-sm text-muted-foreground">{t("Loading…")}</div>
           )}
           {!presenceLoading && presence.length === 0 && (
             <div className="px-4 py-6 text-center text-sm text-muted-foreground">
-              Nobody is scheduled or clocked in today.
+              {t("Nobody is scheduled or clocked in today.")}
             </div>
           )}
           {presence.map((p) => (
@@ -617,7 +627,7 @@ function DashboardPage() {
             >
               <div className="min-w-0">
                 <div className="truncate font-medium text-foreground">
-                  {p.full_name || "Unnamed"}
+                  {p.full_name || t("Unnamed")}
                 </div>
                 {p.job_title && (
                   <div className="truncate text-xs text-muted-foreground">{p.job_title}</div>
@@ -644,32 +654,32 @@ function DashboardPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-foreground">Today's roster</h1>
+          <h1 className="text-2xl font-semibold text-foreground">{t("Today's roster")}</h1>
           <p className="text-sm text-muted-foreground">
             <CalendarDays className="mr-1 inline h-4 w-4 align-text-bottom" />
-            {today.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
+            {today.toLocaleDateString(tag, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {/* The button people reach for all day, so it gets the solid treatment
               and a taller hit area while the rest stay quiet outlines. */}
           <Button asChild className="shadow">
-            <Link to="/timeclock"><Clock className="mr-2 h-4 w-4" />Time clock</Link>
+            <Link to="/timeclock"><Clock className="mr-2 h-4 w-4" />{t("Time clock")}</Link>
           </Button>
           <Button asChild variant="outline" size="sm">
-            <Link to="/timecards"><FileClock className="mr-2 h-4 w-4" />Timecards</Link>
+            <Link to="/timecards"><FileClock className="mr-2 h-4 w-4" />{t("Timecards")}</Link>
           </Button>
           <Button variant="outline" size="sm" onClick={() => qc.invalidateQueries({ queryKey: ["today-punches"] })}>
-            <RefreshCw className="mr-2 h-4 w-4" />Refresh
+            <RefreshCw className="mr-2 h-4 w-4" />{t("Refresh")}
           </Button>
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat label="Working" value={totals.counts.working} icon={<Clock className="h-4 w-4" />} color="emerald" />
-        <Stat label="On break" value={totals.counts.on_break} icon={<Coffee className="h-4 w-4" />} color="amber" />
-        <Stat label="Clocked out" value={totals.counts.clocked_out} icon={<LogOut className="h-4 w-4" />} color="blue" />
-        <Stat label="No show" value={totals.counts.no_show} icon={<Users className="h-4 w-4" />} color="slate" />
+        <Stat label={t("Working")} value={totals.counts.working} icon={<Clock className="h-4 w-4" />} color="emerald" />
+        <Stat label={t("On break")} value={totals.counts.on_break} icon={<Coffee className="h-4 w-4" />} color="amber" />
+        <Stat label={t("Clocked out")} value={totals.counts.clocked_out} icon={<LogOut className="h-4 w-4" />} color="blue" />
+        <Stat label={t("No show")} value={totals.counts.no_show} icon={<Users className="h-4 w-4" />} color="slate" />
       </div>
 
       {overdueCount > 0 && (
@@ -677,32 +687,34 @@ function DashboardPage() {
           <AlertTriangle className="h-4 w-4 shrink-0" />
           <span>
             <span className="font-medium">
-              {overdueCount} {overdueCount === 1 ? "person is" : "people are"} overdue for a break
+              {overdueCount === 1
+                ? t("1 person is overdue for a break")
+                : t("{n} people are overdue for a break", { n: overdueCount })}
             </span>{" "}
-            — flagged in red below. The flag clears itself when they take one.
+            {t("— flagged in red below. The flag clears itself when they take one.")}
           </span>
         </div>
       )}
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-        <SmallStat label="Total worked today" value={fmtHours(totals.workedMs)} />
-        <SmallStat label="Unpaid breaks" value={fmtHours(totals.unpaidMs)} />
-        <SmallStat label="Paid breaks" value={fmtHours(totals.paidMs)} />
+        <SmallStat label={t("Total worked today")} value={fmtHours(totals.workedMs)} />
+        <SmallStat label={t("Unpaid breaks")} value={fmtHours(totals.unpaidMs)} />
+        <SmallStat label={t("Paid breaks")} value={fmtHours(totals.paidMs)} />
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
         <div className="grid grid-cols-[1.6fr_1fr_1fr_1fr_1fr] border-b border-border bg-muted/30 px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          <div>Employee</div>
-          <div>Status</div>
-          <div>Shift / In / Out</div>
-          <div className="text-right">Break</div>
-          <div className="text-right">Worked</div>
+          <div>{t("Employee")}</div>
+          <div>{t("Status")}</div>
+          <div>{t("Shift / In / Out")}</div>
+          <div className="text-right">{t("Break")}</div>
+          <div className="text-right">{t("Worked")}</div>
         </div>
         {rows.length === 0 && (
           <div className="px-4 py-6 text-center text-sm text-muted-foreground">
             {(membersQ.data ?? []).length === 0
-              ? "No employees yet."
-              : "Nobody is scheduled or clocked in today."}
+              ? t("No employees yet.")
+              : t("Nobody is scheduled or clocked in today.")}
           </div>
         )}
         {rows.map((r) => (
@@ -721,7 +733,7 @@ function DashboardPage() {
                 <Link
                   to="/timecards"
                   search={{ user: r.id, day: toDayString(dayStart) }}
-                  title={`Edit ${r.name}'s punches for today`}
+                  title={t("Edit {name}'s punches for today", { name: r.name })}
                   className={`font-medium underline-offset-2 hover:underline ${r.alerts.length > 0 ? "text-destructive" : "text-foreground hover:text-primary"}`}
                 >
                   {r.name}
@@ -740,7 +752,7 @@ function DashboardPage() {
                       {isManager && (
                         <button
                           type="button"
-                          title="Dismiss until their next break"
+                          title={t("Dismiss until their next break")}
                           disabled={dismissMut.isPending}
                           onClick={() =>
                             dismissMut.mutate({ userId: r.id, kind: a.kind, stretchStart: a.stretchStart })
@@ -758,27 +770,27 @@ function DashboardPage() {
               )}
             </div>
             <div>
-              {r.status === "working" && <span className="rounded bg-emerald-100 dark:bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">● Working</span>}
+              {r.status === "working" && <span className="rounded bg-emerald-100 dark:bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">{t("● Working")}</span>}
               {r.status === "on_break" && (
                 <span className="rounded bg-amber-100 dark:bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
-                  ● On break{r.breakLabel ? ` (${r.breakLabel})` : ""}
+                  {t("● On break")}{r.breakLabel ? ` (${r.breakLabel})` : ""}
                 </span>
               )}
-              {r.status === "clocked_out" && <span className="rounded bg-blue-100 dark:bg-blue-500/15 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">Clocked out</span>}
-              {r.status === "no_show" && <span className="rounded bg-slate-100 dark:bg-slate-500/15 px-2 py-0.5 text-xs font-medium text-slate-600 dark:text-slate-300">No show</span>}
-              {r.status === "due" && <span className="rounded bg-blue-50 dark:bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">Starts later</span>}
+              {r.status === "clocked_out" && <span className="rounded bg-blue-100 dark:bg-blue-500/15 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">{t("Clocked out")}</span>}
+              {r.status === "no_show" && <span className="rounded bg-slate-100 dark:bg-slate-500/15 px-2 py-0.5 text-xs font-medium text-slate-600 dark:text-slate-300">{t("No show")}</span>}
+              {r.status === "due" && <span className="rounded bg-blue-50 dark:bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">{t("Starts later")}</span>}
             </div>
             <div className="text-xs text-muted-foreground">
               {/* What the schedule says, above what the clock says. */}
               {r.due && (
                 <div className="font-medium text-foreground">
                   {shiftStartLabel(r.due.starts_at, now)}
-                  {!r.due.published && <span className="font-normal"> · draft</span>}
+                  {!r.due.published && <span className="font-normal"> · {t("draft")}</span>}
                   {r.due.more > 0 && <span className="font-normal"> +{r.due.more}</span>}
                 </div>
               )}
-              {r.firstIn ? <>In {fmtTime(r.firstIn)}</> : r.due ? "Not in yet" : "—"}
-              {r.lastOut && <><br />Out {fmtTime(r.lastOut)}</>}
+              {r.firstIn ? <>{t("In {time}", { time: fmtTime(r.firstIn) })}</> : r.due ? t("Not in yet") : "—"}
+              {r.lastOut && <><br />{t("Out {time}", { time: fmtTime(r.lastOut) })}</>}
             </div>
             <div className="text-right text-xs">
               {/* The break running right now, counting down to zero and then
@@ -799,20 +811,20 @@ function DashboardPage() {
                       : `-${fmtCountdown(-r.breakRemainingMs)}`}
                   <span className="ml-1 font-sans text-[10px] font-medium uppercase tracking-wide">
                     {r.breakRemainingMs == null
-                      ? "on break"
+                      ? t("on break")
                       : r.breakRemainingMs > 0
-                        ? "left"
-                        : "over"}
+                        ? t("left")
+                        : t("over")}
                   </span>
                 </div>
               )}
-              {r.unpaidBreakMs > 0 && <div className="text-muted-foreground">unpaid {fmtHours(r.unpaidBreakMs)}</div>}
-              {r.paidBreakMs > 0 && <div className="text-muted-foreground">paid {fmtHours(r.paidBreakMs)}</div>}
+              {r.unpaidBreakMs > 0 && <div className="text-muted-foreground">{t("unpaid {time}", { time: fmtHours(r.unpaidBreakMs) })}</div>}
+              {r.paidBreakMs > 0 && <div className="text-muted-foreground">{t("paid {time}", { time: fmtHours(r.paidBreakMs) })}</div>}
               {/* Came back before the break was up — the timecard carries the
                   same flag, this is just where a manager sees it first. */}
               {r.shortBreaks > 0 && (
                 <div className="text-destructive">
-                  ⚠ {r.shortBreaks === 1 ? "incomplete break" : `${r.shortBreaks} incomplete`}
+                  ⚠ {r.shortBreaks === 1 ? t("incomplete break") : t("{n} incomplete", { n: r.shortBreaks })}
                 </div>
               )}
               {r.breakElapsedMs == null && r.shortBreaks === 0 && r.unpaidBreakMs === 0 && r.paidBreakMs === 0 && <span className="text-muted-foreground">—</span>}
@@ -836,22 +848,23 @@ function DashboardPage() {
 
 /** The employee-facing badge: a state, with no time attached to it. */
 function PresencePill({ status }: { status: string }) {
+  const t = useT("time");
   if (status === "working") {
     return (
       <span className="rounded bg-emerald-100 dark:bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">
-        ● Working
+        {t("● Working")}
       </span>
     );
   }
   if (status === "on_break") {
     return (
       <span className="rounded bg-amber-100 dark:bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
-        ● On break
+        {t("● On break")}
       </span>
     );
   }
   return (
-    <span className="rounded bg-slate-100 dark:bg-slate-500/15 px-2 py-0.5 text-xs font-medium text-slate-600 dark:text-slate-300">Off</span>
+    <span className="rounded bg-slate-100 dark:bg-slate-500/15 px-2 py-0.5 text-xs font-medium text-slate-600 dark:text-slate-300">{t("Off")}</span>
   );
 }
 

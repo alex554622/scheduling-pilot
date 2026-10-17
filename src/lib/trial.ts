@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { translate } from "@/lib/i18n";
 
 /**
  * A company's free trial, as the database sees it.
@@ -43,6 +44,6 @@ export function useTrialStatus(): { trial: TrialStatus; isLoading: boolean } {
 /** "3 days left" / "Last day" / "1 day left" — for a countdown chip. */
 export function trialCountdown(daysLeft: number | undefined): string {
   if (daysLeft == null) return "";
-  if (daysLeft <= 0) return "Last day";
-  return `${daysLeft} day${daysLeft === 1 ? "" : "s"} left`;
+  if (daysLeft <= 0) return translate("Last day");
+  return daysLeft === 1 ? translate("1 day left") : translate("{n} days left", { n: daysLeft });
 }

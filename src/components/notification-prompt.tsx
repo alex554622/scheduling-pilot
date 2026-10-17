@@ -8,6 +8,7 @@ import {
   useNotificationPrefs,
 } from "@/lib/notification-prefs";
 import { pushConfigured, pushSupported, subscribeToPush } from "@/lib/push-subscription";
+import { useT } from "@/lib/i18n";
 
 /**
  * "Turn on notifications", asked the way a chat app asks on first open.
@@ -44,6 +45,7 @@ function isIos(): boolean {
 
 export function NotificationPrompt() {
   const { user } = useAuth();
+  const t = useT("shell");
   const { prefs, isLoading } = useNotificationPrefs();
   const [mode, setMode] = useState<Mode>("hidden");
   const [busy, setBusy] = useState(false);
@@ -104,17 +106,21 @@ export function NotificationPrompt() {
   return (
     <div
       role="dialog"
-      aria-label="Turn on notifications"
+      aria-label={t("Turn on notifications")}
       className="fixed inset-x-3 bottom-3 z-50 mx-auto max-w-md rounded-xl border border-border bg-card p-4 shadow-lg sm:inset-x-auto sm:right-4 sm:bottom-4"
     >
       <div className="flex items-start gap-3">
         <BellRing className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-foreground">Turn on notifications</p>
+          <p className="text-sm font-semibold text-foreground">{t("Turn on notifications")}</p>
           <p className="mt-1 text-xs text-muted-foreground">
             {mode === "install"
-              ? "To get alerts on this iPhone or iPad, tap Share, then “Add to Home Screen”, and open Scheduling Pilot from there."
-              : "Get a buzz on this device when your break is almost over, your shifts change, or someone sends a message — even with the app closed."}
+              ? t(
+                  "To get alerts on this iPhone or iPad, tap Share, then “Add to Home Screen”, and open Scheduling Pilot from there.",
+                )
+              : t(
+                  "Get a buzz on this device when your break is almost over, your shifts change, or someone sends a message — even with the app closed.",
+                )}
           </p>
           <div className="mt-3 flex gap-2">
             {mode === "ask" && (
@@ -124,7 +130,7 @@ export function NotificationPrompt() {
                 onClick={() => void allow()}
                 className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60"
               >
-                {busy ? "Turning on…" : "Turn on"}
+                {busy ? t("Turning on…") : t("Turn on")}
               </button>
             )}
             <button
@@ -132,14 +138,14 @@ export function NotificationPrompt() {
               onClick={snooze}
               className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent"
             >
-              Not now
+              {t("Not now")}
             </button>
           </div>
         </div>
         <button
           type="button"
           onClick={snooze}
-          aria-label="Dismiss"
+          aria-label={t("Dismiss")}
           className="text-muted-foreground hover:text-foreground"
         >
           <X className="h-4 w-4" />

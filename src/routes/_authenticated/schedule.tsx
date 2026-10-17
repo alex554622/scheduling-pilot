@@ -50,6 +50,7 @@ import { useScheduleLayout, type ScheduleLayout } from "@/lib/schedule-layout";
 import { EraseSelectionBar } from "@/components/erase-days";
 import { useScheduleSelection, type ScheduleSelection } from "@/lib/day-selection";
 import { toDayString } from "@/lib/schedule-pattern";
+import { useT, useLocaleTag, localeTag, translate } from "@/lib/i18n";
 
 export const Route = createFileRoute("/_authenticated/schedule")({
   component: SchedulePage,
@@ -84,13 +85,13 @@ function addDays(d: Date, n: number): Date {
   return x;
 }
 function fmtTime(d: Date): string {
-  return d.toLocaleTimeString([], {
+  return d.toLocaleTimeString(localeTag() ?? [], {
     hour: "numeric",
     minute: d.getMinutes() ? "2-digit" : undefined,
   });
 }
 function fmtDayLabel(d: Date): string {
-  return d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+  return d.toLocaleDateString(localeTag() ?? [], { weekday: "short", month: "short", day: "numeric" });
 }
 function toLocalInput(d: Date): string {
   // datetime-local needs YYYY-MM-DDTHH:MM in local time
@@ -145,7 +146,7 @@ const TIME_OFF_LABEL: Record<string, string> = {
   other: "Day off",
 };
 function timeOffLabel(t: TimeOffRow) {
-  return TIME_OFF_LABEL[t.kind] ?? "Day off";
+  return translate(TIME_OFF_LABEL[t.kind] ?? "Day off");
 }
 
 /** Rows grouped under a heading; null means show one flat list. */
@@ -175,7 +176,7 @@ function groupByTeam(members: MemberRow[], teams: TeamRow[]): TeamGroup[] {
     .filter((t) => byTeam.has(t.id))
     .map((t) => ({ id: t.id, name: t.name, members: byTeam.get(t.id)! }));
   const rest = byTeam.get(NO_TEAM);
-  if (rest?.length) out.push({ id: NO_TEAM, name: "No team", members: rest });
+  if (rest?.length) out.push({ id: NO_TEAM, name: translate("No team"), members: rest });
   return out;
 }
 
@@ -196,25 +197,29 @@ function fmtHoursValue(hours: number): string {
 /* ----------------------------- Root ----------------------------- */
 
 function SchedulePage() {
+  const t = useT("schedule");
   const { primaryRole, loading } = useAuth();
-  if (loading) return <div className="text-sm text-muted-foreground">Loading…</div>;
+  if (loading) return <div className="text-sm text-muted-foreground">{t("Loading…")}</div>;
   if (!primaryRole) return <NoRoleState />;
   if (primaryRole === "super_admin") return <SuperAdminDashboard />;
   return <CompanyDashboard role={primaryRole} />;
 }
 
 function NoRoleState() {
+  const t = useT("schedule");
   const { user, signOut } = useAuth();
   return (
     <div className="mx-auto max-w-lg rounded-xl border border-border bg-card p-8 text-center shadow-[var(--shadow-card)]">
       <ShieldCheck className="mx-auto h-10 w-10 text-primary" />
-      <h2 className="mt-4 text-xl font-semibold text-foreground">Account not assigned</h2>
+      <h2 className="mt-4 text-xl font-semibold text-foreground">{t("Account not assigned")}</h2>
       <p className="mt-2 text-sm text-muted-foreground">
-        {user?.email} isn't part of a company yet. Ask your manager to share their company join
-        code, then sign up again with that code — or wait for an invitation.
+        {t(
+          "{email} isn't part of a company yet. Ask your manager to share their company join code, then sign up again with that code — or wait for an invitation.",
+          { email: user?.email ?? "" },
+        )}
       </p>
       <Button className="mt-6" variant="outline" onClick={() => void signOut()}>
-        Sign out
+        {t("Sign out")}
       </Button>
     </div>
   );
@@ -280,6 +285,8 @@ function SectionCard({
 /* ----------------------------- Super Admin ----------------------------- */
 
 function SuperAdminDashboard() {
+  const t = useT("schedule");
+  const tag = useLocaleTag();
   const { data: companies = [], isLoading } = useQuery({
     queryKey: ["companies"],
     queryFn: async () => {
@@ -295,28 +302,28 @@ function SuperAdminDashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-semibold text-foreground">Platform overview</h2>
+        <h2 className="text-2xl font-semibold text-foreground">{t("Platform overview")}</h2>
         <p className="text-sm text-muted-foreground">
-          Real-time view of every company on Scheduling Pilot.
+          {t("Real-time view of every company on Scheduling Pilot.")}
         </p>
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat icon={Building2} label="Companies" value={String(companies.length)} />
+        <Stat icon={Building2} label={t("Companies")} value={String(companies.length)} />
         <Stat
           icon={Activity}
-          label="Active"
+          label={t("Active")}
           value={String(companies.filter((c) => c.status === "active").length)}
           tone="success"
         />
         <Stat
           icon={AlertTriangle}
-          label="Past due"
+          label={t("Past due")}
           value={String(companies.filter((c) => c.status === "past_due").length)}
           tone="warning"
         />
         <Stat
           icon={Calendar}
-          label="New this week"
+          label={t("New this week")}
           value={String(
             companies.filter((c) => Date.now() - new Date(c.created_at).getTime() < 7 * 86400000)
               .length,
@@ -325,20 +332,20 @@ function SuperAdminDashboard() {
         />
       </div>
 
-      <SectionCard title="Companies">
+      <SectionCard title={t("Companies")}>
         {isLoading ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">Loading…</p>
+          <p className="py-6 text-center text-sm text-muted-foreground">{t("Loading…")}</p>
         ) : companies.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">No companies yet.</p>
+          <p className="py-6 text-center text-sm text-muted-foreground">{t("No companies yet.")}</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
-                  <th className="px-3 py-2">Company</th>
-                  <th className="px-3 py-2">Plan</th>
-                  <th className="px-3 py-2">Status</th>
-                  <th className="px-3 py-2">Created</th>
+                  <th className="px-3 py-2">{t("Company")}</th>
+                  <th className="px-3 py-2">{t("Plan")}</th>
+                  <th className="px-3 py-2">{t("Status")}</th>
+                  <th className="px-3 py-2">{t("Created")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -348,7 +355,7 @@ function SuperAdminDashboard() {
                     <td className="px-3 py-3 text-muted-foreground">{c.plan}</td>
                     <td className="px-3 py-3 text-muted-foreground">{c.status}</td>
                     <td className="px-3 py-3 text-muted-foreground">
-                      {new Date(c.created_at).toLocaleDateString()}
+                      {new Date(c.created_at).toLocaleDateString(tag)}
                     </td>
                   </tr>
                 ))}
@@ -370,6 +377,13 @@ const VIEW_LABEL: Record<ScheduleView, string> = {
   twoweek: "2-Week",
   month: "Month",
 };
+/** What "select everything" covers, in words — read by `EraseSelectionBar`. */
+const VIEW_SCOPE: Record<ScheduleView, string> = {
+  day: "this day",
+  week: "this week",
+  twoweek: "these 2 weeks",
+  month: "this month",
+};
 const VIEW_STORAGE_KEY = "ps-schedule-view";
 
 function startOfMonth(d: Date): Date {
@@ -386,6 +400,7 @@ function endOfMonth(d: Date): Date {
 }
 
 function CompanyDashboard({ role }: { role: AppRole }) {
+  const t = useT("schedule");
   const { profile, company, user } = useAuth();
   const { capabilities } = useCapabilities();
   // "Keep the office off the floor's screens" — the company's own rule about
@@ -596,7 +611,7 @@ function CompanyDashboard({ role }: { role: AppRole }) {
         days={days}
         shifts={shifts}
         posted={posted}
-        nameOf={(id) => (id ? (names.get(id) ?? "Unknown") : "Open shift")}
+        nameOf={(id) => (id ? (names.get(id) ?? t("Unknown")) : t("Open shift"))}
         selfId={user!.id}
         isLoading={shiftsQ.isLoading || postedQ.isLoading || staff.isLoading}
         isThisWeek={startOfWeek(anchor).getTime() === startOfWeek(new Date()).getTime()}
@@ -678,6 +693,8 @@ function EmployeeView({
   /** -1 a week back, 1 a week on, 0 back to the week containing today. */
   onWeek: (dir: -1 | 0 | 1) => void;
 }) {
+  const t = useT("schedule");
+  const tag = useLocaleTag();
   const totalMin = shifts.reduce(
     (s, sh) => s + (new Date(sh.ends_at).getTime() - new Date(sh.starts_at).getTime()) / 60000,
     0,
@@ -719,14 +736,14 @@ function EmployeeView({
   // the classic layout carries would only be saying the same thing twice.
   if (layout === "grid") {
     const longDay = (d: Date) =>
-      d.toLocaleDateString([], { month: "long", day: "numeric", year: "numeric" });
+      d.toLocaleDateString(tag ?? [], { month: "long", day: "numeric", year: "numeric" });
     return (
       <div className="space-y-6">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="text-2xl font-semibold text-foreground">Schedule</h2>
+            <h2 className="text-2xl font-semibold text-foreground">{t("Schedule")}</h2>
             <p className="text-sm text-muted-foreground">
-              Everything published, week by week. You're at the top of each one.
+              {t("Everything published, week by week. You're at the top of each one.")}
             </p>
           </div>
           <LayoutSwitch layout={layout} onChange={onLayout} disabled={layoutSaving} />
@@ -735,8 +752,8 @@ function EmployeeView({
         {postedWeeks.length === 0 ? (
           <p className="rounded-xl border border-dashed border-border py-12 text-center text-sm text-muted-foreground">
             {isLoading
-              ? "Loading the schedule…"
-              : "Nothing has been published yet. It appears here as soon as it is."}
+              ? t("Loading the schedule…")
+              : t("Nothing has been published yet. It appears here as soon as it is.")}
           </p>
         ) : (
           postedWeeks.map(({ weekStart, days: weekDays }) => {
@@ -763,9 +780,9 @@ function EmployeeView({
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-semibold text-foreground">My schedule</h2>
+          <h2 className="text-2xl font-semibold text-foreground">{t("My schedule")}</h2>
           <p className="text-sm text-muted-foreground">
-            {isThisWeek ? "This week" : "Week of"} {fmtDayLabel(days[0])} – {fmtDayLabel(days[6])}
+            {isThisWeek ? t("This week") : t("Week of")} {fmtDayLabel(days[0])} – {fmtDayLabel(days[6])}
           </p>
         </div>
         <LayoutSwitch layout={layout} onChange={onLayout} disabled={layoutSaving} />
@@ -773,32 +790,32 @@ function EmployeeView({
 
       <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-3 shadow-[var(--shadow-card)]">
         <Button variant="ghost" size="sm" onClick={() => onWeek(-1)}>
-          ← Prev week
+          {t("← Prev week")}
         </Button>
         <Button variant="outline" size="sm" onClick={() => onWeek(0)} disabled={isThisWeek}>
-          This week
+          {t("This week")}
         </Button>
         <Button variant="ghost" size="sm" onClick={() => onWeek(1)}>
-          Next week →
+          {t("Next week →")}
         </Button>
         {isLoading && <Loader2 className="ml-1 h-4 w-4 animate-spin text-muted-foreground" />}
       </div>
       <div className="grid gap-4 sm:grid-cols-3">
-        <Stat icon={Calendar} label="Shifts" value={String(shifts.length)} />
-        <Stat icon={Clock} label="Hours" value={(totalMin / 60).toFixed(1)} tone="success" />
+        <Stat icon={Calendar} label={t("Shifts")} value={String(shifts.length)} />
+        <Stat icon={Clock} label={t("Hours")} value={(totalMin / 60).toFixed(1)} tone="success" />
         <Stat
           icon={Activity}
-          label="Published"
+          label={t("Published")}
           value={String(shifts.filter((s) => s.published).length)}
           tone="muted"
         />
       </div>
-      <SectionCard title="My shifts">
+      <SectionCard title={t("My shifts")}>
         {shifts.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
             {isLoading
-              ? "Loading your shifts…"
-              : "No shifts on this week. Use Next week → to check the weeks ahead."}
+              ? t("Loading your shifts…")
+              : t("No shifts on this week. Use Next week → to check the weeks ahead.")}
           </p>
         ) : (
           <ul className="divide-y divide-border">
@@ -817,7 +834,7 @@ function EmployeeView({
                     </span>
                     {!s.published && (
                       <span className="rounded-full bg-warning/20 px-2 py-0.5 text-[10px] font-medium text-warning-foreground">
-                        Draft
+                        {t("Draft")}
                       </span>
                     )}
                   </div>
@@ -832,13 +849,13 @@ function EmployeeView({
           wall, with every week that is on it. Only published shifts reach
           here, so a week still being drafted upstairs shows nothing. */}
       <SectionCard
-        title={`Published schedule${postedWeeks.length > 1 ? ` · ${postedWeeks.length} weeks` : ""}`}
+        title={`${t("Published schedule")}${postedWeeks.length > 1 ? ` · ${t("{n} weeks", { n: postedWeeks.length })}` : ""}`}
       >
         {postedWeeks.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
             {isLoading
-              ? "Loading the schedule…"
-              : "Nothing has been published yet. It appears here as soon as it is."}
+              ? t("Loading the schedule…")
+              : t("Nothing has been published yet. It appears here as soon as it is.")}
           </p>
         ) : (
           <div className="divide-y divide-border">
@@ -866,19 +883,19 @@ function EmployeeView({
                     className="flex w-full flex-wrap items-center gap-2 py-3 text-left"
                   >
                     <span className="text-sm font-semibold text-foreground">
-                      {current ? "This week" : "Week of"} {fmtDayLabel(weekStart)}
+                      {current ? t("This week") : t("Week of")} {fmtDayLabel(weekStart)}
                     </span>
                     <span className="text-xs text-muted-foreground">
-                      {shiftCount} shift{shiftCount === 1 ? "" : "s"}
+                      {shiftCount === 1 ? t("1 shift") : t("{n} shifts", { n: shiftCount })}
                     </span>
                     {/* What they came to find out, without opening the week. */}
                     {mineCount > 0 && (
                       <span className="rounded-full bg-primary-soft px-2 py-0.5 text-[11px] font-medium text-primary">
-                        {mineCount} yours
+                        {t("{n} yours", { n: mineCount })}
                       </span>
                     )}
                     <span className="ml-auto text-xs text-muted-foreground">
-                      {open ? "Hide" : "Show"}
+                      {open ? t("Hide") : t("Show")}
                     </span>
                   </button>
 
@@ -903,7 +920,7 @@ function EmployeeView({
                                     className={`text-sm ${mine ? "font-semibold text-primary" : "text-foreground"}`}
                                   >
                                     {nameOf(s.employee_id)}
-                                    {mine && " (you)"}
+                                    {mine && ` (${t("you")})`}
                                   </span>
                                   <span className="flex items-center gap-2 text-xs text-muted-foreground">
                                     {s.position && <span>{s.position}</span>}
@@ -976,6 +993,8 @@ function ScheduleBuilder(props: BuilderProps) {
     onLayout,
     layoutSaving,
   } = props;
+  const t = useT("schedule");
+  const tag = useLocaleTag();
   const qc = useQueryClient();
   const [edit, setEdit] = useState<EditTarget | null>(null);
   const [copiedId, setCopiedId] = useState(false);
@@ -1039,11 +1058,11 @@ function ScheduleBuilder(props: BuilderProps) {
     setSavingPdf(true);
     try {
       const { downloadScheduleGridPdf } = await import("@/lib/pdf");
-      const nameById = new Map(members.map((m) => [m.id, m.full_name || "Unnamed"]));
+      const nameById = new Map(members.map((m) => [m.id, m.full_name || t("Unnamed")]));
       const visible = shifts.filter((s) => !s.employee_id || nameById.has(s.employee_id));
       const same = (a: Date, b: Date) => a.toDateString() === b.toDateString();
       const longDay = (d: Date) =>
-        d.toLocaleDateString([], { month: "long", day: "numeric", year: "numeric" });
+        d.toLocaleDateString(tag ?? [], { month: "long", day: "numeric", year: "numeric" });
 
       const weeks = [];
       for (let i = 0; i + 7 <= days.length; i += 7) {
@@ -1059,7 +1078,7 @@ function ScheduleBuilder(props: BuilderProps) {
         const rows = [...byPerson.entries()]
           .map(([id, list]) => ({
             id,
-            name: id === "open" ? "Open shift" : shortName(nameById.get(id) ?? "Unnamed"),
+            name: id === "open" ? t("Open shift") : shortName(nameById.get(id) ?? t("Unnamed")),
             list,
           }))
           .sort(
@@ -1083,8 +1102,8 @@ function ScheduleBuilder(props: BuilderProps) {
         weeks.push({
           rangeLabel: longDay(week[0]) + " – " + longDay(week[6]),
           days: week.map((d) => ({
-            name: d.toLocaleDateString([], { weekday: "long" }),
-            date: d.toLocaleDateString([], { month: "2-digit", day: "2-digit", year: "numeric" }),
+            name: d.toLocaleDateString(tag ?? [], { weekday: "long" }),
+            date: d.toLocaleDateString(tag ?? [], { month: "2-digit", day: "2-digit", year: "numeric" }),
           })),
           rows,
         });
@@ -1105,7 +1124,7 @@ function ScheduleBuilder(props: BuilderProps) {
     try {
       const { downloadSchedulePdf } = await import("@/lib/pdf");
       const nameOf = (id: string | null) =>
-        id ? (members.find((m) => m.id === id)?.full_name ?? "Unknown") : "Open shift";
+        id ? (members.find((m) => m.id === id)?.full_name ?? t("Unknown")) : t("Open shift");
       const pdfDays = days.map((d) => ({
         date: fmtDayLabel(d),
         shifts: shifts
@@ -1126,7 +1145,7 @@ function ScheduleBuilder(props: BuilderProps) {
       await downloadSchedulePdf({
         companyName,
         rangeLabel,
-        viewLabel: VIEW_LABEL[view],
+        viewLabel: t(VIEW_LABEL[view]),
         days: pdfDays,
         totalShifts: shifts.length,
         totalHours: hours.toFixed(1),
@@ -1147,7 +1166,7 @@ function ScheduleBuilder(props: BuilderProps) {
 
   const rangeLabel = (() => {
     if (view === "day") return fmtDayLabel(days[0]);
-    if (view === "month") return anchor.toLocaleDateString([], { month: "long", year: "numeric" });
+    if (view === "month") return anchor.toLocaleDateString(tag ?? [], { month: "long", year: "numeric" });
     return `${fmtDayLabel(days[0])} – ${fmtDayLabel(days[days.length - 1])}`;
   })();
 
@@ -1155,10 +1174,10 @@ function ScheduleBuilder(props: BuilderProps) {
     <div className="space-y-6">
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 sm:flex sm:flex-wrap sm:items-end sm:justify-between">
         <div className="min-w-0">
-          <h2 className="truncate text-2xl font-semibold text-foreground">Schedule builder</h2>
+          <h2 className="truncate text-2xl font-semibold text-foreground">{t("Schedule builder")}</h2>
           <p className="text-sm text-muted-foreground">
-            {canEdit ? "Click any cell to add or edit a shift. " : "Read-only view. "}
-            Changes are scoped to {companyName}.
+            {canEdit ? t("Click any cell to add or edit a shift.") : t("Read-only view.")}{" "}
+            {t("Changes are scoped to {name}.", { name: companyName })}
           </p>
         </div>
         {role === "company_admin" && (
@@ -1170,10 +1189,10 @@ function ScheduleBuilder(props: BuilderProps) {
               setTimeout(() => setCopiedId(false), 1500);
             }}
             className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-accent"
-            title="Share this with new employees"
+            title={t("Share this with new employees")}
           >
             <Copy className="h-3.5 w-3.5" />{" "}
-            {copiedId ? "Copied!" : `ID: ${companyId.slice(0, 8)}…`}
+            {copiedId ? t("Copied!") : `ID: ${companyId.slice(0, 8)}…`}
           </button>
         )}
       </div>
@@ -1196,20 +1215,20 @@ function ScheduleBuilder(props: BuilderProps) {
                   onClick={() => setView(v)}
                   className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${view === v ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
                 >
-                  {VIEW_LABEL[v]}
+                  {t(VIEW_LABEL[v])}
                 </button>
               ))}
             </div>
           )}
           <div className="hidden h-6 w-px bg-border sm:block" />
           <Button variant="outline" size="sm" onClick={() => setAnchor(new Date())}>
-            Today
+            {t("Today")}
           </Button>
           <Button variant="ghost" size="sm" onClick={() => nav(-1)}>
-            ← Prev
+            {t("← Prev")}
           </Button>
           <Button variant="ghost" size="sm" onClick={() => nav(1)}>
-            Next →
+            {t("Next →")}
           </Button>
           <span className="ml-1 text-sm text-muted-foreground">{rangeLabel}</span>
         </div>
@@ -1221,11 +1240,11 @@ function ScheduleBuilder(props: BuilderProps) {
               onClick={toggleGroupByTeam}
               aria-pressed={groupByTeamOn}
               title={
-                groupByTeamOn ? "Show everyone in one list" : "Divide the rows under each team"
+                groupByTeamOn ? t("Show everyone in one list") : t("Divide the rows under each team")
               }
             >
               <Users className="mr-2 h-4 w-4" />
-              {groupByTeamOn ? "Teams on" : "Group by team"}
+              {groupByTeamOn ? t("Teams on") : t("Group by team")}
             </Button>
           )}
           {canEdit && !sel.active && layout !== "grid" && (
@@ -1233,10 +1252,10 @@ function ScheduleBuilder(props: BuilderProps) {
               variant="outline"
               size="sm"
               onClick={sel.enable}
-              title="Pick shifts or days to erase"
+              title={t("Pick shifts or days to erase")}
             >
               <CheckSquare className="mr-2 h-4 w-4" />
-              Select
+              {t("Select")}
             </Button>
           )}
           {canEdit && (
@@ -1259,7 +1278,7 @@ function ScheduleBuilder(props: BuilderProps) {
             <Button asChild variant="outline" size="sm">
               <Link to="/schedule-templates">
                 <CalendarRange className="mr-2 h-4 w-4" />
-                From template
+                {t("From template")}
               </Link>
             </Button>
           )}
@@ -1269,39 +1288,39 @@ function ScheduleBuilder(props: BuilderProps) {
                 variant="outline"
                 size="sm"
                 disabled={savingPdf || shifts.length === 0}
-                title="Save a PDF to print or pin up"
+                title={t("Save a PDF to print or pin up")}
               >
                 {savingPdf ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
                   <Download className="mr-2 h-4 w-4" />
                 )}
-                Download PDF
+                {t("Download PDF")}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-64">
               <DropdownMenuLabel className="text-xs text-muted-foreground">
-                Print format
+                {t("Print format")}
               </DropdownMenuLabel>
               <DropdownMenuItem
                 disabled={!gridPrintable}
                 onSelect={() => void downloadGrid()}
                 className="flex-col items-start gap-0.5"
               >
-                <span className="font-medium">Weekly grid</span>
+                <span className="font-medium">{t("Weekly grid")}</span>
                 <span className="text-xs text-muted-foreground">
                   {gridPrintable
-                    ? "The posted sheet: everyone by the week, one week a page."
-                    : "Switch to Week or 2-Week to print the grid."}
+                    ? t("The posted sheet: everyone by the week, one week a page.")
+                    : t("Switch to Week or 2-Week to print the grid.")}
                 </span>
               </DropdownMenuItem>
               <DropdownMenuItem
                 onSelect={() => void downloadSchedule()}
                 className="flex-col items-start gap-0.5"
               >
-                <span className="font-medium">Day list</span>
+                <span className="font-medium">{t("Day list")}</span>
                 <span className="text-xs text-muted-foreground">
-                  Every shift in this view, day by day.
+                  {t("Every shift in this view, day by day.")}
                 </span>
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -1313,7 +1332,7 @@ function ScheduleBuilder(props: BuilderProps) {
               disabled={draftCount === 0 || publishMutation.isPending}
             >
               {publishMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              Publish ({draftCount})
+              {t("Publish")} ({draftCount})
             </Button>
           )}
         </div>
@@ -1323,7 +1342,7 @@ function ScheduleBuilder(props: BuilderProps) {
         <EraseSelectionBar
           selection={sel}
           shifts={shifts}
-          scopeLabel={VIEW_LABEL[view].toLowerCase()}
+          scopeLabel={VIEW_SCOPE[view]}
         />
       )}
 
@@ -1338,7 +1357,7 @@ function ScheduleBuilder(props: BuilderProps) {
             shifts={shifts.filter(
               (s) => !s.employee_id || members.some((m) => m.id === s.employee_id),
             )}
-            nameOf={(id) => members.find((m) => m.id === id)?.full_name || "Unnamed"}
+            nameOf={(id) => members.find((m) => m.id === id)?.full_name || t("Unnamed")}
             companyName={companyName}
             rangeLabel={rangeLabel}
             eyebrow={
@@ -1347,12 +1366,11 @@ function ScheduleBuilder(props: BuilderProps) {
                 : "Week of"
             }
             showDrafts
-            timeOff={props.timeOff.filter((t) => members.some((m) => m.id === t.employee_id))}
-            emptyText="Nobody is scheduled this week yet."
+            timeOff={props.timeOff.filter((o) => members.some((m) => m.id === o.employee_id))}
+            emptyText={t("Nobody is scheduled this week yet.")}
           />
           <p className="text-xs text-muted-foreground">
-            Read-only. Switch to <span className="font-medium">Classic</span> to add or change
-            shifts.
+            {t("Read-only. Switch to Classic to add or change shifts.")}
           </p>
         </div>
       )}
@@ -1409,6 +1427,8 @@ function GridView({
   dayCount: 7 | 14;
   selection?: ScheduleSelection;
 }) {
+  const t = useT("schedule");
+  const tag = useLocaleTag();
   const grid = useMemo(() => {
     const m = new Map<string, (ShiftRow | null)[]>();
     for (const member of members) m.set(member.id, new Array(dayCount).fill(null));
@@ -1439,8 +1459,8 @@ function GridView({
         >
           <div className="px-3 py-3 text-sm font-semibold text-foreground">
             {groups
-              ? `${groups.length} team${groups.length === 1 ? "" : "s"} · ${members.length}`
-              : `Team (${members.length})`}
+              ? `${groups.length === 1 ? t("1 team") : t("{n} teams", { n: groups.length })} · ${members.length}`
+              : t("Team ({n})", { n: members.length })}
           </div>
           {days.map((d, i) => {
             const today = new Date().toDateString() === d.toDateString();
@@ -1453,11 +1473,11 @@ function GridView({
                 key={d.toISOString()}
                 disabled={!selection}
                 onClick={() => selection?.toggleDay(dayKey)}
-                title="Click to pick this whole day"
+                title={t("Click to pick this whole day")}
                 className={`px-1 py-3 text-center text-[11px] font-semibold ${today ? "text-primary" : "text-foreground"} ${weekDivider ? "border-l-2 border-primary/30" : ""} ${picked ? "bg-primary/20 ring-1 ring-inset ring-primary" : ""}`}
               >
                 <div className="uppercase tracking-wide text-muted-foreground">
-                  {d.toLocaleDateString([], { weekday: "short" })}
+                  {d.toLocaleDateString(tag ?? [], { weekday: "short" })}
                 </div>
                 <div
                   className={
@@ -1474,10 +1494,10 @@ function GridView({
         </div>
 
         {isLoading ? (
-          <p className="px-4 py-8 text-center text-sm text-muted-foreground">Loading schedule…</p>
+          <p className="px-4 py-8 text-center text-sm text-muted-foreground">{t("Loading schedule…")}</p>
         ) : members.length === 0 ? (
           <p className="px-4 py-8 text-center text-sm text-muted-foreground">
-            No team members yet.
+            {t("No team members yet.")}
           </p>
         ) : (
           (groups ?? [{ id: NO_TEAM, name: "", members }]).map((group) => (
@@ -1511,7 +1531,7 @@ function GridView({
                       </div>
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium text-foreground">
-                          {m.full_name || "(unnamed)"}
+                          {m.full_name || t("(unnamed)")}
                         </p>
                         {m.position && (
                           <p className="truncate text-xs text-muted-foreground">{m.position}</p>
@@ -1536,7 +1556,7 @@ function GridView({
                             // and the editor can open cleanly.
                             onEdit({
                               memberId: m.id,
-                              memberName: m.full_name || "(unnamed)",
+                              memberName: m.full_name || t("(unnamed)"),
                               day: days[i],
                               shift: s,
                             });
@@ -1552,17 +1572,20 @@ function GridView({
                             }
                             onEdit({
                               memberId: m.id,
-                              memberName: m.full_name || "(unnamed)",
+                              memberName: m.full_name || t("(unnamed)"),
                               day: days[i],
                               shift: s,
                             });
                           }}
                           title={
                             s
-                              ? "Click to pick this shift · double-click to edit it"
+                              ? t("Click to pick this shift · double-click to edit it")
                               : off
-                                ? `${m.full_name || "This employee"} is off (${timeOffLabel(off).toLowerCase()}) this day`
-                                : "Click to add a shift"
+                                ? t("{name} is off ({kind}) this day", {
+                                    name: m.full_name || t("This employee"),
+                                    kind: timeOffLabel(off).toLowerCase(),
+                                  })
+                                : t("Click to add a shift")
                           }
                           className={`group relative border-l border-border p-1 text-left transition-colors enabled:hover:bg-primary-soft/40 disabled:cursor-default ${weekDivider ? "border-l-2 border-primary/30" : ""} ${marked ? "bg-primary/15 ring-1 ring-inset ring-primary" : ""}`}
                         >
@@ -1574,7 +1597,7 @@ function GridView({
                                 {fmtTime(new Date(s.starts_at))}–{fmtTime(new Date(s.ends_at))}
                               </p>
                               {s.position && <p className="truncate opacity-90">{s.position}</p>}
-                              {!s.published && <p className="opacity-90">draft</p>}
+                              {!s.published && <p className="opacity-90">{t("draft")}</p>}
                               {off && <p className="font-semibold">⚠ {timeOffLabel(off)}</p>}
                             </div>
                           ) : off ? (
@@ -1620,17 +1643,18 @@ function DayView({
   isLoading,
   onEdit,
 }: BuilderProps & { groups: TeamGroup[] | null; onEdit: (t: EditTarget) => void }) {
+  const t = useT("schedule");
   const day = days[0];
   if (isLoading)
     return (
       <p className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground shadow-[var(--shadow-card)]">
-        Loading…
+        {t("Loading…")}
       </p>
     );
   if (members.length === 0)
     return (
       <p className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground shadow-[var(--shadow-card)]">
-        No team members yet.
+        {t("No team members yet.")}
       </p>
     );
   return (
@@ -1638,7 +1662,9 @@ function DayView({
       <div className="border-b border-border px-5 py-4">
         <h3 className="text-base font-semibold text-foreground">{fmtDayLabel(day)}</h3>
         <p className="text-xs text-muted-foreground">
-          {shifts.length} shift{shifts.length === 1 ? "" : "s"} scheduled
+          {shifts.length === 1
+            ? t("1 shift scheduled")
+            : t("{n} shifts scheduled", { n: shifts.length })}
         </p>
       </div>
       <ul className="divide-y divide-border">
@@ -1675,7 +1701,7 @@ function DayView({
                   </div>
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-foreground">
-                      {m.full_name || "(unnamed)"}
+                      {m.full_name || t("(unnamed)")}
                     </p>
                     {m.position && (
                       <p className="truncate text-xs text-muted-foreground">{m.position}</p>
@@ -1695,17 +1721,17 @@ function DayView({
                         onClick={() =>
                           onEdit({
                             memberId: m.id,
-                            memberName: m.full_name || "(unnamed)",
+                            memberName: m.full_name || t("(unnamed)"),
                             day,
                             shift: null,
                           })
                         }
                         className="inline-flex items-center gap-1 rounded-md border border-dashed border-border px-3 py-1.5 text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground"
                       >
-                        <Plus className="h-3.5 w-3.5" /> Add shift
+                        <Plus className="h-3.5 w-3.5" /> {t("Add shift")}
                       </button>
                     ) : (
-                      <span className="text-xs text-muted-foreground">Off</span>
+                      <span className="text-xs text-muted-foreground">{t("Off")}</span>
                     )
                   ) : (
                     mine.map((s) => (
@@ -1717,7 +1743,7 @@ function DayView({
                           canEdit &&
                           onEdit({
                             memberId: m.id,
-                            memberName: m.full_name || "(unnamed)",
+                            memberName: m.full_name || t("(unnamed)"),
                             day,
                             shift: s,
                           })
@@ -1726,7 +1752,7 @@ function DayView({
                       >
                         {fmtTime(new Date(s.starts_at))} – {fmtTime(new Date(s.ends_at))}
                         {s.position ? ` · ${s.position}` : ""}
-                        {!s.published ? " · draft" : ""}
+                        {!s.published ? ` · ${t("draft")}` : ""}
                       </button>
                     ))
                   )}
@@ -1751,6 +1777,7 @@ function MonthView({
   onEdit,
   members,
 }: BuilderProps & { onEdit: (t: EditTarget) => void }) {
+  const t = useT("schedule");
   const monthStart = startOfMonth(anchor);
   const monthEnd = endOfMonth(anchor);
   const leading = (monthStart.getDay() + 6) % 7;
@@ -1770,7 +1797,7 @@ function MonthView({
   if (isLoading)
     return (
       <p className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground shadow-[var(--shadow-card)]">
-        Loading…
+        {t("Loading…")}
       </p>
     );
 
@@ -1781,7 +1808,7 @@ function MonthView({
       <div className="grid grid-cols-7 border-b border-border bg-secondary/40 text-center text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
         {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
           <div key={d} className="px-1 py-2">
-            {d}
+            {t(d)}
           </div>
         ))}
       </div>
@@ -1802,7 +1829,7 @@ function MonthView({
                 const m = members[0];
                 onEdit({
                   memberId: m.id,
-                  memberName: m.full_name || "(unnamed)",
+                  memberName: m.full_name || t("(unnamed)"),
                   day: d,
                   shift: null,
                 });
@@ -1816,17 +1843,21 @@ function MonthView({
               </span>
               {count > 0 && (
                 <span className="mt-1 block truncate rounded-md bg-primary-soft px-1.5 py-0.5 text-[10px] font-medium text-primary">
-                  {count} shift{count === 1 ? "" : "s"}
+                  {count === 1 ? t("1 shift") : t("{n} shifts", { n: count })}
                 </span>
               )}
               {away.length > 0 && (
                 <span
                   className="mt-1 flex items-center gap-1 truncate rounded-md bg-warning/15 px-1.5 py-0.5 text-[10px] font-medium text-warning-foreground"
-                  title={`Off: ${away.map((m) => m.full_name || "(unnamed)").join(", ")}`}
+                  title={t("Off: {names}", {
+                    names: away.map((m) => m.full_name || t("(unnamed)")).join(", "),
+                  })}
                 >
                   <Plane className="h-3 w-3 shrink-0" />
                   <span className="truncate">
-                    {away.length === 1 ? shortName(away[0].full_name || "(unnamed)") : `${away.length} off`}
+                    {away.length === 1
+                      ? shortName(away[0].full_name || t("(unnamed)"))
+                      : t("{n} off", { n: away.length })}
                   </span>
                 </span>
               )}
@@ -1879,6 +1910,7 @@ function ShiftEditorForm({
   memberShifts: ShiftRow[];
   onClose: () => void;
 }) {
+  const t = useT("schedule");
   const qc = useQueryClient();
   const initialStart = target.shift
     ? new Date(target.shift.starts_at)
@@ -2009,7 +2041,7 @@ function ShiftEditorForm({
         {
           code: "range",
           severity: "error",
-          message: "End time must be after start time.",
+          message: t("End time must be after start time."),
           day: null,
         },
       ];
@@ -2072,7 +2104,7 @@ function ShiftEditorForm({
   return (
     <>
       <DialogHeader>
-        <DialogTitle>{target.shift ? "Edit shift" : "Add shift"}</DialogTitle>
+        <DialogTitle>{target.shift ? t("Edit shift") : t("Add shift")}</DialogTitle>
         <DialogDescription>
           {target.memberName} · {fmtDayLabel(target.day)}
         </DialogDescription>
@@ -2080,7 +2112,7 @@ function ShiftEditorForm({
       <div className="space-y-4 py-2">
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <Label htmlFor="start">Starts</Label>
+            <Label htmlFor="start">{t("Starts")}</Label>
             <Input
               id="start"
               type="datetime-local"
@@ -2089,7 +2121,7 @@ function ShiftEditorForm({
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="hours">Length (hours)</Label>
+            <Label htmlFor="hours">{t("Length (hours)")}</Label>
             <Input
               id="hours"
               type="number"
@@ -2102,7 +2134,7 @@ function ShiftEditorForm({
           </div>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="end">Ends</Label>
+          <Label htmlFor="end">{t("Ends")}</Label>
           <Input
             id="end"
             type="datetime-local"
@@ -2110,11 +2142,11 @@ function ShiftEditorForm({
             onChange={(e) => onEndChange(e.target.value)}
           />
           <p className="text-xs text-muted-foreground">
-            Filled in from the start and length — change it directly and the length updates instead.
+            {t("Filled in from the start and length — change it directly and the length updates instead.")}
           </p>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="pos">Position</Label>
+          <Label htmlFor="pos">{t("Position")}</Label>
           {(positionsQ.data ?? []).length > 0 ? (
             <select
               id="pos"
@@ -2128,7 +2160,7 @@ function ShiftEditorForm({
                 setPosition((positionsQ.data ?? []).find((p) => p.id === id)?.name ?? "");
               }}
             >
-              <option value="">— none —</option>
+              <option value="">{t("— none —")}</option>
               {(positionsQ.data ?? []).map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
@@ -2140,12 +2172,12 @@ function ShiftEditorForm({
               id="pos"
               value={position}
               onChange={(e) => setPosition(e.target.value)}
-              placeholder="e.g. Traffic / Parking"
+              placeholder={t("e.g. Traffic / Parking")}
             />
           )}
         </div>
         <div className="space-y-1.5">
-          <Label>Color</Label>
+          <Label>{t("Color")}</Label>
           <div className="grid grid-cols-4 gap-2">
             {SHIFT_COLORS.map((c) => (
               <button
@@ -2153,10 +2185,10 @@ function ShiftEditorForm({
                 type="button"
                 onClick={() => setColor(c.key)}
                 aria-pressed={color === c.key}
-                title={c.label}
+                title={t(c.label)}
                 className={`rounded-md px-2 py-2 text-xs font-medium ${c.chip} ${color === c.key ? "ring-2 ring-ring ring-offset-2" : "opacity-60 hover:opacity-100"}`}
               >
-                {c.label}
+                {t(c.label)}
               </button>
             ))}
           </div>
@@ -2164,7 +2196,7 @@ function ShiftEditorForm({
 
         {repeating && (
           <div className="space-y-1.5">
-            <Label>Apply to</Label>
+            <Label>{t("Apply to")}</Label>
             <div className="flex flex-wrap gap-2">
               {WEEKDAYS.map((label, w) => {
                 const on = applyDays.includes(w);
@@ -2177,7 +2209,7 @@ function ShiftEditorForm({
                     type="button"
                     aria-pressed={on}
                     disabled={isClicked}
-                    title={isClicked ? `${label} — the day you clicked` : label}
+                    title={isClicked ? t("{day} — the day you clicked", { day: t(label) }) : t(label)}
                     onClick={() =>
                       setApplyDays((d) => (d.includes(w) ? d.filter((x) => x !== w) : [...d, w]))
                     }
@@ -2187,15 +2219,18 @@ function ShiftEditorForm({
                         : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
                     } ${isClicked ? "cursor-default" : ""}`}
                   >
-                    {label}
+                    {t(label)}
                   </button>
                 );
               })}
             </div>
             <p className="text-xs text-muted-foreground">
               {dayOffsets.length === 1
-                ? `Just ${fmtDayLabel(target.day)}.`
-                : `Adds ${dayOffsets.length} shifts, in the week of ${fmtDayLabel(startOfWeek(target.day))}.`}
+                ? t("Just {day}.", { day: fmtDayLabel(target.day) })
+                : t("Adds {n} shifts, in the week of {day}.", {
+                    n: dayOffsets.length,
+                    day: fmtDayLabel(startOfWeek(target.day)),
+                  })}
             </p>
           </div>
         )}
@@ -2203,7 +2238,7 @@ function ShiftEditorForm({
         {conflictsQ.isFetching && rangeValid && (
           <p className="flex items-center gap-2 text-xs text-muted-foreground">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            Checking availability, time off and hours…
+            {t("Checking availability, time off and hours…")}
           </p>
         )}
 
@@ -2216,8 +2251,12 @@ function ShiftEditorForm({
               className={`flex items-center gap-2 text-sm font-medium ${errorCount > 0 ? "text-destructive" : "text-warning-foreground"}`}
             >
               <AlertTriangle className="h-4 w-4" />
-              {conflicts.length === 1 ? "1 issue found" : `${conflicts.length} issues found`}
-              {errorCount > 0 && conflicts.length > errorCount && ` (${errorCount} blocking)`}
+              {conflicts.length === 1
+                ? t("1 issue found")
+                : t("{n} issues found", { n: conflicts.length })}
+              {errorCount > 0 &&
+                conflicts.length > errorCount &&
+                ` (${t("{n} blocking", { n: errorCount })})`}
             </div>
             <ul className="mt-1.5 space-y-1 text-xs">
               {conflicts.map((c) => (
@@ -2225,7 +2264,7 @@ function ShiftEditorForm({
                   <span
                     className={`mt-px shrink-0 rounded px-1 text-[10px] font-semibold uppercase ${c.severity === "error" ? "bg-destructive/20 text-destructive" : "bg-warning/30 text-warning-foreground"}`}
                   >
-                    {c.severity}
+                    {t(c.severity)}
                   </span>
                   <span
                     className={
@@ -2256,13 +2295,13 @@ function ShiftEditorForm({
               onClick={() => deleteMutation.mutate()}
               disabled={deleteMutation.isPending}
             >
-              <Trash2 className="h-4 w-4" /> Delete
+              <Trash2 className="h-4 w-4" /> {t("Delete")}
             </Button>
           )}
         </div>
         <div className="flex gap-2">
           <Button type="button" variant="outline" onClick={onClose}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button
             type="button"
@@ -2270,7 +2309,7 @@ function ShiftEditorForm({
             onClick={() => saveMutation.mutate()}
           >
             {saveMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-            {conflicts.length > 0 && !blocking ? "Save anyway" : "Save"}
+            {conflicts.length > 0 && !blocking ? t("Save anyway") : t("Save")}
           </Button>
         </div>
       </DialogFooter>

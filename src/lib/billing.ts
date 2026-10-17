@@ -1,4 +1,5 @@
 /** Formatting and status helpers for a company's billing period. */
+import { translate, localeTag } from "@/lib/i18n";
 
 /**
  * Whole days to the billing date, rounded away from zero.
@@ -13,16 +14,16 @@ function daysUntil(periodEnd: string | null): number | null {
 }
 
 export function fmtBillingDate(v: string | null): string {
-  return v ? new Date(v).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "Not set";
+  return v ? new Date(v).toLocaleDateString(localeTag(), { month: "short", day: "numeric", year: "numeric" }) : translate("Not set");
 }
 
 /** "in 6 days" / "Due today" / "9 days late" — the bit worth reading first. */
 export function billingDueLabel(periodEnd: string | null): string {
   const d = daysUntil(periodEnd);
-  if (d == null) return "No billing date yet";
-  if (d < 0) return `${Math.abs(d)} day${d === -1 ? "" : "s"} late`;
-  if (d === 0) return "Due today";
-  return `in ${d} day${d === 1 ? "" : "s"}`;
+  if (d == null) return translate("No billing date yet");
+  if (d < 0) return d === -1 ? translate("1 day late") : translate("{n} days late", { n: Math.abs(d) });
+  if (d === 0) return translate("Due today");
+  return d === 1 ? translate("in 1 day") : translate("in {n} days", { n: d });
 }
 
 /** A suspended company is already dealt with, so it isn't flagged again. */

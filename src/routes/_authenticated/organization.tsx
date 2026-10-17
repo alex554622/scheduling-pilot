@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { LeafletMap } from "@/components/leaflet-map";
+import { useT } from "@/lib/i18n";
 import { Building2, MapPin, BriefcaseBusiness, LayoutTemplate, Plus, Trash2, Pencil, Loader2, Crosshair, Globe } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/organization")({
@@ -29,6 +30,7 @@ type Template = {
 };
 
 function OrganizationPage() {
+  const t = useT("people");
   const { company, primaryRole, loading } = useAuth();
   const navigate = useNavigate();
 
@@ -39,25 +41,25 @@ function OrganizationPage() {
     }
   }, [loading, primaryRole, navigate]);
 
-  if (loading) return <div className="text-sm text-muted-foreground">Loading…</div>;
-  if (!company) return <div className="text-sm text-muted-foreground">Join a company first.</div>;
+  if (loading) return <div className="text-sm text-muted-foreground">{t("Loading…")}</div>;
+  if (!company) return <div className="text-sm text-muted-foreground">{t("Join a company first.")}</div>;
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-foreground">Organization</h1>
+        <h1 className="text-2xl font-semibold text-foreground">{t("Organization")}</h1>
         <p className="text-sm text-muted-foreground">
-          Departments, job positions, worksites, and reusable shift templates for {company.name}.
+          {t("Departments, job positions, worksites, and reusable shift templates for {name}.", { name: company.name })}
         </p>
       </div>
 
       <Tabs defaultValue="general">
         <TabsList className="flex-wrap">
-          <TabsTrigger value="general"><Globe className="mr-2 h-4 w-4" />General</TabsTrigger>
-          <TabsTrigger value="departments"><Building2 className="mr-2 h-4 w-4" />Departments</TabsTrigger>
-          <TabsTrigger value="positions"><BriefcaseBusiness className="mr-2 h-4 w-4" />Positions</TabsTrigger>
-          <TabsTrigger value="locations"><MapPin className="mr-2 h-4 w-4" />Locations</TabsTrigger>
-          <TabsTrigger value="templates"><LayoutTemplate className="mr-2 h-4 w-4" />Shift templates</TabsTrigger>
+          <TabsTrigger value="general"><Globe className="mr-2 h-4 w-4" />{t("General")}</TabsTrigger>
+          <TabsTrigger value="departments"><Building2 className="mr-2 h-4 w-4" />{t("Departments")}</TabsTrigger>
+          <TabsTrigger value="positions"><BriefcaseBusiness className="mr-2 h-4 w-4" />{t("Positions")}</TabsTrigger>
+          <TabsTrigger value="locations"><MapPin className="mr-2 h-4 w-4" />{t("Locations")}</TabsTrigger>
+          <TabsTrigger value="templates"><LayoutTemplate className="mr-2 h-4 w-4" />{t("Shift templates")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general" className="mt-6"><GeneralTab companyId={company.id} /></TabsContent>
@@ -113,6 +115,7 @@ const COMMON_ZONES = [
 ];
 
 function GeneralTab({ companyId }: { companyId: string }) {
+  const t = useT("people");
   const qc = useQueryClient();
   const [err, setErr] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -152,10 +155,10 @@ function GeneralTab({ companyId }: { companyId: string }) {
     <div className="space-y-6">
     <OrgNamePanel companyId={companyId} />
 
-    <Panel title="Scheduling timezone" subtitle="Used to match shifts against stated availability and weekly hour totals.">
+    <Panel title={t("Scheduling timezone")} subtitle={t("Used to match shifts against stated availability and weekly hour totals.")}>
       <div className="max-w-md space-y-4">
         <div className="space-y-1.5">
-          <Label htmlFor="tz">Timezone</Label>
+          <Label htmlFor="tz">{t("Timezone")}</Label>
           <select
             id="tz"
             className="h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
@@ -163,20 +166,19 @@ function GeneralTab({ companyId }: { companyId: string }) {
             onChange={(e) => setTz(e.target.value)}
           >
             {zones.map((z) => (
-              <option key={z} value={z}>{z}{z === detected ? "  (this device)" : ""}</option>
+              <option key={z} value={z}>{z}{z === detected ? `  ${t("(this device)")}` : ""}</option>
             ))}
           </select>
           <p className="text-xs text-muted-foreground">
-            This device reports <span className="font-medium text-foreground">{detected}</span>.
-            Leaving this on UTC while your team works in another zone makes ordinary day shifts
-            look like they cross midnight.
+            {t("This device reports")} <span className="font-medium text-foreground">{detected}</span>.{" "}
+            {t("Leaving this on UTC while your team works in another zone makes ordinary day shifts look like they cross midnight.")}
           </p>
         </div>
         <div className="flex items-center gap-3">
           <Button disabled={save.isPending || value === q.data} onClick={() => save.mutate()}>
-            {save.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save timezone
+            {save.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{t("Save timezone")}
           </Button>
-          {saved && <span className="text-xs text-success">Saved.</span>}
+          {saved && <span className="text-xs text-success">{t("Saved.")}</span>}
         </div>
         <ErrorNote error={err} />
       </div>
@@ -194,6 +196,7 @@ function GeneralTab({ companyId }: { companyId: string }) {
  * update their own company row, the same way the timezone above does.
  */
 function OrgNamePanel({ companyId }: { companyId: string }) {
+  const t = useT("people");
   const { company, refresh } = useAuth();
   const [name, setName] = useState("");
   const [err, setErr] = useState<string | null>(null);
@@ -208,8 +211,8 @@ function OrgNamePanel({ companyId }: { companyId: string }) {
       const next = name.trim();
       // `name` is NOT NULL, but an empty string satisfies that and would leave
       // the organization nameless everywhere it is displayed.
-      if (!next) throw new Error("Organization name can't be empty");
-      if (next.length > 120) throw new Error("Organization name must be 120 characters or fewer");
+      if (!next) throw new Error(t("Organization name can't be empty"));
+      if (next.length > 120) throw new Error(t("Organization name must be 120 characters or fewer"));
       const { error } = await supabase.from("companies").update({ name: next }).eq("id", companyId);
       if (error) throw error;
       // So the sidebar and every heading pick the new name up without a reload.
@@ -227,17 +230,17 @@ function OrgNamePanel({ companyId }: { companyId: string }) {
 
   return (
     <Panel
-      title="Organization name"
-      subtitle="Shown to your team across the app, on schedules you publish, and on printed timecards."
+      title={t("Organization name")}
+      subtitle={t("Shown to your team across the app, on schedules you publish, and on printed timecards.")}
     >
       <div className="max-w-md space-y-4">
         <div className="space-y-1.5">
-          <Label htmlFor="org-name">Name</Label>
+          <Label htmlFor="org-name">{t("Name")}</Label>
           <Input
             id="org-name"
             value={name}
             maxLength={120}
-            placeholder="e.g. City of Calexico"
+            placeholder={t("e.g. City of Calexico")}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && dirty) save.mutate();
@@ -246,9 +249,9 @@ function OrgNamePanel({ companyId }: { companyId: string }) {
         </div>
         <div className="flex items-center gap-3">
           <Button disabled={save.isPending || !dirty} onClick={() => save.mutate()}>
-            {save.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save name
+            {save.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{t("Save name")}
           </Button>
-          {saved && <span className="text-xs text-success">Saved.</span>}
+          {saved && <span className="text-xs text-success">{t("Saved.")}</span>}
         </div>
         <ErrorNote error={err} />
       </div>
@@ -259,6 +262,7 @@ function OrgNamePanel({ companyId }: { companyId: string }) {
 /* ------------------------------- departments ------------------------------- */
 
 function DepartmentsTab({ companyId }: { companyId: string }) {
+  const t = useT("people");
   const qc = useQueryClient();
   const [editing, setEditing] = useState<Department | null>(null);
   const [creating, setCreating] = useState(false);
@@ -304,12 +308,12 @@ function DepartmentsTab({ companyId }: { companyId: string }) {
 
   return (
     <Panel
-      title="Departments"
-      subtitle="Group employees and shifts by team."
-      action={<Button size="sm" onClick={() => { setErr(null); setCreating(true); }}><Plus className="mr-2 h-4 w-4" />Add department</Button>}
+      title={t("Departments")}
+      subtitle={t("Group employees and shifts by team.")}
+      action={<Button size="sm" onClick={() => { setErr(null); setCreating(true); }}><Plus className="mr-2 h-4 w-4" />{t("Add department")}</Button>}
     >
       {q.isLoading ? <EmptyState>Loading…</EmptyState>
-        : rows.length === 0 ? <EmptyState>No departments yet.</EmptyState>
+        : rows.length === 0 ? <EmptyState>{t("No departments yet.")}</EmptyState>
         : (
           <ul className="divide-y divide-border">
             {rows.map((d) => (
@@ -319,11 +323,11 @@ function DepartmentsTab({ companyId }: { companyId: string }) {
                   {d.description && <p className="truncate text-xs text-muted-foreground">{d.description}</p>}
                 </div>
                 <div className="flex shrink-0 gap-1">
-                  <Button variant="ghost" size="sm" onClick={() => { setErr(null); setEditing(d); }} aria-label={`Edit ${d.name}`}>
+                  <Button variant="ghost" size="sm" onClick={() => { setErr(null); setEditing(d); }} aria-label={t("Edit {name}", { name: d.name })}>
                     <Pencil className="h-4 w-4" />
                   </Button>
                   <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                    onClick={() => del.mutate(d.id)} aria-label={`Delete ${d.name}`}>
+                    onClick={() => del.mutate(d.id)} aria-label={t("Delete {name}", { name: d.name })}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
@@ -335,7 +339,7 @@ function DepartmentsTab({ companyId }: { companyId: string }) {
 
       <NameDescDialog
         open={creating || !!editing}
-        title={editing ? "Edit department" : "New department"}
+        title={editing ? t("Edit department") : t("New department")}
         initial={editing ? { name: editing.name, description: editing.description ?? "" } : { name: "", description: "" }}
         pending={save.isPending}
         onCancel={() => { setCreating(false); setEditing(null); }}
@@ -349,6 +353,7 @@ function NameDescDialog({ open, title, initial, pending, onCancel, onSave }: {
   open: boolean; title: string; initial: { name: string; description: string };
   pending: boolean; onCancel: () => void; onSave: (v: { name: string; description: string }) => void;
 }) {
+  const t = useT("people");
   const [name, setName] = useState(initial.name);
   const [description, setDescription] = useState(initial.description);
 
@@ -361,18 +366,18 @@ function NameDescDialog({ open, title, initial, pending, onCancel, onSave }: {
         <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
-            <Label htmlFor="nd-name">Name</Label>
-            <Input id="nd-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Front of House" />
+            <Label htmlFor="nd-name">{t("Name")}</Label>
+            <Input id="nd-name" value={name} onChange={(e) => setName(e.target.value)} placeholder={t("e.g. Front of House")} />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="nd-desc">Description</Label>
+            <Label htmlFor="nd-desc">{t("Description")}</Label>
             <Textarea id="nd-desc" value={description} onChange={(e) => setDescription(e.target.value)} rows={3} />
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onCancel}>Cancel</Button>
+          <Button variant="outline" onClick={onCancel}>{t("Cancel")}</Button>
           <Button disabled={!name.trim() || pending} onClick={() => onSave({ name: name.trim(), description })}>
-            {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save
+            {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{t("Save")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -383,6 +388,7 @@ function NameDescDialog({ open, title, initial, pending, onCancel, onSave }: {
 /* -------------------------------- positions -------------------------------- */
 
 function PositionsTab({ companyId }: { companyId: string }) {
+  const t = useT("people");
   const qc = useQueryClient();
   const [editing, setEditing] = useState<Position | null>(null);
   const [creating, setCreating] = useState(false);
@@ -428,12 +434,12 @@ function PositionsTab({ companyId }: { companyId: string }) {
 
   return (
     <Panel
-      title="Job positions"
-      subtitle="Roles employees can be qualified for. The scheduler warns when someone isn't qualified."
-      action={<Button size="sm" onClick={() => { setErr(null); setCreating(true); }}><Plus className="mr-2 h-4 w-4" />Add position</Button>}
+      title={t("Job positions")}
+      subtitle={t("Roles employees can be qualified for. The scheduler warns when someone isn't qualified.")}
+      action={<Button size="sm" onClick={() => { setErr(null); setCreating(true); }}><Plus className="mr-2 h-4 w-4" />{t("Add position")}</Button>}
     >
       {q.isLoading ? <EmptyState>Loading…</EmptyState>
-        : rows.length === 0 ? <EmptyState>No positions yet.</EmptyState>
+        : rows.length === 0 ? <EmptyState>{t("No positions yet.")}</EmptyState>
         : (
           <ul className="divide-y divide-border">
             {rows.map((p) => (
@@ -443,11 +449,11 @@ function PositionsTab({ companyId }: { companyId: string }) {
                   {p.description && <p className="truncate text-xs text-muted-foreground">{p.description}</p>}
                 </div>
                 <div className="flex shrink-0 gap-1">
-                  <Button variant="ghost" size="sm" onClick={() => { setErr(null); setEditing(p); }} aria-label={`Edit ${p.name}`}>
+                  <Button variant="ghost" size="sm" onClick={() => { setErr(null); setEditing(p); }} aria-label={t("Edit {name}", { name: p.name })}>
                     <Pencil className="h-4 w-4" />
                   </Button>
                   <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                    onClick={() => del.mutate(p.id)} aria-label={`Delete ${p.name}`}>
+                    onClick={() => del.mutate(p.id)} aria-label={t("Delete {name}", { name: p.name })}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
@@ -459,7 +465,7 @@ function PositionsTab({ companyId }: { companyId: string }) {
 
       <NameDescDialog
         open={creating || !!editing}
-        title={editing ? "Edit position" : "New position"}
+        title={editing ? t("Edit position") : t("New position")}
         initial={editing ? { name: editing.name, description: editing.description ?? "" } : { name: "", description: "" }}
         pending={save.isPending}
         onCancel={() => { setCreating(false); setEditing(null); }}
@@ -472,6 +478,7 @@ function PositionsTab({ companyId }: { companyId: string }) {
 /* -------------------------------- locations -------------------------------- */
 
 function LocationsTab({ companyId }: { companyId: string }) {
+  const t = useT("people");
   const qc = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<{
@@ -496,7 +503,7 @@ function LocationsTab({ companyId }: { companyId: string }) {
   const save = useMutation({
     mutationFn: async () => {
       if (!draft) return;
-      if (!draft.name.trim()) throw new Error("Give the location a name.");
+      if (!draft.name.trim()) throw new Error(t("Give the location a name."));
       const payload = {
         name: draft.name.trim(),
         address: draft.address || null,
@@ -556,66 +563,66 @@ function LocationsTab({ companyId }: { companyId: string }) {
         <LeafletMap
           center={center}
           zoom={focus ? 16 : pins.length ? 12 : 4}
-          pins={draftHasPoint ? [...pins, { lat: Number(draft!.latitude), lng: Number(draft!.longitude), label: draft!.name || "New location" }] : pins}
+          pins={draftHasPoint ? [...pins, { lat: Number(draft!.latitude), lng: Number(draft!.longitude), label: draft!.name || t("New location") }] : pins}
           circle={focus}
           height={460}
           onClick={(lat, lng) => { if (draft) setDraft({ ...draft, latitude: lat, longitude: lng }); }}
         />
         <div className="border-t border-border bg-muted/30 p-3 text-xs text-muted-foreground">
-          {draft ? "Click the map to place this location's pin." : "Select or add a location to place its pin."}
-          {" "}Map data © OpenStreetMap contributors — rendered with Leaflet.
+          {draft ? t("Click the map to place this location's pin.") : t("Select or add a location to place its pin.")}
+          {" "}{t("Map data © OpenStreetMap contributors — rendered with Leaflet.")}
         </div>
       </div>
 
       <Panel
-        title="Locations"
-        subtitle="Each site can carry its own geofence radius."
+        title={t("Locations")}
+        subtitle={t("Each site can carry its own geofence radius.")}
         action={
           <Button size="sm" onClick={() => { setErr(null); setSelectedId(null); setDraft({ name: "", address: "", latitude: "", longitude: "", radius: 200 }); }}>
-            <Plus className="mr-2 h-4 w-4" />Add
+            <Plus className="mr-2 h-4 w-4" />{t("Add")}
           </Button>
         }
       >
         {draft ? (
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="loc-name">Name</Label>
-              <Input id="loc-name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="e.g. North Yard" />
+              <Label htmlFor="loc-name">{t("Name")}</Label>
+              <Input id="loc-name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder={t("e.g. North Yard")} />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="loc-addr">Address</Label>
+              <Label htmlFor="loc-addr">{t("Address")}</Label>
               <Input id="loc-addr" value={draft.address} onChange={(e) => setDraft({ ...draft, address: e.target.value })} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="text-xs">Latitude</Label>
+                <Label className="text-xs">{t("Latitude")}</Label>
                 <Input type="number" step="any" value={draft.latitude}
                   onChange={(e) => setDraft({ ...draft, latitude: e.target.value === "" ? "" : Number(e.target.value) })} />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs">Longitude</Label>
+                <Label className="text-xs">{t("Longitude")}</Label>
                 <Input type="number" step="any" value={draft.longitude}
                   onChange={(e) => setDraft({ ...draft, longitude: e.target.value === "" ? "" : Number(e.target.value) })} />
               </div>
             </div>
             <Button variant="outline" size="sm" className="w-full" onClick={useMyLocation}>
-              <Crosshair className="mr-2 h-4 w-4" />Use my current location
+              <Crosshair className="mr-2 h-4 w-4" />{t("Use my current location")}
             </Button>
             <div>
-              <Label className="text-xs">Geofence radius: <span className="font-medium text-foreground">{draft.radius} m</span></Label>
+              <Label className="text-xs">{t("Geofence radius:")} <span className="font-medium text-foreground">{draft.radius} m</span></Label>
               <input type="range" min={25} max={2000} step={25} value={draft.radius}
                 onChange={(e) => setDraft({ ...draft, radius: Number(e.target.value) })} className="w-full" />
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" className="flex-1" onClick={() => { setDraft(null); setErr(null); }}>Cancel</Button>
+              <Button variant="outline" className="flex-1" onClick={() => { setDraft(null); setErr(null); }}>{t("Cancel")}</Button>
               <Button className="flex-1" disabled={save.isPending} onClick={() => save.mutate()}>
-                {save.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save
+                {save.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{t("Save")}
               </Button>
             </div>
             <ErrorNote error={err} />
           </div>
         ) : q.isLoading ? <EmptyState>Loading…</EmptyState>
-          : rows.length === 0 ? <EmptyState>No locations yet.</EmptyState>
+          : rows.length === 0 ? <EmptyState>{t("No locations yet.")}</EmptyState>
           : (
             <>
               <ul className="divide-y divide-border">
@@ -626,12 +633,12 @@ function LocationsTab({ companyId }: { companyId: string }) {
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-foreground">{l.name}</p>
                       <p className="truncate text-xs text-muted-foreground">
-                        {l.address || (l.latitude != null ? `${l.latitude.toFixed(4)}, ${l.longitude?.toFixed(4)}` : "No pin set")}
+                        {l.address || (l.latitude != null ? `${l.latitude.toFixed(4)}, ${l.longitude?.toFixed(4)}` : t("No pin set"))}
                         {" · "}{l.geofence_radius_m} m
                       </p>
                     </div>
                     <div className="flex shrink-0 gap-1">
-                      <Button variant="ghost" size="sm" aria-label={`Edit ${l.name}`}
+                      <Button variant="ghost" size="sm" aria-label={t("Edit {name}", { name: l.name })}
                         onClick={(e) => {
                           e.stopPropagation(); setErr(null);
                           setDraft({
@@ -642,7 +649,7 @@ function LocationsTab({ companyId }: { companyId: string }) {
                         <Pencil className="h-4 w-4" />
                       </Button>
                       <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                        aria-label={`Delete ${l.name}`}
+                        aria-label={t("Delete {name}", { name: l.name })}
                         onClick={(e) => { e.stopPropagation(); del.mutate(l.id); }}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -661,6 +668,7 @@ function LocationsTab({ companyId }: { companyId: string }) {
 /* -------------------------------- templates -------------------------------- */
 
 function TemplatesTab({ companyId }: { companyId: string }) {
+  const t = useT("people");
   const qc = useQueryClient();
   const [draft, setDraft] = useState<Partial<Template> | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -688,7 +696,7 @@ function TemplatesTab({ companyId }: { companyId: string }) {
 
   const save = useMutation({
     mutationFn: async () => {
-      if (!draft?.name?.trim()) throw new Error("Give the template a name.");
+      if (!draft?.name?.trim()) throw new Error(t("Give the template a name."));
       const payload = {
         name: draft.name.trim(),
         start_time: draft.start_time || "09:00",
@@ -724,35 +732,35 @@ function TemplatesTab({ companyId }: { companyId: string }) {
 
   return (
     <Panel
-      title="Shift templates"
-      subtitle="Reusable start/end times you can apply when building a schedule."
+      title={t("Shift templates")}
+      subtitle={t("Reusable start/end times you can apply when building a schedule.")}
       action={
         <Button size="sm" onClick={() => { setErr(null); setDraft({ name: "", start_time: "09:00", end_time: "17:00", break_minutes: 30, required_headcount: 1 }); }}>
-          <Plus className="mr-2 h-4 w-4" />Add template
+          <Plus className="mr-2 h-4 w-4" />{t("Add template")}
         </Button>
       }
     >
       {templatesQ.isLoading ? <EmptyState>Loading…</EmptyState>
-        : rows.length === 0 ? <EmptyState>No templates yet.</EmptyState>
+        : rows.length === 0 ? <EmptyState>{t("No templates yet.")}</EmptyState>
         : (
           <ul className="divide-y divide-border">
-            {rows.map((t) => (
-              <li key={t.id} className="flex items-center justify-between gap-3 py-3">
+            {rows.map((tpl) => (
+              <li key={tpl.id} className="flex items-center justify-between gap-3 py-3">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-foreground">{t.name}</p>
+                  <p className="truncate text-sm font-medium text-foreground">{tpl.name}</p>
                   <p className="truncate text-xs text-muted-foreground">
-                    {t.start_time.slice(0, 5)}–{t.end_time.slice(0, 5)}
-                    {t.break_minutes ? ` · ${t.break_minutes}m break` : ""}
-                    {t.required_headcount > 1 ? ` · needs ${t.required_headcount}` : ""}
-                    {posName(t.position_id) ? ` · ${posName(t.position_id)}` : ""}
+                    {tpl.start_time.slice(0, 5)}–{tpl.end_time.slice(0, 5)}
+                    {tpl.break_minutes ? ` · ${t("{n}m break", { n: tpl.break_minutes })}` : ""}
+                    {tpl.required_headcount > 1 ? ` · ${t("needs {n}", { n: tpl.required_headcount })}` : ""}
+                    {posName(tpl.position_id) ? ` · ${posName(tpl.position_id)}` : ""}
                   </p>
                 </div>
                 <div className="flex shrink-0 gap-1">
-                  <Button variant="ghost" size="sm" onClick={() => { setErr(null); setDraft(t); }} aria-label={`Edit ${t.name}`}>
+                  <Button variant="ghost" size="sm" onClick={() => { setErr(null); setDraft(tpl); }} aria-label={t("Edit {name}", { name: tpl.name })}>
                     <Pencil className="h-4 w-4" />
                   </Button>
                   <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                    onClick={() => del.mutate(t.id)} aria-label={`Delete ${t.name}`}>
+                    onClick={() => del.mutate(tpl.id)} aria-label={t("Delete {name}", { name: tpl.name })}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
@@ -765,55 +773,55 @@ function TemplatesTab({ companyId }: { companyId: string }) {
       <Dialog open={!!draft} onOpenChange={(o) => { if (!o) setDraft(null); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{draft?.id ? "Edit template" : "New shift template"}</DialogTitle>
-            <DialogDescription>Times are the site's local wall-clock times.</DialogDescription>
+            <DialogTitle>{draft?.id ? t("Edit template") : t("New shift template")}</DialogTitle>
+            <DialogDescription>{t("Times are the site's local wall-clock times.")}</DialogDescription>
           </DialogHeader>
           {draft && (
             <div className="space-y-4 py-2">
               <div className="space-y-1.5">
-                <Label htmlFor="tpl-name">Name</Label>
-                <Input id="tpl-name" value={draft.name ?? ""} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="e.g. Day Shift" />
+                <Label htmlFor="tpl-name">{t("Name")}</Label>
+                <Input id="tpl-name" value={draft.name ?? ""} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder={t("e.g. Day Shift")} />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label htmlFor="tpl-start">Starts</Label>
+                  <Label htmlFor="tpl-start">{t("Starts")}</Label>
                   <Input id="tpl-start" type="time" value={(draft.start_time ?? "09:00").slice(0, 5)}
                     onChange={(e) => setDraft({ ...draft, start_time: e.target.value })} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="tpl-end">Ends</Label>
+                  <Label htmlFor="tpl-end">{t("Ends")}</Label>
                   <Input id="tpl-end" type="time" value={(draft.end_time ?? "17:00").slice(0, 5)}
                     onChange={(e) => setDraft({ ...draft, end_time: e.target.value })} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label htmlFor="tpl-break">Break (minutes)</Label>
+                  <Label htmlFor="tpl-break">{t("Break (minutes)")}</Label>
                   <Input id="tpl-break" type="number" min={0} value={draft.break_minutes ?? 0}
                     onChange={(e) => setDraft({ ...draft, break_minutes: Number(e.target.value) })} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="tpl-head">People needed</Label>
+                  <Label htmlFor="tpl-head">{t("People needed")}</Label>
                   <Input id="tpl-head" type="number" min={1} value={draft.required_headcount ?? 1}
                     onChange={(e) => setDraft({ ...draft, required_headcount: Number(e.target.value) })} />
                 </div>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="tpl-pos">Position</Label>
+                <Label htmlFor="tpl-pos">{t("Position")}</Label>
                 <select id="tpl-pos"
                   className="h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
                   value={draft.position_id ?? ""}
                   onChange={(e) => setDraft({ ...draft, position_id: e.target.value || null })}>
-                  <option value="">— none —</option>
+                  <option value="">{t("— none —")}</option>
                   {positions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </div>
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDraft(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setDraft(null)}>{t("Cancel")}</Button>
             <Button disabled={save.isPending} onClick={() => save.mutate()}>
-              {save.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save
+              {save.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{t("Save")}
             </Button>
           </DialogFooter>
         </DialogContent>

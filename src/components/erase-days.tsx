@@ -13,14 +13,15 @@ import {
 } from "@/components/ui/dialog";
 import { fromDayString, toDayString, type DayString } from "@/lib/schedule-pattern";
 import type { ScheduleSelection } from "@/lib/day-selection";
+import { useT, useLocaleTag } from "@/lib/i18n";
 
 /**
  * Clearing part of a schedule: whole days, individual shifts, or everything on
  * screen. Only the shifts currently loaded can be erased, so a selection never
  * reaches past the period being looked at.
  */
-function dayLabel(day: DayString): string {
-  return fromDayString(day).toLocaleDateString(undefined, {
+function dayLabel(day: DayString, tag?: string): string {
+  return fromDayString(day).toLocaleDateString(tag, {
     weekday: "short",
     month: "short",
     day: "numeric",
@@ -40,6 +41,8 @@ export function EraseSelectionBar({
   scopeLabel?: string;
   invalidateKeys?: string[];
 }) {
+  const t = useT("schedule");
+  const tag = useLocaleTag();
   const qc = useQueryClient();
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -72,20 +75,24 @@ export function EraseSelectionBar({
 
   const days = [...selection.days].sort();
   const parts = [
-    days.length ? `${days.length} day${days.length === 1 ? "" : "s"}` : null,
+    days.length ? (days.length === 1 ? t("1 day") : t("{n} days", { n: days.length })) : null,
     selection.shifts.size
-      ? `${selection.shifts.size} shift${selection.shifts.size === 1 ? "" : "s"}`
+      ? selection.shifts.size === 1
+        ? t("1 shift")
+        : t("{n} shifts", { n: selection.shifts.size })
       : null,
   ].filter(Boolean);
 
   return (
     <>
       <div className="flex flex-wrap items-center gap-3 rounded-xl border border-primary/40 bg-primary-soft px-4 py-2.5 text-sm">
-        <span className="font-medium text-primary">{parts.join(" + ")} selected</span>
+        <span className="font-medium text-primary">{t("{parts} selected", { parts: parts.join(" + ") })}</span>
         <span className="text-primary/80">
-          {doomed.length} shift{doomed.length === 1 ? "" : "s"} will be erased
-          {days.length > 0 && ` · ${days.slice(0, 3).map(dayLabel).join(", ")}`}
-          {days.length > 3 ? ` and ${days.length - 3} more days` : ""}
+          {doomed.length === 1
+            ? t("1 shift will be erased")
+            : t("{n} shifts will be erased", { n: doomed.length })}
+          {days.length > 0 && ` · ${days.slice(0, 3).map((d) => dayLabel(d, tag)).join(", ")}`}
+          {days.length > 3 ? ` ${t("and {n} more days", { n: days.length - 3 })}` : ""}
         </span>
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <Button
@@ -93,9 +100,9 @@ export function EraseSelectionBar({
             variant="outline"
             onClick={() => selection.selectShifts(shifts.map((s) => s.id))}
             disabled={shifts.length === 0 || doomed.length === shifts.length}
-            title={`Select every shift in ${scopeLabel}`}
+            title={t("Select every shift in {scope}", { scope: t(scopeLabel) })}
           >
-            <CheckSquare className="mr-2 h-4 w-4" /> Select all of {scopeLabel}
+            <CheckSquare className="mr-2 h-4 w-4" /> {t("Select all of {scope}", { scope: t(scopeLabel) })}
           </Button>
           <Button
             size="sm"
@@ -106,10 +113,10 @@ export function EraseSelectionBar({
             }}
             disabled={doomed.length === 0}
           >
-            <Eraser className="mr-2 h-4 w-4" /> Erase selected
+            <Eraser className="mr-2 h-4 w-4" /> {t("Erase selected")}
           </Button>
           <Button size="sm" variant="ghost" onClick={selection.clear}>
-            <X className="mr-2 h-4 w-4" /> Cancel
+            <X className="mr-2 h-4 w-4" /> {t("Cancel")}
           </Button>
         </div>
       </div>
@@ -119,13 +126,17 @@ export function EraseSelectionBar({
           <DialogContent>
             <DialogHeader>
               <DialogTitle>
-                Erase {doomed.length} shift{doomed.length === 1 ? "" : "s"}?
+                {doomed.length === 1
+                  ? t("Erase 1 shift?")
+                  : t("Erase {n} shifts?", { n: doomed.length })}
               </DialogTitle>
               <DialogDescription>
                 {days.length > 0
-                  ? `Everything on ${days.map(dayLabel).join(", ")}, plus anything else picked, is deleted for everyone.`
-                  : "The shifts you picked are deleted."}{" "}
-                Published shifts go too, and this cannot be undone.
+                  ? t("Everything on {days}, plus anything else picked, is deleted for everyone.", {
+                      days: days.map((d) => dayLabel(d, tag)).join(", "),
+                    })
+                  : t("The shifts you picked are deleted.")}{" "}
+                {t("Published shifts go too, and this cannot be undone.")}
               </DialogDescription>
             </DialogHeader>
             {error && (
@@ -135,7 +146,7 @@ export function EraseSelectionBar({
             )}
             <DialogFooter>
               <Button variant="outline" onClick={() => setConfirming(false)}>
-                Keep them
+                {t("Keep them")}
               </Button>
               <Button
                 variant="destructive"
@@ -143,7 +154,7 @@ export function EraseSelectionBar({
                 disabled={erase.isPending}
               >
                 {erase.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Erase
+                {t("Erase")}
               </Button>
             </DialogFooter>
           </DialogContent>

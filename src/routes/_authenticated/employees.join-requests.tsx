@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
+import { useT } from "@/lib/i18n";
 import { Loader2, UserCheck, UserX, ArrowLeft, Inbox } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/employees/join-requests")({
@@ -17,6 +18,7 @@ interface JoinRequest {
 }
 
 function JoinRequestsPage() {
+  const t = useT("people");
   const { primaryRole, profile, company, loading } = useAuth();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -62,7 +64,7 @@ function JoinRequestsPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["company-join-requests", companyId] }),
   });
 
-  if (loading) return <div className="text-sm text-muted-foreground">Loading…</div>;
+  if (loading) return <div className="text-sm text-muted-foreground">{t("Loading…")}</div>;
 
   const requests = requestsQ.data ?? [];
   const pendingId = approveMut.isPending ? approveMut.variables : rejectMut.isPending ? rejectMut.variables : null;
@@ -72,11 +74,13 @@ function JoinRequestsPage() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <Link to="/employees" className="mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="h-3.5 w-3.5" /> Back to employees
+            <ArrowLeft className="h-3.5 w-3.5" /> {t("Back to employees")}
           </Link>
-          <h2 className="text-2xl font-semibold text-foreground">Join requests</h2>
+          <h2 className="text-2xl font-semibold text-foreground">{t("Join requests")}</h2>
           <p className="text-sm text-muted-foreground">
-            People who signed up with {company?.name ?? "your company"}'s join code{company?.join_code ? ` (${company.join_code})` : ""}. Approve to add them as employees.
+            {company?.join_code
+              ? t("People who signed up with {company}'s join code ({code}). Approve to add them as employees.", { company: company?.name ?? t("your company"), code: company.join_code })
+              : t("People who signed up with {company}'s join code. Approve to add them as employees.", { company: company?.name ?? t("your company") })}
           </p>
         </div>
       </div>
@@ -85,16 +89,16 @@ function JoinRequestsPage() {
         <div className="border-b border-border px-5 py-4 flex items-center gap-2">
           <Inbox className="h-4 w-4 text-muted-foreground" />
           <h3 className="font-semibold text-foreground">
-            Pending ({requestsQ.isLoading ? "…" : requests.length})
+            {t("Pending")} ({requestsQ.isLoading ? "…" : requests.length})
           </h3>
         </div>
 
         {requestsQ.isLoading ? (
-          <p className="px-5 py-10 text-center text-sm text-muted-foreground">Loading…</p>
+          <p className="px-5 py-10 text-center text-sm text-muted-foreground">{t("Loading…")}</p>
         ) : requests.length === 0 ? (
           <div className="px-5 py-12 text-center">
             <Inbox className="mx-auto h-8 w-8 text-muted-foreground/60" />
-            <p className="mt-3 text-sm text-muted-foreground">No pending join requests.</p>
+            <p className="mt-3 text-sm text-muted-foreground">{t("No pending join requests.")}</p>
           </div>
         ) : (
           <ul className="divide-y divide-border">
@@ -107,7 +111,7 @@ function JoinRequestsPage() {
                     {initials || "?"}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-foreground">{r.full_name || "Unnamed user"}</p>
+                    <p className="truncate text-sm font-medium text-foreground">{r.full_name || t("Unnamed user")}</p>
                     {r.position && <p className="truncate text-xs text-muted-foreground">{r.position}</p>}
                   </div>
                   <div className="flex items-center gap-2">
@@ -118,7 +122,7 @@ function JoinRequestsPage() {
                       onClick={() => rejectMut.mutate(r.id)}
                     >
                       {busy && rejectMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserX className="h-4 w-4" />}
-                      Reject
+                      {t("Reject")}
                     </Button>
                     <Button
                       size="sm"
@@ -126,7 +130,7 @@ function JoinRequestsPage() {
                       onClick={() => approveMut.mutate(r.id)}
                     >
                       {busy && approveMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserCheck className="h-4 w-4" />}
-                      Approve
+                      {t("Approve")}
                     </Button>
                   </div>
                 </li>

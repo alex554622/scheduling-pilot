@@ -17,6 +17,8 @@
  *    afterwards, in local time, where DST belongs.
  */
 
+import { translate } from "@/lib/i18n";
+
 /** A calendar day with no time and no timezone: "YYYY-MM-DD". */
 export type DayString = string;
 
@@ -107,11 +109,11 @@ export interface MonthPeriod {
 export function monthPeriods(year: number, month1to12: number): MonthPeriod[] {
   const days = monthDays(year, month1to12);
   const periods: MonthPeriod[] = [
-    { label: "Biweekly period 1", days: days.slice(0, 14) },
-    { label: "Biweekly period 2", days: days.slice(14, 28) },
+    { label: translate("Biweekly period 1"), days: days.slice(0, 14) },
+    { label: translate("Biweekly period 2"), days: days.slice(14, 28) },
   ];
   const rest = days.slice(28);
-  if (rest.length) periods.push({ label: "Remaining days", days: rest });
+  if (rest.length) periods.push({ label: translate("Remaining days"), days: rest });
   return periods.filter((p) => p.days.length > 0);
 }
 
@@ -143,7 +145,7 @@ export function weekColumnOrder(startDay: number): number[] {
 
 /** "3 work, 4 off, 4 work, 3 off" — a pattern read back in plain words. */
 export function describePattern(pattern: boolean[]): string {
-  if (!pattern.length) return "No pattern";
+  if (!pattern.length) return translate("No pattern");
   const runs: string[] = [];
   let i = 0;
   while (i < pattern.length) {
@@ -153,7 +155,7 @@ export function describePattern(pattern: boolean[]): string {
       n++;
       i++;
     }
-    runs.push(`${n} ${value ? "work" : "off"}`);
+    runs.push(translate(value ? "{n} work" : "{n} off", { n }));
   }
   return runs.join(", ");
 }

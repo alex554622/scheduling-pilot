@@ -1,4 +1,5 @@
 import type { TDocumentDefinitions, Content } from "pdfmake/interfaces";
+import { localeTag, translate } from "@/lib/i18n";
 
 /**
  * Real PDF generation for the timecard and the invoice.
@@ -52,7 +53,7 @@ function money(cents: number): string {
 
 function longDate(value: string | Date | null | undefined): string {
   if (!value) return "—";
-  return new Date(value).toLocaleDateString(undefined, {
+  return new Date(value).toLocaleDateString(localeTag(), {
     month: "long",
     day: "numeric",
     year: "numeric",
@@ -361,7 +362,7 @@ export async function downloadTimecardPdf(data: TimecardPdfData): Promise<void> 
                 characterSpacing: 0.8,
               },
               {
-                text: "EMPLOYEE TIMECARD",
+                text: translate("EMPLOYEE TIMECARD"),
                 fontSize: 7,
                 color: MUTED,
                 characterSpacing: 1.6,
@@ -373,7 +374,7 @@ export async function downloadTimecardPdf(data: TimecardPdfData): Promise<void> 
             width: "auto",
             stack: [
               {
-                text: `Pay period · ${data.periodLabel}`,
+                text: `${translate("Pay period")} · ${data.periodLabel}`,
                 fontSize: 8,
                 alignment: "right",
                 bold: true,
@@ -396,10 +397,10 @@ export async function downloadTimecardPdf(data: TimecardPdfData): Promise<void> 
 
       {
         columns: [
-          field("Employee", data.employeeName),
-          field("Position", data.position || "—"),
-          field("Days worked", String(data.daysWorked)),
-          field("Prepared", longDate(new Date())),
+          field(translate("Employee"), data.employeeName),
+          field(translate("Position"), data.position || "—"),
+          field(translate("Days worked"), String(data.daysWorked)),
+          field(translate("Prepared"), longDate(new Date())),
         ],
         columnGap: 16,
       },
@@ -414,13 +415,13 @@ export async function downloadTimecardPdf(data: TimecardPdfData): Promise<void> 
           widths: [78, 52, 52, 58, 55, 55, "*"],
           body: [
             [
-              head("Date", "left"),
-              head("Clock in"),
-              head("Clock out"),
-              head("Unpaid break"),
-              head("Paid break"),
-              head("Hours", "right"),
-              head("Notes", "left"),
+              head(translate("Date"), "left"),
+              head(translate("Clock in")),
+              head(translate("Clock out")),
+              head(translate("Unpaid break")),
+              head(translate("Paid break")),
+              head(translate("Hours"), "right"),
+              head(translate("Notes"), "left"),
             ],
             ...data.rows.map((r) => [
               { ...cell(r.date, "left"), bold: !!r.date },
@@ -432,13 +433,13 @@ export async function downloadTimecardPdf(data: TimecardPdfData): Promise<void> 
               { ...cell(r.notes, "left"), color: MUTED },
             ]),
             [
-              { ...cell("Period total", "left"), bold: true, fillColor: FILL },
+              { ...cell(translate("Period total"), "left"), bold: true, fillColor: FILL },
               { ...cell(""), fillColor: FILL },
               { ...cell(""), fillColor: FILL },
               { ...cell(data.totals.unpaid), bold: true, fillColor: FILL },
               { ...cell(data.totals.paid), bold: true, fillColor: FILL },
               { ...cell(data.totals.worked, "right"), bold: true, fillColor: FILL },
-              { ...cell(`${data.totals.workedDecimal} hrs`, "left"), fillColor: FILL },
+              { ...cell(`${data.totals.workedDecimal} ${translate("hrs")}`, "left"), fillColor: FILL },
             ],
           ],
         },
@@ -462,7 +463,7 @@ export async function downloadTimecardPdf(data: TimecardPdfData): Promise<void> 
               widths: ["*", 90],
               body: [
                 [
-                  { text: "Regular hours", alignment: "right", fontSize: 8.5 },
+                  { text: translate("Regular hours"), alignment: "right", fontSize: 8.5 },
                   {
                     text: `${data.regular}  (${data.regularDecimal})`,
                     alignment: "right",
@@ -472,7 +473,7 @@ export async function downloadTimecardPdf(data: TimecardPdfData): Promise<void> 
                 ...(data.overtime
                   ? [
                       [
-                        { text: "Overtime", alignment: "right" as const, fontSize: 8.5 },
+                        { text: translate("Overtime"), alignment: "right" as const, fontSize: 8.5 },
                         {
                           text: `${data.overtime}  (${data.overtimeDecimal})`,
                           alignment: "right" as const,
@@ -484,7 +485,7 @@ export async function downloadTimecardPdf(data: TimecardPdfData): Promise<void> 
                 ...(data.doubleTime
                   ? [
                       [
-                        { text: "Double time", alignment: "right" as const, fontSize: 8.5 },
+                        { text: translate("Double time"), alignment: "right" as const, fontSize: 8.5 },
                         {
                           text: `${data.doubleTime}  (${data.doubleTimeDecimal})`,
                           alignment: "right" as const,
@@ -494,7 +495,7 @@ export async function downloadTimecardPdf(data: TimecardPdfData): Promise<void> 
                     ]
                   : []),
                 [
-                  { text: "Total worked", alignment: "right", bold: true, fontSize: 9 },
+                  { text: translate("Total worked"), alignment: "right", bold: true, fontSize: 9 },
                   {
                     text: `${data.totals.worked}  (${data.totals.workedDecimal})`,
                     alignment: "right",
@@ -518,7 +519,7 @@ export async function downloadTimecardPdf(data: TimecardPdfData): Promise<void> 
       },
 
       {
-        columns: [signatureLine("Employee signature"), signatureLine("Supervisor signature")],
+        columns: [signatureLine(translate("Employee signature")), signatureLine(translate("Supervisor signature"))],
         columnGap: 40,
         margin: [0, 46, 0, 0],
       },
@@ -530,7 +531,9 @@ export async function downloadTimecardPdf(data: TimecardPdfData): Promise<void> 
           canvas: [{ type: "line", x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.5, lineColor: RULE }],
         },
         {
-          text: "I certify that the hours recorded above are a true and complete record of the time I worked during this pay period.",
+          text: translate(
+            "I certify that the hours recorded above are a true and complete record of the time I worked during this pay period.",
+          ),
           fontSize: 6.5,
           color: MUTED,
           margin: [0, 5, 0, 0],
@@ -593,7 +596,13 @@ export async function downloadSchedulePdf(data: SchedulePdfData): Promise<void> 
   });
 
   const body: Content[][] = [
-    [head(""), head("Day"), head("Employee"), head("Time"), head("Position")],
+    [
+      head(""),
+      head(translate("Day")),
+      head(translate("Employee")),
+      head(translate("Time")),
+      head(translate("Position")),
+    ],
   ];
 
   for (const day of data.days) {
@@ -601,7 +610,7 @@ export async function downloadSchedulePdf(data: SchedulePdfData): Promise<void> 
       body.push([
         { text: "" },
         { ...cell(day.date), bold: true },
-        { ...cell("No shifts"), color: MUTED },
+        { ...cell(translate("No shifts")), color: MUTED },
         { text: "" },
         { text: "" },
       ]);
@@ -613,7 +622,7 @@ export async function downloadSchedulePdf(data: SchedulePdfData): Promise<void> 
         { ...cell(i === 0 ? day.date : ""), bold: true },
         cell(s.employee),
         cell(s.time),
-        { ...cell(s.draft ? `${s.position} (draft)` : s.position), color: s.draft ? MUTED : INK },
+        { ...cell(s.draft ? `${s.position} (${translate("draft")})` : s.position), color: s.draft ? MUTED : INK },
       ]);
     });
   }
@@ -634,7 +643,7 @@ export async function downloadSchedulePdf(data: SchedulePdfData): Promise<void> 
                 characterSpacing: 0.8,
               },
               {
-                text: "SHIFT SCHEDULE",
+                text: translate("SHIFT SCHEDULE"),
                 fontSize: 7,
                 color: MUTED,
                 characterSpacing: 1.6,
@@ -663,9 +672,9 @@ export async function downloadSchedulePdf(data: SchedulePdfData): Promise<void> 
       },
       {
         columns: [
-          field("Shifts", String(data.totalShifts)),
-          field("Scheduled hours", data.totalHours),
-          field("Prepared", longDate(new Date())),
+          field(translate("Shifts"), String(data.totalShifts)),
+          field(translate("Scheduled hours"), data.totalHours),
+          field(translate("Prepared"), longDate(new Date())),
         ],
         columnGap: 16,
       },
@@ -689,7 +698,7 @@ export async function downloadSchedulePdf(data: SchedulePdfData): Promise<void> 
       columns: [
         { text: data.companyName, fontSize: 7, color: MUTED, margin: [40, 0, 0, 0] },
         {
-          text: `Page ${current} of ${total}`,
+          text: translate("Page {current} of {total}", { current, total }),
           fontSize: 7,
           color: MUTED,
           alignment: "right",
@@ -813,7 +822,7 @@ export async function downloadScheduleSheetPdf(data: ScheduleSheetPdfData): Prom
         columns: [
           { text: data.subtitle, fontSize: 8, color: MUTED },
           {
-            text: data.revised ? `revised ${data.revised}` : "",
+            text: data.revised ? `${translate("revised")} ${data.revised}` : "",
             fontSize: 8,
             color: MUTED,
             alignment: "right",
@@ -843,7 +852,7 @@ export async function downloadScheduleSheetPdf(data: ScheduleSheetPdfData): Prom
       columns: [
         { text: data.title, fontSize: 7, color: MUTED, margin: [28, 0, 0, 0] },
         {
-          text: `Page ${current} of ${total}`,
+          text: translate("Page {current} of {total}", { current, total }),
           fontSize: 7,
           color: MUTED,
           alignment: "right",
@@ -930,7 +939,7 @@ export async function downloadScheduleGridPdf(data: GridPdfData): Promise<void> 
   data.weeks.forEach((week, wi) => {
     const head: Content[] = [
       {
-        text: "TEAM",
+        text: translate("TEAM"),
         fontSize: 7,
         bold: true,
         color: "#cbd5e1",
@@ -986,7 +995,7 @@ export async function downloadScheduleGridPdf(data: GridPdfData): Promise<void> 
                           ...(s.position || s.draft
                             ? [
                                 {
-                                  text: `${s.position}${s.draft ? `${s.position ? " · " : ""}DRAFT` : ""}`,
+                                  text: `${s.position}${s.draft ? `${s.position ? " · " : ""}${translate("DRAFT")}` : ""}`,
                                   fontSize: 6.8,
                                   color: "#475569",
                                   margin: [0, 1, 0, 0] as [number, number, number, number],
@@ -1013,7 +1022,7 @@ export async function downloadScheduleGridPdf(data: GridPdfData): Promise<void> 
           {
             stack: [
               {
-                text: "WEEKLY SCHEDULE",
+                text: translate("WEEKLY SCHEDULE"),
                 fontSize: 7,
                 bold: true,
                 color: MUTED,
@@ -1026,7 +1035,7 @@ export async function downloadScheduleGridPdf(data: GridPdfData): Promise<void> 
             stack: [
               { text: data.companyName, fontSize: 11, bold: true, alignment: "right" },
               {
-                text: `Printed ${printed}`,
+                text: translate("Printed {date}", { date: printed }),
                 fontSize: 7.5,
                 color: MUTED,
                 alignment: "right",
@@ -1039,7 +1048,7 @@ export async function downloadScheduleGridPdf(data: GridPdfData): Promise<void> 
         ...(wi > 0 ? { pageBreak: "before" as const } : {}),
       },
       week.rows.length === 0
-        ? { text: "Nobody is scheduled this week.", color: MUTED, fontSize: 10, margin: [0, 20, 0, 0] }
+        ? { text: translate("Nobody is scheduled this week."), color: MUTED, fontSize: 10, margin: [0, 20, 0, 0] }
         : {
             table: {
               headerRows: 1,
@@ -1067,7 +1076,7 @@ export async function downloadScheduleGridPdf(data: GridPdfData): Promise<void> 
       columns: [
         {
           width: "auto",
-          text: "KEY",
+          text: translate("KEY"),
           fontSize: 7,
           bold: true,
           color: MUTED,
@@ -1103,7 +1112,7 @@ export async function downloadScheduleGridPdf(data: GridPdfData): Promise<void> 
       margin: [30, 10, 30, 0],
       columns: [
         { text: data.companyName, fontSize: 7, color: MUTED },
-        { text: `Page ${page} of ${pages}`, fontSize: 7, color: MUTED, alignment: "right" },
+        { text: translate("Page {current} of {total}", { current: page, total: pages }), fontSize: 7, color: MUTED, alignment: "right" },
       ],
     }),
     content,

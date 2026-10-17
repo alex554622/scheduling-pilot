@@ -5,6 +5,8 @@
  * status chips, hairline rules, and a signature block at the foot.
  */
 
+import { localeTag, useT } from "@/lib/i18n";
+
 export interface PrintablePair {
   inAt: string;
   outAt: string | null;
@@ -42,11 +44,11 @@ export interface PrintableTimecardProps {
 const HOUR_MS = 3_600_000;
 
 function fmtLongDate(d: Date): string {
-  return d.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
+  return d.toLocaleDateString(localeTag(), { month: "long", day: "numeric", year: "numeric" });
 }
 
 function fmtRowDate(d: Date): string {
-  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  return d.toLocaleDateString(localeTag(), { weekday: "short", month: "short", day: "numeric" });
 }
 
 /** Payroll wants decimal hours; the h/m form is for reading. Both are shown. */
@@ -69,6 +71,7 @@ export function PrintableTimecard({
   formatTime,
   formatHours,
 }: PrintableTimecardProps) {
+  const t = useT("timecards");
   const lastDay = new Date(rangeEnd.getTime() - 86_400_000);
   // A day someone is still clocked into has no completed hours yet, but they
   // did work it — count any day with a punch.
@@ -79,11 +82,11 @@ export function PrintableTimecard({
       <header className="flex items-start justify-between border-b-2 border-black pb-2">
         <div>
           <p className="text-[15px] font-bold uppercase tracking-wide">{companyName}</p>
-          <p className="mt-0.5 text-[10px] uppercase tracking-[0.2em] text-neutral-600">Employee timecard</p>
+          <p className="mt-0.5 text-[10px] uppercase tracking-[0.2em] text-neutral-600">{t("Employee timecard")}</p>
         </div>
         <div className="text-right text-[10px] text-neutral-700">
           <p>
-            <span className="font-semibold text-black">Pay period</span> · {periodLabel}
+            <span className="font-semibold text-black">{t("Pay period")}</span> · {periodLabel}
           </p>
           <p>
             {fmtLongDate(rangeStart)} – {fmtLongDate(lastDay)}
@@ -92,22 +95,22 @@ export function PrintableTimecard({
       </header>
 
       <section className="mt-3 grid grid-cols-4 gap-x-4 gap-y-1.5 border-b border-neutral-400 pb-3">
-        <Field label="Employee" value={employeeName} />
-        <Field label="Position" value={position || "—"} />
-        <Field label="Days worked" value={String(daysWorked)} />
-        <Field label="Prepared" value={fmtLongDate(new Date())} />
+        <Field label={t("Employee")} value={employeeName} />
+        <Field label={t("Position")} value={position || "—"} />
+        <Field label={t("Days worked")} value={String(daysWorked)} />
+        <Field label={t("Prepared")} value={fmtLongDate(new Date())} />
       </section>
 
       <table className="mt-3 w-full border-collapse text-[11px]">
         <thead>
           <tr className="bg-neutral-100">
-            <Th className="w-[19%] text-left">Date</Th>
-            <Th className="w-[12%]">Clock in</Th>
-            <Th className="w-[12%]">Clock out</Th>
-            <Th className="w-[13%]">Unpaid break</Th>
-            <Th className="w-[13%]">Paid break</Th>
-            <Th className="w-[13%] text-right">Hours</Th>
-            <Th className="text-left">Notes</Th>
+            <Th className="w-[19%] text-left">{t("Date")}</Th>
+            <Th className="w-[12%]">{t("Clock in")}</Th>
+            <Th className="w-[12%]">{t("Clock out")}</Th>
+            <Th className="w-[13%]">{t("Unpaid break")}</Th>
+            <Th className="w-[13%]">{t("Paid break")}</Th>
+            <Th className="w-[13%] text-right">{t("Hours")}</Th>
+            <Th className="text-left">{t("Notes")}</Th>
           </tr>
         </thead>
         <tbody>
@@ -121,7 +124,7 @@ export function PrintableTimecard({
                   <Td>—</Td>
                   <Td>—</Td>
                   <Td className="text-right">0h 00m</Td>
-                  <Td className="text-left text-neutral-500">No punches</Td>
+                  <Td className="text-left text-neutral-500">{t("No punches")}</Td>
                 </tr>
               );
             }
@@ -140,7 +143,7 @@ export function PrintableTimecard({
                     shift of a split day it would read as that shift's length. */}
                 <Td className="text-right">{i === 0 ? formatHours(day.totalMs) : ""}</Td>
                 <Td className="text-left text-neutral-600">
-                  {[!pair.outAt ? "Still clocked in" : null, pair.offSite ? "Off-site punch" : null]
+                  {[!pair.outAt ? t("Still clocked in") : null, pair.offSite ? t("Off-site punch") : null]
                     .filter(Boolean)
                     .join(" · ")}
                 </Td>
@@ -150,13 +153,13 @@ export function PrintableTimecard({
         </tbody>
         <tfoot>
           <tr className="border-t-2 border-black bg-neutral-100 font-semibold">
-            <Td className="text-left">Period total</Td>
+            <Td className="text-left">{t("Period total")}</Td>
             <Td />
             <Td />
             <Td>{formatHours(totals.unpaidBreakMs)}</Td>
             <Td>{formatHours(totals.paidBreakMs)}</Td>
             <Td className="text-right">{formatHours(totals.workedMs)}</Td>
-            <Td className="text-left font-normal">{decimalHours(totals.workedMs)} hrs</Td>
+            <Td className="text-left font-normal">{decimalHours(totals.workedMs)} {t("hrs")}</Td>
           </tr>
         </tfoot>
       </table>
@@ -164,15 +167,15 @@ export function PrintableTimecard({
       <section className="mt-3 flex justify-end" data-print-keep>
         <table className="border-collapse text-[11px]">
           <tbody>
-            <SummaryRow label="Regular hours" value={`${formatHours(split.regularMs)}  (${decimalHours(split.regularMs)})`} />
+            <SummaryRow label={t("Regular hours")} value={`${formatHours(split.regularMs)}  (${decimalHours(split.regularMs)})`} />
             {split.overtimeMs > 0 && (
-              <SummaryRow label="Overtime" value={`${formatHours(split.overtimeMs)}  (${decimalHours(split.overtimeMs)})`} />
+              <SummaryRow label={t("Overtime")} value={`${formatHours(split.overtimeMs)}  (${decimalHours(split.overtimeMs)})`} />
             )}
             {split.doubleTimeMs > 0 && (
-              <SummaryRow label="Double time" value={`${formatHours(split.doubleTimeMs)}  (${decimalHours(split.doubleTimeMs)})`} />
+              <SummaryRow label={t("Double time")} value={`${formatHours(split.doubleTimeMs)}  (${decimalHours(split.doubleTimeMs)})`} />
             )}
             <SummaryRow
-              label="Total worked"
+              label={t("Total worked")}
               value={`${formatHours(totals.workedMs)}  (${decimalHours(totals.workedMs)})`}
               emphasis
             />
@@ -181,23 +184,20 @@ export function PrintableTimecard({
       </section>
 
       <section className="mt-8 grid grid-cols-2 gap-10" data-print-keep>
-        <SignatureLine role="Employee signature" />
-        <SignatureLine role="Supervisor signature" />
+        <SignatureLine role={t("Employee signature")} />
+        <SignatureLine role={t("Supervisor signature")} />
       </section>
 
       <footer className="mt-6 border-t border-neutral-300 pt-2 text-[9px] text-neutral-500">
         <p>
-          I certify that the hours recorded above are a true and complete record of the time I worked during this pay
-          period.
+          {t("I certify that the hours recorded above are a true and complete record of the time I worked during this pay period.")}
         </p>
         <p className="mt-1">
-          Punch times{" "}
           {roundMinutes > 0
-            ? `and hours rounded to the nearest ${roundMinutes} minutes`
-            : "shown as recorded"}
-          . Unpaid
-          break time is deducted from hours worked; paid break time is not. Generated by Scheduling Pilot on{" "}
-          {new Date().toLocaleString()}.
+            ? t("Punch times and hours rounded to the nearest {n} minutes.", { n: roundMinutes })
+            : t("Punch times shown as recorded.")}{" "}
+          {t("Unpaid break time is deducted from hours worked; paid break time is not.")}{" "}
+          {t("Generated by Scheduling Pilot on {date}.", { date: new Date().toLocaleString(localeTag()) })}
         </p>
         <p className="mt-1">{overtimeNote}</p>
       </footer>
@@ -238,12 +238,13 @@ function SummaryRow({ label, value, emphasis }: { label: string; value: string; 
 }
 
 function SignatureLine({ role }: { role: string }) {
+  const t = useT("timecards");
   return (
     <div>
       <div className="h-8 border-b border-black" />
       <div className="mt-1 flex justify-between text-[9px] uppercase tracking-wider text-neutral-600">
         <span>{role}</span>
-        <span>Date</span>
+        <span>{t("Date")}</span>
       </div>
     </div>
   );

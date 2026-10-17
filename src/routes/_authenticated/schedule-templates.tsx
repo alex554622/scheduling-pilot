@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { translate, useT } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -90,6 +91,7 @@ function patternOf(row: { pattern: unknown; pattern_length: number }): boolean[]
 }
 
 function ScheduleTemplatesPage() {
+  const t = useT("timecards");
   const { company, primaryRole, user } = useAuth();
   const qc = useQueryClient();
   const isAdmin = primaryRole === "company_admin" || primaryRole === "super_admin";
@@ -186,7 +188,7 @@ function ScheduleTemplatesPage() {
       const { data, error: e } = await supabase
         .from("schedule_templates")
         .insert({
-          name: "New template",
+          name: translate("New template"),
           description: "",
           owner_id: user?.id ?? null,
           company_id: company!.id,
@@ -205,7 +207,7 @@ function ScheduleTemplatesPage() {
       const created = { ...(data as unknown as TemplateRow), pattern: patternOf(data as never) };
       const { error: te } = await supabase.from("schedule_template_teams").insert({
         template_id: created.id,
-        name: "Team 1",
+        name: translate("Team {n}", { n: 1 }),
         shift_start: "08:00",
         shift_end: "17:00",
         pattern_offset: 0,
@@ -234,7 +236,7 @@ function ScheduleTemplatesPage() {
   if (!isAdmin) {
     return (
       <p className="text-sm text-muted-foreground">
-        Only a company admin can manage schedule templates.
+        {t("Only a company admin can manage schedule templates.")}
       </p>
     );
   }
@@ -243,71 +245,77 @@ function ScheduleTemplatesPage() {
   const system = all.filter((t) => t.is_system_template);
   const mine = all.filter((t) => !t.is_system_template);
 
-  const card = (t: TemplateRow) => {
-    const teams = teamsFor(t.id);
+  const card = (tpl: TemplateRow) => {
+    const teams = teamsFor(tpl.id);
     return (
       <section
-        key={t.id}
+        key={tpl.id}
         className="rounded-2xl border border-border bg-card p-5 shadow-[var(--shadow-card)]"
       >
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <h3 className="flex flex-wrap items-center gap-2 text-lg font-semibold text-foreground">
-              {t.name}
+              {tpl.name}
               <span
                 className={`rounded px-2 py-0.5 text-[10px] font-semibold tracking-wide ${
-                  t.is_system_template
+                  tpl.is_system_template
                     ? "bg-primary-soft text-primary"
                     : "bg-secondary text-muted-foreground"
                 }`}
               >
-                {t.is_system_template ? "SYSTEM" : "CUSTOM"}
+                {tpl.is_system_template ? t("SYSTEM") : t("CUSTOM")}
               </span>
             </h3>
-            {t.description && (
-              <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{t.description}</p>
+            {tpl.description && (
+              <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{tpl.description}</p>
             )}
             <ul className="mt-2 space-y-0.5 text-xs text-muted-foreground">
               <li>
-                {t.pattern_length}-day rotation · {describePattern(t.pattern)}
+                {t("{n}-day rotation", { n: tpl.pattern_length })} · {describePattern(tpl.pattern)}
               </li>
               <li>
-                {t.schedule_view_type === "monthly" ? "Monthly schedule" : t.schedule_view_type} ·{" "}
-                {teams.length} team{teams.length === 1 ? "" : "s"}
+                {tpl.schedule_view_type === "monthly" ? t("Monthly schedule") : tpl.schedule_view_type} ·{" "}
+                {teams.length === 1 ? t("1 team") : t("{n} teams", { n: teams.length })}
               </li>
             </ul>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => setPreview(t)}>
-              <Eye className="mr-2 h-4 w-4" /> Preview
+            <Button variant="outline" size="sm" onClick={() => setPreview(tpl)}>
+              <Eye className="mr-2 h-4 w-4" /> {t("Preview")}
             </Button>
-            <Button size="sm" onClick={() => setUseTemplate(t)}>
-              <Wand2 className="mr-2 h-4 w-4" /> Use template
+            <Button size="sm" onClick={() => setUseTemplate(tpl)}>
+              <Wand2 className="mr-2 h-4 w-4" /> {t("Use template")}
             </Button>
-            {t.is_system_template ? (
-              <Button variant="outline" size="sm" onClick={() => setCopyPrompt(t)}>
-                <Copy className="mr-2 h-4 w-4" /> Customize
+            {tpl.is_system_template ? (
+              <Button variant="outline" size="sm" onClick={() => setCopyPrompt(tpl)}>
+                <Copy className="mr-2 h-4 w-4" /> {t("Customize")}
               </Button>
             ) : (
               <>
-                <Button variant="outline" size="sm" onClick={() => setEditing(t)}>
-                  <Pencil className="mr-2 h-4 w-4" /> Edit
+                <Button variant="outline" size="sm" onClick={() => setEditing(tpl)}>
+                  <Pencil className="mr-2 h-4 w-4" /> {t("Edit")}
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => duplicate.mutate({ template: t, name: `${t.name} (copy)` })}
+                  onClick={() => duplicate.mutate({ template: tpl, name: t("{name} (copy)", { name: tpl.name }) })}
                   disabled={duplicate.isPending}
                 >
-                  <Copy className="mr-2 h-4 w-4" /> Duplicate
+                  <Copy className="mr-2 h-4 w-4" /> {t("Duplicate")}
                 </Button>
                 <Button
                   variant="ghost"
                   size="sm"
                   className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                   onClick={() => {
-                    if (confirm(`Delete "${t.name}"? Schedules already created from it are kept.`))
-                      remove.mutate(t.id);
+                    if (
+                      confirm(
+                        t('Delete "{name}"? Schedules already created from it are kept.', {
+                          name: tpl.name,
+                        }),
+                      )
+                    )
+                      remove.mutate(tpl.id);
                   }}
                 >
                   <Trash2 className="h-4 w-4" />
@@ -326,7 +334,9 @@ function ScheduleTemplatesPage() {
               >
                 <span className="font-medium text-foreground">{team.name}</span>{" "}
                 {team.shift_start.slice(0, 5)}–{team.shift_end.slice(0, 5)}
-                {team.pattern_offset ? ` · starts day ${team.pattern_offset + 1}` : ""}
+                {team.pattern_offset
+                  ? ` · ${t("starts day {n}", { n: team.pattern_offset + 1 })}`
+                  : ""}
               </span>
             ))}
           </div>
@@ -339,12 +349,11 @@ function ScheduleTemplatesPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-foreground">Schedule templates</h1>
+          <h1 className="text-2xl font-semibold text-foreground">{t("Schedule templates")}</h1>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            A rotation described once — the work/off cycle, the teams and their hours — then applied
-            to any month. Templates are optional: you can still{" "}
+            {t("A rotation described once — the work/off cycle, the teams and their hours — then applied to any month. Templates are optional: you can still")}{" "}
             <Link to="/schedule" className="text-primary hover:underline">
-              build a schedule from scratch
+              {t("build a schedule from scratch")}
             </Link>
             .
           </p>
@@ -355,7 +364,7 @@ function ScheduleTemplatesPage() {
           ) : (
             <Plus className="mr-2 h-4 w-4" />
           )}
-          Create new template
+          {t("Create new template")}
         </Button>
       </div>
 
@@ -368,24 +377,24 @@ function ScheduleTemplatesPage() {
 
       <div className="space-y-3">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Built-in templates
+          {t("Built-in templates")}
         </h2>
         {system.map(card)}
         {!templatesQ.isLoading && system.length === 0 && (
           <p className="text-sm text-muted-foreground">
-            No built-in templates found. Run the schedule template migration in Supabase.
+            {t("No built-in templates found. Run the schedule template migration in Supabase.")}
           </p>
         )}
       </div>
 
       <div className="space-y-3">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          My custom templates
+          {t("My custom templates")}
         </h2>
         {mine.map(card)}
         {!templatesQ.isLoading && mine.length === 0 && (
           <p className="text-sm text-muted-foreground">
-            None yet. Customize a built-in template, or create one from scratch.
+            {t("None yet. Customize a built-in template, or create one from scratch.")}
           </p>
         )}
       </div>
@@ -402,28 +411,26 @@ function ScheduleTemplatesPage() {
         <Dialog open onOpenChange={(o) => !o && setCopyPrompt(null)}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Customize “{copyPrompt.name}”</DialogTitle>
+              <DialogTitle>{t("Customize “{name}”", { name: copyPrompt.name })}</DialogTitle>
               <DialogDescription>
-                This is a built-in Scheduling Pilot template. To make changes, Scheduling Pilot will
-                create a custom copy for your account. The built-in template stays as it is for
-                everyone.
+                {t("This is a built-in Scheduling Pilot template. To make changes, Scheduling Pilot will create a custom copy for your account. The built-in template stays as it is for everyone.")}
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
               <Button variant="outline" onClick={() => setCopyPrompt(null)}>
-                Cancel
+                {t("Cancel")}
               </Button>
               <Button
                 onClick={() =>
                   duplicate.mutate({
                     template: copyPrompt,
-                    name: `${company?.name ?? "Custom"} ${copyPrompt.name}`,
+                    name: `${company?.name ?? t("Custom")} ${copyPrompt.name}`,
                   })
                 }
                 disabled={duplicate.isPending}
               >
                 {duplicate.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Create custom copy
+                {t("Create custom copy")}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -474,20 +481,21 @@ function MonthGrid({
   year: number;
   month: number;
 }) {
+  const t = useT("timecards");
   const periods = monthPeriods(year, month);
   return (
     <div className="space-y-4">
       {periods.map((p) => (
         <div key={p.label}>
           <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {p.label} · {p.days.length} days
+            {p.label} · {t("{n} days", { n: p.days.length })}
           </p>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] border-collapse text-center text-xs">
               <thead>
                 <tr>
                   <th className="border-b border-border px-2 py-1 text-left font-medium text-muted-foreground">
-                    Team
+                    {t("Team")}
                   </th>
                   {p.days.map((d) => (
                     <th
@@ -519,7 +527,7 @@ function MonthGrid({
                               : "text-muted-foreground"
                           }`}
                         >
-                          {work ? "W" : "O"}
+                          {work ? t("W") : t("O")}
                         </td>
                       );
                     })}
@@ -531,7 +539,7 @@ function MonthGrid({
                       className="px-2 py-3 text-left text-muted-foreground"
                       colSpan={p.days.length + 1}
                     >
-                      This template has no teams yet.
+                      {t("This template has no teams yet.")}
                     </td>
                   </tr>
                 )}
@@ -541,9 +549,9 @@ function MonthGrid({
         </div>
       ))}
       <p className="text-xs text-muted-foreground">
-        <span className="font-semibold text-primary">W</span> = work ·{" "}
-        <span className="font-semibold">O</span> = off. The biweekly periods are a way of reading
-        the month; the cycle itself runs unbroken from pattern day 1.
+        <span className="font-semibold text-primary">{t("W")}</span> = {t("work")} ·{" "}
+        <span className="font-semibold">{t("O")}</span> = {t("off")}.{" "}
+        {t("The biweekly periods are a way of reading the month; the cycle itself runs unbroken from pattern day 1.")}
       </p>
     </div>
   );
@@ -558,6 +566,7 @@ function PreviewDialog({
   teams: TeamRow[];
   onClose: () => void;
 }) {
+  const t = useT("timecards");
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth() + 1);
@@ -575,25 +584,25 @@ function PreviewDialog({
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-4xl">
         <DialogHeader>
-          <DialogTitle>{template.name} — preview</DialogTitle>
+          <DialogTitle>{t("{name} — preview", { name: template.name })}</DialogTitle>
           <DialogDescription>
-            {template.pattern_length}-day rotation · {describePattern(template.pattern)}. Nothing is
-            created from a preview.
+            {t("{n}-day rotation", { n: template.pattern_length })} · {describePattern(template.pattern)}.{" "}
+            {t("Nothing is created from a preview.")}
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-wrap items-end gap-3">
           <Button variant="outline" size="sm" onClick={() => step(-1)}>
-            <ChevronLeft className="mr-1 h-4 w-4" /> Previous month
+            <ChevronLeft className="mr-1 h-4 w-4" /> {t("Previous month")}
           </Button>
           <span className="min-w-40 text-center text-sm font-medium text-foreground">
-            {MONTHS[month - 1]} {year}
+            {t(MONTHS[month - 1])} {year}
           </span>
           <Button variant="outline" size="sm" onClick={() => step(1)}>
-            Next month <ChevronRight className="ml-1 h-4 w-4" />
+            {t("Next month")} <ChevronRight className="ml-1 h-4 w-4" />
           </Button>
           <div className="space-y-1.5">
-            <Label htmlFor="preview-anchor">Pattern day 1</Label>
+            <Label htmlFor="preview-anchor">{t("Pattern day 1")}</Label>
             <Input
               id="preview-anchor"
               type="date"
@@ -607,7 +616,7 @@ function PreviewDialog({
         <MonthGrid template={template} teams={teams} anchor={anchor} year={year} month={month} />
 
         <DialogFooter>
-          <Button onClick={onClose}>Close</Button>
+          <Button onClick={onClose}>{t("Close")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -636,6 +645,7 @@ function TemplateBuilder({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const t = useT("timecards");
   const [name, setName] = useState(template.name);
   const [description, setDescription] = useState(template.description);
   const [viewType, setViewType] = useState(template.schedule_view_type);
@@ -690,7 +700,7 @@ function TemplateBuilder({
         const { error: ie } = await supabase.from("schedule_template_teams").insert(
           draftTeams.map((t, i) => ({
             template_id: template.id,
-            name: t.name.trim() || `Team ${i + 1}`,
+            name: t.name.trim() || translate("Team {n}", { n: i + 1 }),
             shift_start: t.shift_start,
             shift_end: t.shift_end,
             pattern_offset: t.pattern_offset,
@@ -708,20 +718,20 @@ function TemplateBuilder({
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Edit template</DialogTitle>
+          <DialogTitle>{t("Edit template")}</DialogTitle>
           <DialogDescription>
-            Schedules already created from this template keep the settings they were made with.
+            {t("Schedules already created from this template keep the settings they were made with.")}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="t-name">Template name</Label>
+              <Label htmlFor="t-name">{t("Template name")}</Label>
               <Input id="t-name" value={name} onChange={(e) => setName(e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="t-desc">Description</Label>
+              <Label htmlFor="t-desc">{t("Description")}</Label>
               <Input
                 id="t-desc"
                 value={description}
@@ -732,20 +742,20 @@ function TemplateBuilder({
 
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
-              <Label htmlFor="t-view">Schedule type</Label>
+              <Label htmlFor="t-view">{t("Schedule type")}</Label>
               <select
                 id="t-view"
                 value={viewType}
                 onChange={(e) => setViewType(e.target.value)}
                 className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
               >
-                <option value="monthly">Monthly</option>
-                <option value="biweekly">Biweekly</option>
-                <option value="weekly">Weekly</option>
+                <option value="monthly">{t("Monthly")}</option>
+                <option value="biweekly">{t("Biweekly")}</option>
+                <option value="weekly">{t("Weekly")}</option>
               </select>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="t-week">Work week starts on</Label>
+              <Label htmlFor="t-week">{t("Work week starts on")}</Label>
               <select
                 id="t-week"
                 value={weekStart}
@@ -754,13 +764,13 @@ function TemplateBuilder({
               >
                 {WEEK_DAYS.map((d, i) => (
                   <option key={d} value={i}>
-                    {d}
+                    {t(d)}
                   </option>
                 ))}
               </select>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="t-len">Pattern length (days)</Label>
+              <Label htmlFor="t-len">{t("Pattern length (days)")}</Label>
               <Input
                 id="t-len"
                 type="number"
@@ -773,7 +783,7 @@ function TemplateBuilder({
           </div>
 
           <div className="space-y-1.5">
-            <Label>Work pattern — click a day to switch it</Label>
+            <Label>{t("Work pattern — click a day to switch it")}</Label>
             <div className="flex flex-wrap gap-1.5">
               {pattern.map((on, i) => (
                 <button
@@ -785,9 +795,9 @@ function TemplateBuilder({
                       ? "bg-primary text-primary-foreground"
                       : "border border-border bg-card text-muted-foreground"
                   }`}
-                  title={`Cycle day ${i + 1}`}
+                  title={t("Cycle day {n}", { n: i + 1 })}
                 >
-                  {on ? "W" : "O"}
+                  {on ? t("W") : t("O")}
                 </button>
               ))}
             </div>
@@ -795,16 +805,16 @@ function TemplateBuilder({
           </div>
 
           <div className="space-y-2">
-            <Label>Teams</Label>
-            {draftTeams.map((t, i) => (
+            <Label>{t("Teams")}</Label>
+            {draftTeams.map((dt, i) => (
               <div
                 key={i}
                 className="grid items-end gap-2 rounded-lg border border-border p-3 sm:grid-cols-[1.4fr_1fr_1fr_1fr_auto]"
               >
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Name</Label>
+                  <Label className="text-xs">{t("Name")}</Label>
                   <Input
-                    value={t.name}
+                    value={dt.name}
                     onChange={(e) =>
                       setDraftTeams((list) =>
                         list.map((x, idx) => (idx === i ? { ...x, name: e.target.value } : x)),
@@ -813,10 +823,10 @@ function TemplateBuilder({
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Starts</Label>
+                  <Label className="text-xs">{t("Starts")}</Label>
                   <Input
                     type="time"
-                    value={t.shift_start}
+                    value={dt.shift_start}
                     onChange={(e) =>
                       setDraftTeams((list) =>
                         list.map((x, idx) =>
@@ -827,10 +837,10 @@ function TemplateBuilder({
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Ends</Label>
+                  <Label className="text-xs">{t("Ends")}</Label>
                   <Input
                     type="time"
-                    value={t.shift_end}
+                    value={dt.shift_end}
                     onChange={(e) =>
                       setDraftTeams((list) =>
                         list.map((x, idx) => (idx === i ? { ...x, shift_end: e.target.value } : x)),
@@ -839,12 +849,12 @@ function TemplateBuilder({
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Starts on cycle day</Label>
+                  <Label className="text-xs">{t("Starts on cycle day")}</Label>
                   <Input
                     type="number"
                     min={1}
                     max={length}
-                    value={t.pattern_offset + 1}
+                    value={dt.pattern_offset + 1}
                     onChange={(e) =>
                       setDraftTeams((list) =>
                         list.map((x, idx) =>
@@ -867,7 +877,7 @@ function TemplateBuilder({
                   size="sm"
                   className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                   onClick={() => setDraftTeams((list) => list.filter((_, idx) => idx !== i))}
-                  aria-label={`Remove ${t.name}`}
+                  aria-label={t("Remove {name}", { name: dt.name })}
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
@@ -880,7 +890,7 @@ function TemplateBuilder({
                 setDraftTeams((list) => [
                   ...list,
                   {
-                    name: `Team ${list.length + 1}`,
+                    name: translate("Team {n}", { n: list.length + 1 }),
                     shift_start: "08:00",
                     shift_end: "17:00",
                     pattern_offset: 0,
@@ -889,7 +899,7 @@ function TemplateBuilder({
                 ])
               }
             >
-              <Plus className="mr-2 h-4 w-4" /> Add team
+              <Plus className="mr-2 h-4 w-4" /> {t("Add team")}
             </Button>
           </div>
 
@@ -902,10 +912,10 @@ function TemplateBuilder({
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button onClick={() => save.mutate()} disabled={save.isPending || !name.trim()}>
-            {save.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Save template
+            {save.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} {t("Save template")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -928,9 +938,10 @@ function UseTemplateWizard({
   onClose: () => void;
   onCreated: () => void;
 }) {
+  const t = useT("timecards");
   const today = new Date();
   const [scheduleName, setScheduleName] = useState(
-    `${template.name} — ${MONTHS[today.getMonth()]} ${today.getFullYear()}`,
+    `${template.name} — ${t(MONTHS[today.getMonth()])} ${today.getFullYear()}`,
   );
   const [month, setMonth] = useState(today.getMonth() + 1);
   const [year, setYear] = useState(today.getFullYear());
@@ -1042,20 +1053,22 @@ function UseTemplateWizard({
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Create schedule from template</DialogTitle>
-          <DialogDescription>Template: {template.name}</DialogDescription>
+          <DialogTitle>{t("Create schedule from template")}</DialogTitle>
+          <DialogDescription>{t("Template: {name}", { name: template.name })}</DialogDescription>
         </DialogHeader>
 
         {done ? (
           <p className="rounded-md bg-primary-soft px-3 py-2 text-sm text-primary">
-            Created “{scheduleName}” with {done.shifts} draft shift{done.shifts === 1 ? "" : "s"}.
-            Open the schedule to review and publish.
+            {done.shifts === 1
+              ? t("Created “{name}” with 1 draft shift.", { name: scheduleName })
+              : t("Created “{name}” with {n} draft shifts.", { name: scheduleName, n: done.shifts })}{" "}
+            {t("Open the schedule to review and publish.")}
           </p>
         ) : (
           <div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label htmlFor="w-name">Schedule name</Label>
+                <Label htmlFor="w-name">{t("Schedule name")}</Label>
                 <Input
                   id="w-name"
                   value={scheduleName}
@@ -1064,7 +1077,7 @@ function UseTemplateWizard({
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label htmlFor="w-month">Start month</Label>
+                  <Label htmlFor="w-month">{t("Start month")}</Label>
                   <select
                     id="w-month"
                     value={month}
@@ -1073,13 +1086,13 @@ function UseTemplateWizard({
                   >
                     {MONTHS.map((m, i) => (
                       <option key={m} value={i + 1}>
-                        {m}
+                        {t(m)}
                       </option>
                     ))}
                   </select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="w-year">Year</Label>
+                  <Label htmlFor="w-year">{t("Year")}</Label>
                   <Input
                     id="w-year"
                     type="number"
@@ -1094,7 +1107,7 @@ function UseTemplateWizard({
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label htmlFor="w-anchor">Pattern day 1</Label>
+                <Label htmlFor="w-anchor">{t("Pattern day 1")}</Label>
                 <Input
                   id="w-anchor"
                   type="date"
@@ -1102,12 +1115,11 @@ function UseTemplateWizard({
                   onChange={(e) => setAnchor(e.target.value)}
                 />
                 <p className="text-xs text-muted-foreground">
-                  The date cycle day 1 falls on. The rotation counts forward and backward from here
-                  and never restarts.
+                  {t("The date cycle day 1 falls on. The rotation counts forward and backward from here and never restarts.")}
                 </p>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="w-week">Work week starts on</Label>
+                <Label htmlFor="w-week">{t("Work week starts on")}</Label>
                 <select
                   id="w-week"
                   value={weekStart}
@@ -1116,18 +1128,18 @@ function UseTemplateWizard({
                 >
                   {WEEK_DAYS.map((d, i) => (
                     <option key={d} value={i}>
-                      {d}
+                      {t(d)}
                     </option>
                   ))}
                 </select>
                 <p className="text-xs text-muted-foreground">
-                  Affects how the month is displayed and totalled, not the rotation.
+                  {t("Affects how the month is displayed and totalled, not the rotation.")}
                 </p>
               </div>
             </div>
 
             <div className="space-y-2">
-              <Label>Who works each team (optional)</Label>
+              <Label>{t("Who works each team (optional)")}</Label>
               <div className="grid gap-3 sm:grid-cols-2">
                 {teams.map((team) => {
                   const picked = assignment[team.id] ?? [];
@@ -1142,7 +1154,7 @@ function UseTemplateWizard({
                           </span>
                         </span>
                         <span className="shrink-0 text-xs text-muted-foreground">
-                          {picked.length ? `${picked.length} on this team` : "Open shifts"}
+                          {picked.length ? t("{n} on this team", { n: picked.length }) : t("Open shifts")}
                         </span>
                       </div>
 
@@ -1168,11 +1180,11 @@ function UseTemplateWizard({
                                 })
                               }
                             />
-                            <span className="truncate">{p.full_name || "Unnamed"}</span>
+                            <span className="truncate">{p.full_name || t("Unnamed")}</span>
                           </label>
                         ))}
                         {roster.length === 0 && (
-                          <p className="text-xs text-muted-foreground">No employees yet.</p>
+                          <p className="text-xs text-muted-foreground">{t("No employees yet.")}</p>
                         )}
                       </div>
 
@@ -1187,7 +1199,7 @@ function UseTemplateWizard({
                           }
                           className="mt-2 text-xs font-medium text-primary hover:underline"
                         >
-                          {allPicked ? "Clear all" : "Select everyone"}
+                          {allPicked ? t("Clear all") : t("Select everyone")}
                         </button>
                       )}
                     </div>
@@ -1195,13 +1207,12 @@ function UseTemplateWizard({
                 })}
               </div>
               <p className="text-xs text-muted-foreground">
-                Everyone ticked gets their own shift on that team's working days. Leave a team empty
-                to create open shifts and assign them on the schedule later.
+                {t("Everyone ticked gets their own shift on that team's working days. Leave a team empty to create open shifts and assign them on the schedule later.")}
               </p>
             </div>
 
             <Button variant="outline" size="sm" onClick={() => setShowPreview((s) => !s)}>
-              <Eye className="mr-2 h-4 w-4" /> {showPreview ? "Hide preview" : "Preview"}
+              <Eye className="mr-2 h-4 w-4" /> {showPreview ? t("Hide preview") : t("Preview")}
             </Button>
 
             {showPreview && (
@@ -1215,9 +1226,9 @@ function UseTemplateWizard({
             )}
 
             <p className="text-sm text-muted-foreground">
-              This creates{" "}
-              <span className="font-medium text-foreground">{plannedShifts.length}</span> draft
-              shifts across {MONTHS[month - 1]} {year}.
+              {t("This creates")}{" "}
+              <span className="font-medium text-foreground">{plannedShifts.length}</span>{" "}
+              {t("draft shifts across {month}.", { month: `${t(MONTHS[month - 1])} ${year}` })}
             </p>
 
             {error && (
@@ -1230,18 +1241,18 @@ function UseTemplateWizard({
 
         <DialogFooter>
           {done ? (
-            <Button onClick={onCreated}>Done</Button>
+            <Button onClick={onCreated}>{t("Done")}</Button>
           ) : (
             <>
               <Button variant="outline" onClick={onClose}>
-                Cancel
+                {t("Cancel")}
               </Button>
               <Button
                 onClick={() => create.mutate()}
                 disabled={create.isPending || plannedShifts.length === 0 || teams.length === 0}
               >
                 {create.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Create schedule
+                {t("Create schedule")}
               </Button>
             </>
           )}

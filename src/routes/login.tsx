@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { noindexSeo } from "@/lib/seo";
+import { useT } from "@/lib/i18n";
 
 type Mode = "signin" | "signup";
 type SignupKind = "create" | "join" | "solo";
@@ -73,6 +74,7 @@ function writeRememberedEmail(email: string | null) {
 
 function LoginPage() {
   const { user, loading, primaryRole, refresh } = useAuth();
+  const t = useT("shell");
   const navigate = useNavigate();
   const { mode: modeParam, kind: kindParam } = Route.useSearch();
   const [mode, setMode] = useState<Mode>(modeParam === "signup" ? "signup" : "signin");
@@ -162,17 +164,17 @@ function LoginPage() {
     // Pre-validate the short company code.
     if (signupKind === "join" && !/^[A-Za-z0-9]{6,12}$/.test(companyId.trim())) {
       setBusy(false);
-      setError("Enter the 8-character company code from your admin (letters and digits).");
+      setError(t("Enter the 8-character company code from your admin (letters and digits)."));
       return;
     }
     if (email.trim().toLowerCase() !== emailConfirm.trim().toLowerCase()) {
       setBusy(false);
-      setError("Email and confirm email do not match.");
+      setError(t("Email and confirm email do not match."));
       return;
     }
     if (password !== passwordConfirm) {
       setBusy(false);
-      setError("Password and confirm password do not match.");
+      setError(t("Password and confirm password do not match."));
       return;
     }
 
@@ -207,8 +209,10 @@ function LoginPage() {
       setBusy(false);
       setInfo(
         signupKind === "solo"
-          ? "Check your email to confirm the account, then sign in."
-          : "Check your email to confirm the account, then sign in — we'll finish the company setup for you.",
+          ? t("Check your email to confirm the account, then sign in.")
+          : t(
+              "Check your email to confirm the account, then sign in — we'll finish the company setup for you.",
+            ),
       );
       setMode("signin");
       return;
@@ -234,23 +238,23 @@ function LoginPage() {
 
             <div className="mt-6 text-center">
               <h2 className="text-3xl font-semibold tracking-tight text-foreground">
-                {mode === "signin" ? "Welcome back" : "Create your account"}
+                {mode === "signin" ? t("Welcome back") : t("Create your account")}
               </h2>
               <p className="mt-2 text-lg text-muted-foreground">
                 {mode === "signin"
-                  ? `Sign in to ${APP_NAME}`
+                  ? t("Sign in to {app}", { app: APP_NAME })
                   : signupStep === "choose"
-                    ? "First, which describes you?"
+                    ? t("First, which describes you?")
                     : signupKind === "create"
-                      ? "Set up your business"
-                      : "Create your employee account"}
+                      ? t("Set up your business")
+                      : t("Create your employee account")}
               </p>
             </div>
 
             {mode === "signin" ? (
               <form className="mt-8 space-y-5" onSubmit={handleSignIn}>
                 <div className="space-y-1.5">
-                  <Label htmlFor="email">Email</Label>
+                  <Label htmlFor="email">{t("Email")}</Label>
                   <div className="relative">
                     <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
@@ -267,7 +271,7 @@ function LoginPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="password">Password</Label>
+                  <Label htmlFor="password">{t("Password")}</Label>
                   <div className="relative">
                     <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
@@ -275,7 +279,7 @@ function LoginPage() {
                       type={showPassword ? "text" : "password"}
                       autoComplete="current-password"
                       required
-                      placeholder="Enter your password"
+                      placeholder={t("Enter your password")}
                       className="h-11 pl-10 pr-10"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
@@ -283,7 +287,7 @@ function LoginPage() {
                     <button
                       type="button"
                       onClick={() => setShowPassword((s) => !s)}
-                      aria-label={showPassword ? "Hide password" : "Show password"}
+                      aria-label={showPassword ? t("Hide password") : t("Show password")}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                     >
                       {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -299,19 +303,19 @@ function LoginPage() {
                       onChange={(e) => setRemember(e.target.checked)}
                       className="h-4 w-4 rounded border-border accent-primary"
                     />
-                    Remember me
+                    {t("Remember me")}
                   </label>
                   <Link to="/forgot-password" className="text-sm font-medium text-primary hover:underline">
-                    Forgot password?
+                    {t("Forgot password?")}
                   </Link>
                 </div>
 
                 <Button type="submit" className="h-12 w-full text-base" disabled={busy}>
-                  {busy && <Loader2 className="h-4 w-4 animate-spin" />} Sign In
+                  {busy && <Loader2 className="h-4 w-4 animate-spin" />} {t("Sign In")}
                 </Button>
 
                 <p className="text-center text-sm text-muted-foreground">
-                  New here?{" "}
+                  {t("New here?")}{" "}
                   <button
                     type="button"
                     onClick={() => {
@@ -322,7 +326,7 @@ function LoginPage() {
                     }}
                     className="font-medium text-primary hover:underline"
                   >
-                    Create an account
+                    {t("Create an account")}
                   </button>
                 </p>
               </form>
@@ -351,12 +355,12 @@ function LoginPage() {
                     )}
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-foreground">
-                        {signupKind === "create" ? "Business account" : "Employee account"}
+                        {signupKind === "create" ? t("Business account") : t("Employee account")}
                       </p>
                       <p className="truncate text-xs text-muted-foreground">
                         {signupKind === "create"
-                          ? "For owners and managers"
-                          : "For people who work at a business"}
+                          ? t("For owners and managers")
+                          : t("For people who work at a business")}
                       </p>
                     </div>
                   </div>
@@ -368,7 +372,7 @@ function LoginPage() {
                     }}
                     className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-primary hover:underline"
                   >
-                    <ArrowLeft className="h-3.5 w-3.5" /> Change
+                    <ArrowLeft className="h-3.5 w-3.5" /> {t("Change")}
                   </button>
                 </div>
 
@@ -381,7 +385,7 @@ function LoginPage() {
                         onClick={() => setSignupKind(k)}
                         className={`rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${signupKind === k ? "border-primary bg-primary-soft text-primary" : "border-border text-muted-foreground hover:bg-accent"}`}
                       >
-                        {k === "join" ? "I have a company code" : "I don't have a code yet"}
+                        {k === "join" ? t("I have a company code") : t("I don't have a code yet")}
                       </button>
                     ))}
                   </div>
@@ -389,63 +393,63 @@ function LoginPage() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <Label htmlFor="first-name">First name</Label>
+                    <Label htmlFor="first-name">{t("First name")}</Label>
                     <Input id="first-name" autoComplete="given-name" required maxLength={50} value={firstName} onChange={(e) => setFirstName(e.target.value)} />
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor="last-name">Last name</Label>
+                    <Label htmlFor="last-name">{t("Last name")}</Label>
                     <Input id="last-name" autoComplete="family-name" required maxLength={50} value={lastName} onChange={(e) => setLastName(e.target.value)} />
                   </div>
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="email-up">Email</Label>
+                  <Label htmlFor="email-up">{t("Email")}</Label>
                   <Input id="email-up" type="email" autoComplete="email" required maxLength={255} placeholder="name@company.com" value={email} onChange={(e) => setEmail(e.target.value)} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="email-confirm">Confirm email</Label>
+                  <Label htmlFor="email-confirm">{t("Confirm email")}</Label>
                   <Input id="email-confirm" type="email" autoComplete="email" required maxLength={255} value={emailConfirm} onChange={(e) => setEmailConfirm(e.target.value)} onPaste={(e) => e.preventDefault()} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="password-up">Password</Label>
+                  <Label htmlFor="password-up">{t("Password")}</Label>
                   <Input id="password-up" type="password" autoComplete="new-password" minLength={6} required value={password} onChange={(e) => setPassword(e.target.value)} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="password-confirm">Confirm password</Label>
+                  <Label htmlFor="password-confirm">{t("Confirm password")}</Label>
                   <Input id="password-confirm" type="password" autoComplete="new-password" minLength={6} required value={passwordConfirm} onChange={(e) => setPasswordConfirm(e.target.value)} onPaste={(e) => e.preventDefault()} />
                 </div>
                 {signupKind === "create" && (
                   <div className="space-y-1.5">
-                    <Label htmlFor="company">Business name</Label>
+                    <Label htmlFor="company">{t("Business name")}</Label>
                     <Input id="company" required value={companyName} onChange={(e) => setCompanyName(e.target.value)} />
                     <p className="text-xs text-muted-foreground">
-                      You'll be the admin for this business, and it starts on a free trial once we approve it.
+                      {t("You'll be the admin for this business, and it starts on a free trial once we approve it.")}
                     </p>
                   </div>
                 )}
                 {signupKind === "join" && (
                   <div className="space-y-1.5">
-                    <Label htmlFor="company-id">Company code</Label>
-                    <Input id="company-id" required placeholder="e.g. A1B2C3D4" maxLength={12} value={companyId} onChange={(e) => setCompanyId(e.target.value.toUpperCase())} className="uppercase tracking-widest" />
-                    <p className="text-xs text-muted-foreground">Ask your manager for the 8-character company code. Your request will need their approval.</p>
+                    <Label htmlFor="company-id">{t("Company code")}</Label>
+                    <Input id="company-id" required placeholder={t("e.g. A1B2C3D4")} maxLength={12} value={companyId} onChange={(e) => setCompanyId(e.target.value.toUpperCase())} className="uppercase tracking-widest" />
+                    <p className="text-xs text-muted-foreground">{t("Ask your manager for the 8-character company code. Your request will need their approval.")}</p>
                   </div>
                 )}
                 {signupKind === "solo" && (
                   <p className="rounded-lg border border-border bg-secondary/40 px-3 py-2.5 text-xs text-muted-foreground">
-                    Creates your employee profile on its own. You can add a company any time from the app once you have a join code from your manager.
+                    {t("Creates your employee profile on its own. You can add a company any time from the app once you have a join code from your manager.")}
                   </p>
                 )}
                 <Button type="submit" className="h-12 w-full text-base" disabled={busy}>
-                  {busy && <Loader2 className="h-4 w-4 animate-spin" />} Create account
+                  {busy && <Loader2 className="h-4 w-4 animate-spin" />} {t("Create account")}
                 </Button>
 
                 <p className="text-center text-sm text-muted-foreground">
-                  Already have an account?{" "}
+                  {t("Already have an account?")}{" "}
                   <button
                     type="button"
                     onClick={() => { setMode("signin"); setError(null); setInfo(null); }}
                     className="font-medium text-primary hover:underline"
                   >
-                    Sign in
+                    {t("Sign in")}
                   </button>
                 </p>
               </form>
@@ -455,17 +459,17 @@ function LoginPage() {
             {info && <p className="mt-4 rounded-md bg-primary-soft px-3 py-2 text-sm text-primary">{info}</p>}
 
             <p className="mt-8 text-center text-sm font-medium text-muted-foreground">
-              Powered by Valladolid NovaTech
+              {t("Powered by Valladolid NovaTech")}
             </p>
           </div>
 
           <p className="mt-6 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
             <ShieldCheck className="h-3.5 w-3.5" />
-            Secure access for authorized users only.
+            {t("Secure access for authorized users only.")}
           </p>
           <p className="mt-3 text-center">
             <Link to="/" className="text-xs text-muted-foreground hover:text-foreground">
-              ← Back to home
+              {t("← Back to home")}
             </Link>
           </p>
       </div>
@@ -487,6 +491,7 @@ function AccountTypeChooser({
   onPick: (kind: SignupKind) => void;
   onSignIn: () => void;
 }) {
+  const t = useT("shell");
   const cards: {
     kind: SignupKind;
     icon: typeof Building2;
@@ -540,8 +545,8 @@ function AccountTypeChooser({
               <c.icon className="h-5 w-5" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-base font-semibold text-foreground">{c.title}</p>
-              <p className="text-sm text-muted-foreground">{c.who}</p>
+              <p className="text-base font-semibold text-foreground">{t(c.title)}</p>
+              <p className="text-sm text-muted-foreground">{t(c.who)}</p>
             </div>
             <ChevronRight className="mt-2 h-5 w-5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
           </div>
@@ -549,26 +554,26 @@ function AccountTypeChooser({
             {c.points.map((p) => (
               <li key={p} className="flex items-start gap-1.5 text-sm text-foreground">
                 <Check className="mt-0.5 h-4 w-4 shrink-0 text-success" />
-                {p}
+                {t(p)}
               </li>
             ))}
           </ul>
           <p className="mt-3 rounded-lg bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
-            <span className="font-medium text-foreground">What happens next: </span>
-            {c.next}
+            <span className="font-medium text-foreground">{t("What happens next: ")}</span>
+            {t(c.next)}
           </p>
-          <p className="mt-3 text-sm font-medium text-primary">{c.cta} →</p>
+          <p className="mt-3 text-sm font-medium text-primary">{t(c.cta)} →</p>
         </button>
       ))}
 
       <p className="text-center text-xs text-muted-foreground">
-        Not sure? If someone else pays for the app at your job, you're an employee.
+        {t("Not sure? If someone else pays for the app at your job, you're an employee.")}
       </p>
 
       <p className="text-center text-sm text-muted-foreground">
-        Already have an account?{" "}
+        {t("Already have an account?")}{" "}
         <button type="button" onClick={onSignIn} className="font-medium text-primary hover:underline">
-          Sign in
+          {t("Sign in")}
         </button>
       </p>
     </div>

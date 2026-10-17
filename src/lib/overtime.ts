@@ -15,6 +15,8 @@
  * Any threshold set to 0 switches that rule off.
  */
 
+import { translate } from "@/lib/i18n";
+
 const HOUR = 3_600_000;
 
 export interface OvertimeRules {
@@ -78,11 +80,11 @@ export function splitPeriod(dailyWorkedMs: number[], rules: OvertimeRules, apply
 /** "Overtime after 8h/day, double time after 12h/day, and over 40h/week." */
 export function overtimeNote(rules: OvertimeRules, applyWeekly: boolean): string {
   const parts: string[] = [];
-  if (rules.daily_overtime_hours > 0) parts.push(`overtime after ${rules.daily_overtime_hours}h in a day`);
-  if (rules.daily_double_time_hours > 0) parts.push(`double time after ${rules.daily_double_time_hours}h in a day`);
+  if (rules.daily_overtime_hours > 0) parts.push(translate("overtime after {n}h in a day", { n: rules.daily_overtime_hours }));
+  if (rules.daily_double_time_hours > 0) parts.push(translate("double time after {n}h in a day", { n: rules.daily_double_time_hours }));
   if (applyWeekly && rules.overtime_threshold_hours > 0) {
-    parts.push(`overtime over ${rules.overtime_threshold_hours}h in the period`);
+    parts.push(translate("overtime over {n}h in the period", { n: rules.overtime_threshold_hours }));
   }
-  if (parts.length === 0) return "No overtime rules are in effect.";
-  return `Paid at ${parts.join(", ")}.`;
+  if (parts.length === 0) return translate("No overtime rules are in effect.");
+  return translate("Paid at {rules}.", { rules: parts.join(", ") });
 }

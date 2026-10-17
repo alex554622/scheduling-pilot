@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
+import { useLocaleTag, useT } from "@/lib/i18n";
 import { Clock, Users, Coffee, RefreshCw, ArrowLeft } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/whos-in")({
@@ -28,6 +29,8 @@ function fmtElapsed(ms: number) {
 }
 
 function WhosInPage() {
+  const t = useT("time");
+  const tag = useLocaleTag();
   const { company, primaryRole, loading } = useAuth();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -150,7 +153,7 @@ function WhosInPage() {
         : "working";
       return {
         id: m.id,
-        name: m.full_name || "Unnamed",
+        name: m.full_name || t("Unnamed"),
         position: m.position,
         status,
         since: last?.at ?? null,
@@ -163,7 +166,7 @@ function WhosInPage() {
       return a.name.localeCompare(b.name);
     });
     return list;
-  }, [membersQ.data, punchesQ.data, scheduledQ.data, todayStart]);
+  }, [membersQ.data, punchesQ.data, scheduledQ.data, todayStart, t]);
 
   // Employees can't end a break before its time is up; an admin can, from here.
   // Recorded like any manager punch, so it shows in the correction audit.
@@ -181,10 +184,10 @@ function WhosInPage() {
       if (error) throw error;
     },
     onSuccess: () => {
-      toast.success("Break ended");
+      toast.success(t("Break ended"));
       qc.invalidateQueries({ queryKey: ["whos-in-punches"] });
     },
-    onError: (e: any) => toast.error(e.message ?? "Could not end the break"),
+    onError: (e: any) => toast.error(e.message ?? t("Could not end the break")),
   });
 
   const counts = useMemo(() => ({
@@ -193,45 +196,45 @@ function WhosInPage() {
     off: rows.filter((r) => r.status === "off").length,
   }), [rows]);
 
-  if (loading) return <div className="text-sm text-muted-foreground">Loading…</div>;
-  if (!company) return <div className="text-sm text-muted-foreground">No company.</div>;
+  if (loading) return <div className="text-sm text-muted-foreground">{t("Loading…")}</div>;
+  if (!company) return <div className="text-sm text-muted-foreground">{t("No company.")}</div>;
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-foreground">Who's clocked in</h1>
+          <h1 className="text-2xl font-semibold text-foreground">{t("Who's clocked in")}</h1>
           <p className="text-sm text-muted-foreground">
-            Everyone scheduled or clocked in today, live.
+            {t("Everyone scheduled or clocked in today, live.")}
           </p>
         </div>
         <div className="flex gap-2">
           <Button asChild variant="outline" size="sm">
-            <Link to="/timeclock"><ArrowLeft className="mr-2 h-4 w-4" />Back to time clock</Link>
+            <Link to="/timeclock"><ArrowLeft className="mr-2 h-4 w-4" />{t("Back to time clock")}</Link>
           </Button>
           <Button variant="outline" size="sm" onClick={() => qc.invalidateQueries({ queryKey: ["whos-in-punches"] })}>
-            <RefreshCw className="mr-2 h-4 w-4" />Refresh
+            <RefreshCw className="mr-2 h-4 w-4" />{t("Refresh")}
           </Button>
         </div>
       </div>
 
       <div className="grid grid-cols-3 gap-3">
-        <Stat label="Working" value={counts.working} color="emerald" icon={<Clock className="h-4 w-4" />} />
-        <Stat label="On break" value={counts.onBreak} color="amber" icon={<Coffee className="h-4 w-4" />} />
-        <Stat label="Off" value={counts.off} color="slate" icon={<Users className="h-4 w-4" />} />
+        <Stat label={t("Working")} value={counts.working} color="emerald" icon={<Clock className="h-4 w-4" />} />
+        <Stat label={t("On break")} value={counts.onBreak} color="amber" icon={<Coffee className="h-4 w-4" />} />
+        <Stat label={t("Off")} value={counts.off} color="slate" icon={<Users className="h-4 w-4" />} />
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
         <div className="grid grid-cols-[1.6fr_1fr_1fr] border-b border-border bg-muted/30 px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          <div>Employee</div>
-          <div>Status</div>
-          <div className="text-right">Since</div>
+          <div>{t("Employee")}</div>
+          <div>{t("Status")}</div>
+          <div className="text-right">{t("Since")}</div>
         </div>
         {rows.length === 0 && (
           <div className="px-4 py-6 text-center text-sm text-muted-foreground">
             {(membersQ.data ?? []).length === 0
-              ? "No employees yet."
-              : "Nobody is scheduled or clocked in today."}
+              ? t("No employees yet.")
+              : t("Nobody is scheduled or clocked in today.")}
           </div>
         )}
         {rows.map((r) => {
@@ -243,11 +246,11 @@ function WhosInPage() {
                 {r.position && <div className="text-xs text-muted-foreground">{r.position}</div>}
               </div>
               <div>
-                {r.status === "working" && <span className="rounded bg-emerald-100 dark:bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">● Working</span>}
+                {r.status === "working" && <span className="rounded bg-emerald-100 dark:bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">{t("● Working")}</span>}
                 {r.status === "on_break" && (
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="rounded bg-amber-100 dark:bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
-                      ● On break{r.breakMinutes != null ? ` · ${r.breakMinutes}m` : ""}
+                      {t("● On break")}{r.breakMinutes != null ? ` · ${t("{n}m", { n: r.breakMinutes })}` : ""}
                     </span>
                     <Button
                       size="sm"
@@ -256,21 +259,21 @@ function WhosInPage() {
                       disabled={endBreak.isPending}
                       onClick={() => {
                         if (!r.since) return;
-                        if (!window.confirm(`End ${r.name}'s break now?`)) return;
+                        if (!window.confirm(t("End {name}'s break now?", { name: r.name }))) return;
                         endBreak.mutate({ id: r.id, since: r.since, breakMinutes: r.breakMinutes });
                       }}
                     >
-                      End break
+                      {t("End break")}
                     </Button>
                   </div>
                 )}
-                {r.status === "off" && <span className="rounded bg-slate-100 dark:bg-slate-500/15 px-2 py-0.5 text-xs font-medium text-slate-600 dark:text-slate-300">Off</span>}
+                {r.status === "off" && <span className="rounded bg-slate-100 dark:bg-slate-500/15 px-2 py-0.5 text-xs font-medium text-slate-600 dark:text-slate-300">{t("Off")}</span>}
               </div>
               <div className="text-right text-xs">
                 {r.since ? (
                   <>
                     <div className="font-medium text-foreground">{fmtElapsed(elapsed)}</div>
-                    <div className="text-muted-foreground">{new Date(r.since).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+                    <div className="text-muted-foreground">{new Date(r.since).toLocaleTimeString(tag, { hour: "2-digit", minute: "2-digit" })}</div>
                   </>
                 ) : (
                   <span className="text-muted-foreground">—</span>

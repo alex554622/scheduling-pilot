@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { noindexSeo } from "@/lib/seo";
+import { useT } from "@/lib/i18n";
 
 export const Route = createFileRoute("/reset-password")({
   head: () => noindexSeo("Choose a new password | Scheduling Pilot", { follow: true }),
@@ -14,6 +15,7 @@ export const Route = createFileRoute("/reset-password")({
 });
 
 function ResetPasswordPage() {
+  const t = useT("shell");
   const navigate = useNavigate();
   const [ready, setReady] = useState(false);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
@@ -42,7 +44,9 @@ function ResetPasswordPage() {
       void supabase.auth.getSession().then(({ data }) => {
         if (!data.session) {
           setRecoveryError(
-            "This reset link is invalid or has expired. Request a new one from the forgot password page.",
+            t(
+              "This reset link is invalid or has expired. Request a new one from the forgot password page.",
+            ),
           );
         }
       });
@@ -58,11 +62,11 @@ function ResetPasswordPage() {
     e.preventDefault();
     setError(null);
     if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
+      setError(t("Password must be at least 6 characters."));
       return;
     }
     if (password !== confirm) {
-      setError("Passwords don't match.");
+      setError(t("Passwords don't match."));
       return;
     }
     setBusy(true);
@@ -85,28 +89,28 @@ function ResetPasswordPage() {
           <BrandLogo className="h-16" />
         </Link>
 
-        <h1 className="mb-1 text-xl font-semibold text-foreground">Choose a new password</h1>
-        <p className="mb-6 text-sm text-muted-foreground">Pick something you haven't used before.</p>
+        <h1 className="mb-1 text-xl font-semibold text-foreground">{t("Choose a new password")}</h1>
+        <p className="mb-6 text-sm text-muted-foreground">{t("Pick something you haven't used before.")}</p>
 
         {recoveryError ? (
           <div className="space-y-4">
             <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{recoveryError}</p>
             <Link to="/forgot-password" className="block text-sm text-primary hover:underline">
-              Request a new reset link
+              {t("Request a new reset link")}
             </Link>
           </div>
         ) : done ? (
           <p className="rounded-md bg-primary-soft px-3 py-2 text-sm text-primary">
-            Password updated. Redirecting to sign in…
+            {t("Password updated. Redirecting to sign in…")}
           </p>
         ) : !ready ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> Verifying reset link…
+            <Loader2 className="h-4 w-4 animate-spin" /> {t("Verifying reset link…")}
           </div>
         ) : (
           <form className="space-y-4" onSubmit={handleSubmit}>
             <div className="space-y-1.5">
-              <Label htmlFor="password">New password</Label>
+              <Label htmlFor="password">{t("New password")}</Label>
               <Input
                 id="password"
                 type="password"
@@ -118,7 +122,7 @@ function ResetPasswordPage() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="confirm">Confirm new password</Label>
+              <Label htmlFor="confirm">{t("Confirm new password")}</Label>
               <Input
                 id="confirm"
                 type="password"
@@ -130,7 +134,7 @@ function ResetPasswordPage() {
               />
             </div>
             <Button type="submit" className="w-full" disabled={busy}>
-              {busy && <Loader2 className="h-4 w-4 animate-spin" />} Update password
+              {busy && <Loader2 className="h-4 w-4 animate-spin" />} {t("Update password")}
             </Button>
             {error && (
               <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>

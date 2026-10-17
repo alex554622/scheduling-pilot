@@ -43,6 +43,7 @@ import { useBreakReminder } from "@/lib/break-reminder";
 import { ensureServiceWorker } from "@/lib/notification-prefs";
 import { usePushRegistration } from "@/lib/push-subscription";
 import { useThemeController } from "@/lib/theme";
+import { useLangController, useLocaleTag, useT } from "@/lib/i18n";
 import { useMessageAlerts } from "@/lib/message-alerts";
 import { unlockSound } from "@/lib/notify-sound";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -196,22 +197,25 @@ const COLLAPSE_KEY = "ps-sidebar-collapsed";
 
 /** Shown in place of a page the company's plan doesn't include. */
 function PlanLocked({ capability, isAdmin }: { capability: CapabilityKey; isAdmin: boolean }) {
+  const t = useT("shell");
   const label = CAPABILITY_LABELS.find((c) => c.key === capability)?.label ?? "This feature";
   return (
     <div className="mx-auto max-w-lg rounded-2xl border border-border bg-card p-8 text-center shadow-[var(--shadow-card)]">
       <Lock className="mx-auto h-9 w-9 text-muted-foreground" />
-      <h2 className="mt-4 text-xl font-semibold text-foreground">{label} isn't in your plan</h2>
+      <h2 className="mt-4 text-xl font-semibold text-foreground">
+        {t("{label} isn't in your plan", { label: t(label) })}
+      </h2>
       <p className="mt-2 text-sm text-muted-foreground">
         {isAdmin
-          ? "Upgrade your subscription to switch it on for your company."
-          : "Ask a company admin to upgrade your subscription."}
+          ? t("Upgrade your subscription to switch it on for your company.")
+          : t("Ask a company admin to upgrade your subscription.")}
       </p>
       {isAdmin && (
         <Link
           to="/billing"
           className="mt-6 inline-block rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
         >
-          See plans
+          {t("See plans")}
         </Link>
       )}
     </div>
@@ -246,6 +250,8 @@ function RejectionReason({ companyId }: { companyId: string }) {
 
 function AuthLayout() {
   const { user, loading, primaryRole, profile, company, signOut } = useAuth();
+  const t = useT("shell");
+  const localeTag = useLocaleTag();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false); // mobile drawer
   const [collapsed, setCollapsed] = useState(false); // desktop rail
@@ -261,6 +267,8 @@ function AuthLayout() {
   useBreakReminder();
   // Night mode, while inside the app. Taken off again on the way out.
   useThemeController();
+  // <html lang>, so screen readers and the browser's own translate offer agree.
+  useLangController();
   // A pop-up and a chime when someone posts on Messages, on any page.
   useMessageAlerts();
   // Keeps this device on the list the server delivers to, so the notifications
@@ -325,7 +333,7 @@ function AuthLayout() {
   if (loading || !user) {
     return (
       <div className="grid min-h-screen place-items-center bg-background text-sm text-muted-foreground">
-        Loading…
+        {t("Loading…")}
       </div>
     );
   }
@@ -340,17 +348,25 @@ function AuthLayout() {
         <div className="w-full max-w-md rounded-2xl border border-border bg-card p-8 text-center shadow-[var(--shadow-card)]">
           <h2 className="text-xl font-semibold text-foreground">
             {isPending
-              ? "Awaiting approval"
+              ? t("Awaiting approval")
               : isRejected
-                ? "Registration not approved"
-                : `Account ${company.status.replace("_", " ")}`}
+                ? t("Registration not approved")
+                : t("Account {status}", { status: t(company.status.replace("_", " ")) })}
           </h2>
           <p className="mt-2 text-sm text-muted-foreground">
             {isPending
-              ? `${company.name} is pending review by a platform administrator. You'll get access as soon as it's approved.`
+              ? t(
+                  "{name} is pending review by a platform administrator. You'll get access as soon as it's approved.",
+                  { name: company.name },
+                )
               : isRejected
-                ? `${company.name} was not approved. Contact support if you think this is a mistake.`
-                : `${company.name} is currently ${company.status.replace("_", " ")}. Please contact support to restore access.`}
+                ? t("{name} was not approved. Contact support if you think this is a mistake.", {
+                    name: company.name,
+                  })
+                : t("{name} is currently {status}. Please contact support to restore access.", {
+                    name: company.name,
+                    status: t(company.status.replace("_", " ")),
+                  })}
           </p>
           {isRejected && <RejectionReason companyId={company.id} />}
           <button
@@ -360,7 +376,7 @@ function AuthLayout() {
             }}
             className="mt-6 rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-accent"
           >
-            Sign out
+            {t("Sign out")}
           </button>
         </div>
       </div>
@@ -372,10 +388,11 @@ function AuthLayout() {
     return (
       <div className="grid min-h-screen place-items-center bg-secondary/30 px-4">
         <div className="w-full max-w-md rounded-2xl border border-border bg-card p-8 text-center shadow-[var(--shadow-card)]">
-          <h2 className="text-xl font-semibold text-foreground">Awaiting admin approval</h2>
+          <h2 className="text-xl font-semibold text-foreground">{t("Awaiting admin approval")}</h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            Your request to join the company has been sent. A company admin needs to approve you
-            before you can access the workspace.
+            {t(
+              "Your request to join the company has been sent. A company admin needs to approve you before you can access the workspace.",
+            )}
           </p>
           <button
             onClick={async () => {
@@ -384,7 +401,7 @@ function AuthLayout() {
             }}
             className="mt-6 rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-accent"
           >
-            Sign out
+            {t("Sign out")}
           </button>
         </div>
       </div>
@@ -434,7 +451,7 @@ function AuthLayout() {
   const lockedCapability =
     currentNav?.needs && !capabilities[currentNav.needs] ? currentNav.needs : null;
 
-  const displayName = profile?.full_name || user.email || "Account";
+  const displayName = profile?.full_name || user.email || t("Account");
   const initials = displayName
     .split(" ")
     .map((p) => p[0])
@@ -471,21 +488,21 @@ function AuthLayout() {
                 title={
                   collapsed
                     ? badge
-                      ? `${n.label} (${badge} awaiting approval)`
-                      : n.label
+                      ? `${t(n.label)} (${t("{n} awaiting approval", { n: badge })})`
+                      : t(n.label)
                     : undefined
                 }
                 className={`relative mb-1 flex items-center gap-3 rounded-lg text-sm font-medium transition-colors ${collapsed ? "justify-center px-2 py-2.5" : "px-3 py-2.5"} ${active ? "bg-primary-soft text-primary" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
               >
                 <n.icon className="h-4 w-4 shrink-0" />
-                {!collapsed && <span className="truncate">{n.label}</span>}
+                {!collapsed && <span className="truncate">{t(n.label)}</span>}
                 {badge > 0 &&
                   (collapsed ? (
                     <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-warning" />
                   ) : (
                     <span
                       className="ml-auto rounded-full bg-warning px-1.5 text-[11px] font-semibold text-warning-foreground"
-                      aria-label={`${badge} awaiting approval`}
+                      aria-label={t("{n} awaiting approval", { n: badge })}
                     >
                       {badge}
                     </span>
@@ -511,8 +528,8 @@ function AuthLayout() {
                   navigate({ to: "/login" });
                 }}
                 className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-                aria-label="Sign out"
-                title="Sign out"
+                aria-label={t("Sign out")}
+                title={t("Sign out")}
               >
                 <LogOut className="h-4 w-4" />
               </button>
@@ -525,7 +542,7 @@ function AuthLayout() {
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-foreground">{displayName}</p>
                 <p className="truncate text-xs text-muted-foreground">
-                  {primaryRole ? ROLE_LABEL[primaryRole] : "No role yet"}
+                  {primaryRole ? t(ROLE_LABEL[primaryRole]) : t("No role yet")}
                 </p>
               </div>
               <button
@@ -534,7 +551,7 @@ function AuthLayout() {
                   navigate({ to: "/login" });
                 }}
                 className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-                aria-label="Sign out"
+                aria-label={t("Sign out")}
               >
                 <LogOut className="h-4 w-4" />
               </button>
@@ -560,15 +577,15 @@ function AuthLayout() {
             <button
               onClick={() => setOpen(true)}
               className="grid h-11 w-11 place-items-center rounded-md text-muted-foreground hover:bg-accent lg:hidden"
-              aria-label="Open menu"
+              aria-label={t("Open menu")}
             >
               <Menu className="h-5 w-5" />
             </button>
             <button
               onClick={toggleCollapsed}
               className="hidden h-11 w-11 place-items-center rounded-md text-muted-foreground hover:bg-accent lg:grid"
-              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-label={collapsed ? t("Expand sidebar") : t("Collapse sidebar")}
+              title={collapsed ? t("Expand sidebar") : t("Collapse sidebar")}
             >
               {collapsed ? (
                 <PanelLeftOpen className="h-5 w-5" />
@@ -578,7 +595,7 @@ function AuthLayout() {
             </button>
             <div className="min-w-0">
               <p className="truncate text-xs text-muted-foreground">
-                {company?.name ?? "Platform"}
+                {company?.name ?? t("Platform")}
               </p>
               <h1 className="truncate text-base font-semibold text-foreground">
                 {/* "workspace" is the word that goes on a phone, so the role
@@ -586,11 +603,11 @@ function AuthLayout() {
                     is never the part that gets cut off. */}
                 {primaryRole ? (
                   <>
-                    {ROLE_LABEL[primaryRole]}
-                    <span className="hidden sm:inline"> workspace</span>
+                    {t(ROLE_LABEL[primaryRole])}
+                    <span className="hidden sm:inline"> {t("workspace")}</span>
                   </>
                 ) : (
-                  "Workspace"
+                  t("Workspace")
                 )}
               </h1>
             </div>
@@ -613,20 +630,29 @@ function AuthLayout() {
               <Gift className="h-4 w-4 shrink-0" />
               {trial.expired ? (
                 <>
-                  Your {trial.plan ?? "free"} trial has ended — features are locked until you pick a
-                  plan.
+                  {t("Your {plan} trial has ended — features are locked until you pick a plan.", {
+                    plan: trial.plan ?? t("free"),
+                  })}
                 </>
               ) : (
                 <>
-                  <span className="font-medium">{trial.plan ?? "Free"} trial</span> ·{" "}
+                  <span className="font-medium">
+                    {t("{plan} trial", { plan: trial.plan ?? t("Free") })}
+                  </span>{" "}
+                  ·{" "}
                   {trialCountdown(trial.days_left)}
-                  {trial.ends_at && <> · ends {new Date(trial.ends_at).toLocaleDateString()}</>}
+                  {trial.ends_at && (
+                    <>
+                      {" "}
+                      · {t("ends {date}", { date: new Date(trial.ends_at).toLocaleDateString(localeTag) })}
+                    </>
+                  )}
                 </>
               )}
             </span>
             {primaryRole === "company_admin" && (
               <Link to="/billing" className="shrink-0 font-medium underline underline-offset-2">
-                See plans
+                {t("See plans")}
               </Link>
             )}
           </div>

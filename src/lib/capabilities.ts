@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { translate } from "@/lib/i18n";
 
 /**
  * What a company's subscription plan lets it do.
@@ -63,7 +64,9 @@ export function normalizeCapabilities(raw: unknown): Capabilities {
 
 /** "Up to 25 employees" / "Unlimited employees", straight from the seat cap. */
 export function seatLine(maxEmployees: number | null | undefined): string {
-  return maxEmployees == null ? "Unlimited employees" : `Up to ${maxEmployees} employees`;
+  return maxEmployees == null
+    ? translate("Unlimited employees")
+    : translate("Up to {n} employees", { n: maxEmployees });
 }
 
 /**
@@ -76,9 +79,10 @@ export function seatLine(maxEmployees: number | null | undefined): string {
  */
 export function planBullets(capabilities: unknown, extras: unknown): string[] {
   const granted = normalizeCapabilities(capabilities);
-  const fromCapabilities = CAPABILITY_LABELS.filter((c) => granted[c.key]).map((c) => c.label);
+  const grantedLabels = CAPABILITY_LABELS.filter((c) => granted[c.key]);
+  const fromCapabilities = grantedLabels.map((c) => translate(c.label));
 
-  const taken = new Set(fromCapabilities.map((l) => l.toLowerCase()));
+  const taken = new Set(grantedLabels.map((c) => c.label.toLowerCase()));
   const custom = (Array.isArray(extras) ? (extras as unknown[]) : [])
     .filter((f): f is string => typeof f === "string")
     .map((f) => f.trim())
