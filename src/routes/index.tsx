@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { Calendar, Users, RefreshCw, Shield, CheckCircle2, Banknote, CreditCard, TrendingUp, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -8,6 +8,7 @@ import { DashboardPreview, Decorations } from "@/components/showcase";
 import { MarketingHeader } from "@/components/marketing-header";
 import { MarketingFooter } from "@/components/marketing-footer";
 import { seo, SITE_URL } from "@/lib/seo";
+import { isNativeApp } from "@/lib/native/platform";
 
 const HOME_TITLE = "Scheduling Pilot | Employee Scheduling & Workforce Management Software";
 const HOME_DESCRIPTION =
@@ -43,6 +44,12 @@ const ORGANIZATION_SCHEMA = {
 };
 
 export const Route = createFileRoute("/")({
+  // The Android/iOS apps open on the app itself, not on the marketing page: a
+  // signed-in person lands on their dashboard, anyone else on sign-in (the
+  // dashboard sends them there). Never true on the server or the website.
+  beforeLoad: () => {
+    if (isNativeApp()) throw redirect({ to: "/dashboard", replace: true });
+  },
   head: () => ({
     ...seo({ title: HOME_TITLE, description: HOME_DESCRIPTION, path: "/" }),
     // Rendered, not executed: TanStack treats any script whose type is neither

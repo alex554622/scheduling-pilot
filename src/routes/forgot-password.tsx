@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { noindexSeo } from "@/lib/seo";
 import { useT } from "@/lib/i18n";
+import { shareableOrigin } from "@/lib/native/platform";
 
 export const Route = createFileRoute("/forgot-password")({
   head: () => noindexSeo("Reset your password | Scheduling Pilot", { follow: true }),
@@ -26,7 +27,7 @@ function ForgotPasswordPage() {
     setBusy(true);
     setError(null);
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: `${window.location.origin}/reset-password`,
+      redirectTo: `${shareableOrigin()}/reset-password`,
     });
     setBusy(false);
     if (error) {

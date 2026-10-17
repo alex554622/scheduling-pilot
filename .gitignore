@@ -51,3 +51,13 @@ id_rsa*
 # Machine-specific local dev-server config (absolute path to a local runtime).
 # Other Claude Code project settings stay committable.
 .claude/launch.json
+
+# App signing material, wherever it ends up.
+*.jks
+*.keystore
+keystore.properties
+*.mobileprovision
+*.p8
+# Firebase service-account keys (a server secret). google-services.json is not secret.
+*firebase-adminsdk*.json
+service-account*.json

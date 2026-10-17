@@ -469,6 +469,7 @@ function AuthLayout() {
           desktop so the card stays in sight however long the page is. */}
       <aside
         data-print-hide
+        data-app-sidebar
         className={`fixed bottom-0 left-0 top-0 z-30 flex w-64 shrink-0 transform flex-col border-r border-border bg-[var(--sidebar-bg)] transition-[width,transform] duration-200 lg:sticky lg:bottom-auto lg:top-0 lg:h-screen lg:translate-x-0 ${sideWidth} ${open ? "translate-x-0" : "-translate-x-full"}`}
       >
         <div
@@ -571,6 +572,7 @@ function AuthLayout() {
       <div className="flex min-w-0 flex-1 flex-col">
         <header
           data-print-hide
+          data-app-header
           className="sticky top-0 z-10 flex h-16 items-center justify-between gap-3 border-b border-border bg-card/80 px-4 backdrop-blur md:px-8"
         >
           <div className="flex min-w-0 items-center gap-3">

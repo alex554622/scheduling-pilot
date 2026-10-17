@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { isNativeApp } from "@/lib/native/platform";
 
 /**
  * What each person wants to be told about, and how.
@@ -198,12 +199,18 @@ export function useNotificationPrefs(): NotificationPrefsHandle {
 /** Running from the home screen / app window rather than a browser tab. */
 export function isStandalone(): boolean {
   if (typeof window === "undefined") return false;
+  // The Android/iOS apps are installed by definition.
+  if (isNativeApp()) return true;
   const iosStandalone = (window.navigator as { standalone?: boolean }).standalone === true;
   return iosStandalone || window.matchMedia?.("(display-mode: standalone)").matches === true;
 }
 
 /** Whether this browser can show system notifications at all. */
 export function desktopSupported(): boolean {
+  // The apps' web view has no Web Notifications or service-worker push; native
+  // push is a separate piece of work (docs/mobile/README.md). Until then the
+  // apps show alerts in-app only, and must not register /sw.js.
+  if (isNativeApp()) return false;
   return typeof window !== "undefined" && "Notification" in window;
 }
 
@@ -219,7 +226,7 @@ export function desktopPermission(): NotificationPermission | "unsupported" {
  */
 let swRegistration: Promise<ServiceWorkerRegistration | null> | null = null;
 export function ensureServiceWorker(): Promise<ServiceWorkerRegistration | null> {
-  if (typeof window === "undefined" || !("serviceWorker" in navigator)) {
+  if (typeof window === "undefined" || isNativeApp() || !("serviceWorker" in navigator)) {
     return Promise.resolve(null);
   }
   swRegistration ??= navigator.serviceWorker

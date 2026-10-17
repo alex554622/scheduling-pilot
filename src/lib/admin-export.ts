@@ -7,6 +7,7 @@
  */
 
 import { translate, localeTag } from "@/lib/i18n";
+import { saveFile } from "@/lib/native/files";
 
 type Cell = string | number | boolean | null | undefined;
 
@@ -24,17 +25,13 @@ export function toCsv(header: string[], rows: Cell[][]): string {
   return [header, ...rows].map((r) => r.map(field).join(",")).join("\r\n");
 }
 
-/** Hands the file to the browser. The BOM is what makes Excel read it as UTF-8. */
+/**
+ * Hands the file to the browser — or, in the apps, to the share sheet (see
+ * lib/native/files.ts). The BOM is what makes Excel read it as UTF-8.
+ */
 export function downloadCsv(filename: string, header: string[], rows: Cell[][]): void {
   const blob = new Blob(["﻿" + toCsv(header, rows)], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  void saveFile(blob, filename);
 }
 
 /** A filename-safe slug of a company name, for "acme-co-members.csv". */

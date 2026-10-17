@@ -19,6 +19,8 @@ import { useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useNotificationPrefs } from "@/lib/notification-prefs";
+import { isNativeApp } from "@/lib/native/platform";
+import { registerNativePush } from "@/lib/native/push";
 
 /** Handed to the browser so the push service knows which app is sending. */
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined;
@@ -41,6 +43,8 @@ const pushTable = () => supabase.from("push_subscriptions" as never) as unknown 
 export function pushSupported(): boolean {
   return (
     typeof window !== "undefined" &&
+    // Web push needs the browser's push service; the apps' web view has none.
+    !isNativeApp() &&
     "serviceWorker" in navigator &&
     "PushManager" in window &&
     "Notification" in window
@@ -220,6 +224,12 @@ export function usePushRegistration(): void {
 
   useEffect(() => {
     if (!wanted || !user) return;
+    // The Android and iOS apps register with FCM / APNs instead (it never
+    // prompts; that is the card's and Settings' job). See @/lib/native/push.
+    if (isNativeApp()) {
+      void registerNativePush();
+      return;
+    }
     void subscribeToPush(user.id);
 
     // The worker tells us when the browser has swapped the subscription out

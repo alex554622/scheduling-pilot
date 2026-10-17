@@ -27,6 +27,14 @@ export default defineConfig(({ command, mode }) => {
   // resolve.
   const isDevBuild = command === "build" && mode === "development";
 
+  // `vite build --mode mobile` (the build:mobile script) is the client the
+  // Android and iOS apps bundle. Capacitor serves files from the device, so
+  // there is no server to render pages or run the push dispatcher: the build is
+  // a single-page app — one prerendered shell at index.html plus the client
+  // bundles — and every data call goes straight to Supabase, exactly as it
+  // already does in the browser. The website build is unaffected.
+  const isMobileBuild = command === "build" && mode === "mobile";
+
   return {
     define,
     ...(isDevBuild
@@ -42,6 +50,7 @@ export default defineConfig(({ command, mode }) => {
     // transform can break the built output while the dev preview still looks
     // fine. Running Lightning CSS in both keeps the preview honest.
     css: { transformer: "lightningcss" },
+
 
     resolve: {
       alias: { "@": `${process.cwd()}/src` },
@@ -86,8 +95,19 @@ export default defineConfig(({ command, mode }) => {
       tailwindcss(),
       tsConfigPaths({ projects: ["./tsconfig.json"] }),
       tanstackStart({
-        // Redirect the bundled server entry to src/server.ts (our SSR error wrapper).
-        server: { entry: "server" },
+        // Redirect the bundled server entry to src/server.ts (our SSR error
+        // wrapper). Not for the mobile build: its server half only exists to
+        // prerender the shell at build time, and src/server.ts would start the
+        // push dispatcher on the build machine.
+        ...(isMobileBuild ? {} : { server: { entry: "server" } }),
+        ...(isMobileBuild
+          ? {
+              spa: {
+                enabled: true,
+                prerender: { outputPath: "/index.html", crawlLinks: false },
+              },
+            }
+          : {}),
         // Importing server-only modules from client code should fail the build,
         // not ship a broken bundle.
         importProtection: {
@@ -97,7 +117,7 @@ export default defineConfig(({ command, mode }) => {
       }),
       // Production target: a plain Node server in a Docker container on Coolify.
       // Output lands in .output/. Build-only; the plugin is a no-op on serve.
-      ...(command === "build"
+      ...(command === "build" && !isMobileBuild
         ? [
             nitro({
               preset: "node-server",

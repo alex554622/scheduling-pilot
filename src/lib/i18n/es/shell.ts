@@ -76,6 +76,9 @@ export const shell: Record<string, string> = {
   "Show them on this device": "Mostrarlas en este dispositivo",
   "Add Scheduling Pilot to your Home Screen first — on iPhone and iPad, notifications are only offered to the installed app.": "Primero agrega Scheduling Pilot a tu pantalla de inicio — en iPhone y iPad, las notificaciones solo se ofrecen a la app instalada.",
   "This browser doesn't do system notifications.": "Este navegador no admite notificaciones del sistema.",
+  "In this version of the app, alerts show inside the app while it's open.": "En esta versión de la app, los avisos se muestran dentro de la app mientras está abierta.",
+  "Notifications are turned off for this app — allow them in your phone's Settings first.": "Las notificaciones están desactivadas para esta app — primero permítelas en los Ajustes de tu teléfono.",
+  "Schedules, shift changes, announcements and messages.": "Horarios, cambios de turno, anuncios y mensajes.",
   "This browser is blocking notifications — allow them in its site settings first.": "Este navegador está bloqueando las notificaciones — primero permítelas en la configuración del sitio.",
   "A system pop-up as well as the one in the app, on your phone's lock screen too. Each device asks once.": "Un aviso del sistema además del de la app, también en la pantalla de bloqueo de tu teléfono. Cada dispositivo pregunta una sola vez.",
   "These reach you with the app closed — your break reminder will arrive whether or not it's open.": "Te llegan con la app cerrada — el recordatorio de tu descanso llegará esté o no abierta.",
@@ -327,4 +330,35 @@ export const shell: Record<string, string> = {
   "No break": "Sin descanso",
   "Federal tax": "Impuesto federal",
   "State tax": "Impuesto estatal",
+  "You're offline": "Sin conexión",
+  "Scheduling Pilot needs an internet connection to show your schedule and record punches. It will reconnect on its own as soon as you're back online.":
+    "Scheduling Pilot necesita conexión a internet para mostrar tu horario y registrar marcaciones. Se volverá a conectar solo en cuanto tengas conexión.",
+  "Delete account": "Eliminar cuenta",
+  "Delete my account": "Eliminar mi cuenta",
+  "Permanently deletes your login and profile, together with your shifts, time punches, time-off requests, availability, shift trades and the messages you wrote. This can't be undone.":
+    "Elimina para siempre tu acceso y tu perfil, junto con tus turnos, marcaciones, solicitudes de tiempo libre, disponibilidad, cambios de turno y los mensajes que escribiste. No se puede deshacer.",
+  "If you or your employer need your timecards, download them as PDF before you delete your account.":
+    "Si tú o tu empleador necesitan tus hojas de horas, descárgalas en PDF antes de eliminar tu cuenta.",
+  "Delete your account for good?": "¿Eliminar tu cuenta para siempre?",
+  "Your login, profile, shifts, time punches, time-off requests, availability, shift trades and messages are deleted right away, and you are signed out on every device.":
+    "Tu acceso, perfil, turnos, marcaciones, solicitudes de tiempo libre, disponibilidad, cambios de turno y mensajes se eliminan de inmediato, y se cierra tu sesión en todos los dispositivos.",
+  "Type {word} to confirm": "Escribe {word} para confirmar",
+  "You're the last platform admin. Make someone else a platform admin first.":
+    "Eres el último administrador de la plataforma. Primero nombra a otra persona administrador de la plataforma.",
+  "You're the only admin of a company that still has members. Make someone else a company admin first, in Employees.":
+    "Eres el único administrador de una empresa que todavía tiene miembros. Primero nombra a otra persona administrador de la empresa, en Empleados.",
+  "Account deletion isn't available right now. Email {email} and we'll delete it for you.":
+    "La eliminación de cuentas no está disponible en este momento. Escribe a {email} y la eliminaremos por ti.",
+  "Your account wasn't deleted: {message}": "Tu cuenta no se eliminó: {message}",
+  "Your account has been deleted": "Tu cuenta fue eliminada",
+  "Your login and the data that belonged to it have been removed from Scheduling Pilot. Thank you for using it.":
+    "Tu acceso y los datos que le pertenecían se eliminaron de Scheduling Pilot. Gracias por usarlo.",
+  "Delete your Scheduling Pilot account": "Eliminar tu cuenta de Scheduling Pilot",
+  "You can delete your account yourself at any time, in the app or on this website: sign in, open Settings, and choose Delete account at the bottom of the page.":
+    "Puedes eliminar tu cuenta tú mismo en cualquier momento, en la app o en este sitio web: inicia sesión, abre Configuración y elige Eliminar cuenta al final de la página.",
+  "Deleting removes your login and profile together with your shifts, time punches, time-off requests, availability, shift trades and the messages you wrote. It happens straight away and can't be undone.":
+    "Al eliminarla se borran tu acceso y tu perfil junto con tus turnos, marcaciones, solicitudes de tiempo libre, disponibilidad, cambios de turno y los mensajes que escribiste. Ocurre de inmediato y no se puede deshacer.",
+  "Can't sign in? Email {email} from the address on your account and we'll delete it for you.":
+    "¿No puedes iniciar sesión? Escribe a {email} desde la dirección de tu cuenta y la eliminaremos por ti.",
+  "Sign in to delete your account": "Inicia sesión para eliminar tu cuenta",
 };

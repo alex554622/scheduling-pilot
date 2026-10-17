@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { useT, useLocaleTag } from "@/lib/i18n";
 import { BarChart3, Download, Clock, Users, CalendarOff, AlertTriangle } from "lucide-react";
+import { saveFile } from "@/lib/native/files";
 
 export const Route = createFileRoute("/_authenticated/reports")({
   component: ReportsPage,
@@ -57,10 +58,8 @@ function downloadCsv(filename: string, rows: (string | number)[][]) {
   };
   const csv = rows.map((r) => r.map(escape).join(",")).join("\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
+  // A browser download, or the share sheet in the apps (lib/native/files.ts).
+  void saveFile(blob, filename);
 }
 
 function ReportsPage() {

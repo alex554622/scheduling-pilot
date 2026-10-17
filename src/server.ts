@@ -10,9 +10,15 @@ import { startNotificationSweeper } from "./lib/server/notification-sweeper";
 // only place a reminder scheduled for eight minutes' time can be waited for.
 // A no-op unless the VAPID and service-role keys are set — see
 // lib/server/push-dispatcher.ts.
-startPushDispatcher();
-// Read notifications are deleted a day later — see lib/notification-retention.ts.
-startNotificationSweeper();
+//
+// Not in `build:mobile`: there this entry only prerenders the app shell on the
+// build machine and exits; the apps talk to the website's server like any
+// browser does.
+if (import.meta.env.MODE !== "mobile") {
+  startPushDispatcher();
+  // Read notifications are deleted a day later — see lib/notification-retention.ts.
+  startNotificationSweeper();
+}
 
 type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;

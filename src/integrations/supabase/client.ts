@@ -2,6 +2,8 @@
 // is self-hosted now, so no generator owns this file.
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
+import { isNativeApp } from '@/lib/native/platform';
+import { nativeAuthStorage } from '@/lib/native/auth-storage';
 
 function createSupabaseClient() {
   // Use import.meta.env for client-side (Vite build-time replacement)
@@ -29,7 +31,14 @@ function createSupabaseClient() {
 
   return createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
     auth: {
-      storage: typeof window !== 'undefined' ? localStorage : undefined,
+      // The Android/iOS apps keep the session in native storage — see
+      // lib/native/auth-storage.ts. The website is unchanged.
+      storage:
+        typeof window === 'undefined'
+          ? undefined
+          : isNativeApp()
+            ? nativeAuthStorage
+            : localStorage,
       persistSession: true,
       autoRefreshToken: true,
     }

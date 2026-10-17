@@ -11,6 +11,7 @@ import {
 import appCss from "../styles.css?url";
 import { AuthProvider } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
+import { NativeShell } from "@/components/native-shell";
 
 const DEFAULT_TITLE = "Scheduling Pilot | Employee Scheduling & Workforce Management Software";
 const DEFAULT_DESCRIPTION =
@@ -18,6 +19,9 @@ const DEFAULT_DESCRIPTION =
 
 // Set VITE_GOOGLE_SITE_VERIFICATION in the build environment to have the
 // verification tag rendered; leave it unset and nothing is emitted.
+/** `build:mobile`: the client bundled into the Android and iOS apps. */
+const IS_MOBILE_BUILD = import.meta.env.MODE === "mobile";
+
 const GOOGLE_SITE_VERIFICATION = import.meta.env.VITE_GOOGLE_SITE_VERIFICATION as
   | string
   | undefined;
@@ -86,7 +90,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     // deepest matched route wins, so these only apply where a route says nothing.
     meta: [
       { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
+      // The apps draw edge to edge, under the status bar and home indicator, and
+      // pad themselves by the safe-area insets (see styles.css). The website
+      // keeps the browser's default.
+      {
+        name: "viewport",
+        content: IS_MOBILE_BUILD
+          ? "width=device-width, initial-scale=1, viewport-fit=cover"
+          : "width=device-width, initial-scale=1",
+      },
       { title: DEFAULT_TITLE },
       { name: "description", content: DEFAULT_DESCRIPTION },
       { name: "robots", content: "index, follow" },
@@ -122,7 +134,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
  * setting exists to avoid. Mirrors `@/lib/theme`, which it cannot import: same
  * storage key, same light-only paths.
  */
-const THEME_BOOT = `(function(){try{var p=localStorage.getItem("sp-theme")||"light";var d=p==="dark"||(p==="system"&&window.matchMedia("(prefers-color-scheme: dark)").matches);var path=location.pathname;var light=["/","/about","/login","/join","/forgot-password","/reset-password","/employee-scheduling","/shift-trading","/time-clock","/time-off-management","/workforce-management"];if(d&&light.indexOf(path)<0&&path.indexOf("/clock/")!==0)document.documentElement.classList.add("dark")}catch(e){}})();`;
+// The `native-app` class (Android/iOS apps, see lib/native/platform.ts) is set
+// here too, before the first paint, so the safe-area padding is in place on the
+// very first frame. Capacitor's bridge defines window.Capacitor before any page
+// script runs.
+const THEME_BOOT = `(function(){try{var c=window.Capacitor;if(c&&c.isNativePlatform&&c.isNativePlatform())document.documentElement.classList.add("native-app")}catch(e){}try{var p=localStorage.getItem("sp-theme")||"light";var d=p==="dark"||(p==="system"&&window.matchMedia("(prefers-color-scheme: dark)").matches);var path=location.pathname;var light=["/","/about","/login","/join","/forgot-password","/reset-password","/delete-account","/employee-scheduling","/shift-trading","/time-clock","/time-off-management","/workforce-management"];if(d&&light.indexOf(path)<0&&path.indexOf("/clock/")!==0)document.documentElement.classList.add("dark")}catch(e){}})();`;
 
 function RootShell({ children }: { children: React.ReactNode }) {
   return (
@@ -147,6 +163,7 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <Outlet />
+        <NativeShell />
       </AuthProvider>
     </QueryClientProvider>
   );

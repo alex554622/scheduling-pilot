@@ -18,6 +18,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as JoinRouteImport } from './routes/join'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as EmployeeSchedulingRouteImport } from './routes/employee-scheduling'
+import { Route as DeleteAccountRouteImport } from './routes/delete-account'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
@@ -91,6 +92,11 @@ const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
 const EmployeeSchedulingRoute = EmployeeSchedulingRouteImport.update({
   id: '/employee-scheduling',
   path: '/employee-scheduling',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DeleteAccountRoute = DeleteAccountRouteImport.update({
+  id: '/delete-account',
+  path: '/delete-account',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AboutRoute = AboutRouteImport.update({
@@ -248,6 +254,7 @@ const AuthenticatedEmployeesJoinRequestsRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/delete-account': typeof DeleteAccountRoute
   '/employee-scheduling': typeof EmployeeSchedulingRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/join': typeof JoinRoute
@@ -287,6 +294,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/delete-account': typeof DeleteAccountRoute
   '/employee-scheduling': typeof EmployeeSchedulingRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/join': typeof JoinRoute
@@ -328,6 +336,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/about': typeof AboutRoute
+  '/delete-account': typeof DeleteAccountRoute
   '/employee-scheduling': typeof EmployeeSchedulingRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/join': typeof JoinRoute
@@ -369,6 +378,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/about'
+    | '/delete-account'
     | '/employee-scheduling'
     | '/forgot-password'
     | '/join'
@@ -408,6 +418,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/about'
+    | '/delete-account'
     | '/employee-scheduling'
     | '/forgot-password'
     | '/join'
@@ -448,6 +459,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_authenticated'
     | '/about'
+    | '/delete-account'
     | '/employee-scheduling'
     | '/forgot-password'
     | '/join'
@@ -489,6 +501,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   AboutRoute: typeof AboutRoute
+  DeleteAccountRoute: typeof DeleteAccountRoute
   EmployeeSchedulingRoute: typeof EmployeeSchedulingRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   JoinRoute: typeof JoinRoute
@@ -564,6 +577,13 @@ declare module '@tanstack/react-router' {
       path: '/employee-scheduling'
       fullPath: '/employee-scheduling'
       preLoaderRoute: typeof EmployeeSchedulingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/delete-account': {
+      id: '/delete-account'
+      path: '/delete-account'
+      fullPath: '/delete-account'
+      preLoaderRoute: typeof DeleteAccountRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/about': {
@@ -849,6 +869,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   AboutRoute: AboutRoute,
+  DeleteAccountRoute: DeleteAccountRoute,
   EmployeeSchedulingRoute: EmployeeSchedulingRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
   JoinRoute: JoinRoute,

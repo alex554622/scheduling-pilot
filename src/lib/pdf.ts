@@ -1,5 +1,7 @@
 import type { TDocumentDefinitions, Content } from "pdfmake/interfaces";
 import { localeTag, translate } from "@/lib/i18n";
+import { isNativeApp } from "@/lib/native/platform";
+import { saveFile } from "@/lib/native/files";
 
 /**
  * Real PDF generation for the timecard and the invoice.
@@ -21,7 +23,10 @@ const RULE = "#d4d4d4";
 const FILL = "#f5f5f5";
 
 interface PdfMakeGlobal {
-  createPdf(doc: TDocumentDefinitions): { download(filename: string): void };
+  createPdf(doc: TDocumentDefinitions): {
+    download(filename: string): void;
+    getBlob(): Promise<Blob>;
+  };
   addVirtualFileSystem?(vfs: unknown): void;
 }
 
@@ -41,6 +46,12 @@ async function createPdf(doc: TDocumentDefinitions, filename: string): Promise<v
   const vfs = (fonts as unknown as { default?: unknown }).default;
   if (vfs && typeof pdfMake.addVirtualFileSystem === "function") pdfMake.addVirtualFileSystem(vfs);
 
+  // The apps' web view has no Downloads folder; there the PDF goes to the
+  // share sheet instead (lib/native/files.ts).
+  if (isNativeApp()) {
+    await saveFile(await pdfMake.createPdf(doc).getBlob(), filename);
+    return;
+  }
   pdfMake.createPdf(doc).download(filename);
 }
 

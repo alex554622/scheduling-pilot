@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { noindexSeo } from "@/lib/seo";
 import { useT } from "@/lib/i18n";
+import { shareableOrigin } from "@/lib/native/platform";
 
 type Mode = "signin" | "signup";
 type SignupKind = "create" | "join" | "solo";
@@ -193,7 +194,7 @@ function LoginPage() {
       password,
       options: {
         // Required for email confirmation links to land back in the app.
-        emailRedirectTo: `${window.location.origin}/dashboard`,
+        emailRedirectTo: `${shareableOrigin()}/dashboard`,
         data: { full_name: fullName, first_name: firstName.trim(), last_name: lastName.trim() },
       },
     });

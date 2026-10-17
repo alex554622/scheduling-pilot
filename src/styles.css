@@ -238,3 +238,90 @@
     break-inside: avoid;
   }
 }
+
+/* ===== Android and iOS apps =========================================
+   The apps (Capacitor, see docs/mobile/) draw edge to edge: the page runs
+   under the status bar, the notch and the home indicator. `native-app` is set
+   on <html> before the first paint (__root.tsx) and these rules keep content
+   inside the safe area. On the website every inset below is 0px and none of
+   the `html.native-app` rules match, so nothing changes there.
+
+   Capacitor's Android bridge injects --safe-area-inset-*, which stay correct
+   on older Android web views where env() reads 0; iOS fills env().
+   ==================================================================== */
+
+:root {
+  --sat: 0px;
+  --sar: 0px;
+  --sab: 0px;
+  --sal: 0px;
+}
+
+html.native-app {
+  --sat: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --sar: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+  --sab: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  --sal: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+}
+
+html.native-app body {
+  padding: var(--sat) var(--sar) var(--sab) var(--sal);
+  /* An app does not rubber-band the whole page past its edges. */
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* A solid band behind the status bar, so a page scrolling up never shows
+   through the clock and battery icons. Below dialogs (z-50), above the
+   sticky header and the sidebar. */
+html.native-app body::before {
+  content: "";
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: var(--sat);
+  background: var(--card);
+  z-index: 40;
+  pointer-events: none;
+}
+
+/* Full-height screens fill the safe area, not the whole glass, or every page
+   would scroll by the height of the bars. */
+html.native-app .min-h-screen {
+  min-height: calc(100dvh - var(--sat) - var(--sab));
+}
+
+/* The signed-in shell (routes/_authenticated.tsx). */
+html.native-app [data-app-header] {
+  top: var(--sat);
+}
+html.native-app [data-app-sidebar] {
+  padding-top: var(--sat);
+  padding-bottom: var(--sab);
+  padding-left: var(--sal);
+}
+@media (min-width: 1024px) {
+  /* Tablet landscape: the sidebar sits in the padded page instead of over it. */
+  html.native-app [data-app-sidebar] {
+    top: var(--sat);
+    height: calc(100dvh - var(--sat) - var(--sab));
+    padding: 0;
+  }
+}
+
+/* Side and bottom panels reach the screen edges; their content must not. */
+html.native-app [data-sheet-side="left"],
+html.native-app [data-sheet-side="right"],
+html.native-app [data-sheet-side="top"] {
+  padding-top: calc(1.5rem + var(--sat));
+}
+html.native-app [data-sheet-side="left"],
+html.native-app [data-sheet-side="right"],
+html.native-app [data-sheet-side="bottom"],
+html.native-app [data-vaul-drawer] {
+  padding-bottom: calc(1.5rem + var(--sab));
+}
+html.native-app [data-sheet-side="left"] [data-sheet-close],
+html.native-app [data-sheet-side="right"] [data-sheet-close],
+html.native-app [data-sheet-side="top"] [data-sheet-close] {
+  top: calc(1rem + var(--sat));
+}

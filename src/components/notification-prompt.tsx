@@ -9,6 +9,12 @@ import {
 } from "@/lib/notification-prefs";
 import { pushConfigured, pushSupported, subscribeToPush } from "@/lib/push-subscription";
 import { useT } from "@/lib/i18n";
+import { isNativeApp } from "@/lib/native/platform";
+import {
+  nativePushPermission,
+  registerNativePush,
+  requestNativePushPermission,
+} from "@/lib/native/push";
 
 /**
  * "Turn on notifications", asked the way a chat app asks on first open.
@@ -56,6 +62,17 @@ export function NotificationPrompt() {
       setMode("hidden");
       return;
     }
+    // The apps ask the OS (Android 13+, iOS). Same rule: only where it has
+    // never been asked, because "denied" can only be undone in system settings.
+    if (isNativeApp()) {
+      let live = true;
+      void nativePushPermission().then((p) => {
+        if (live) setMode(p === "default" ? "ask" : "hidden");
+      });
+      return () => {
+        live = false;
+      };
+    }
     // Safari offers notifications only to an app added to the Home Screen, so
     // on an iPhone tab the useful thing to say is how to get there.
     if (isIos() && !isStandalone() && !pushSupported()) {
@@ -95,6 +112,10 @@ export function NotificationPrompt() {
     if (!user) return;
     setBusy(true);
     try {
+      if (isNativeApp()) {
+        if ((await requestNativePushPermission()) === "granted") await registerNativePush();
+        return;
+      }
       const result = await requestDesktopPermission();
       if (result === "granted") await subscribeToPush(user.id);
     } finally {

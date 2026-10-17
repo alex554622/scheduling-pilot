@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { PrintableInvoice, type InvoiceRecord } from "@/components/printable-invoice";
 import { useT, localeTag } from "@/lib/i18n";
+import { isNativeApp } from "@/lib/native/platform";
 import { billingDueLabel, fmtBillingDate, isBillingOverdue, toLocalDateTimeInput } from "@/lib/billing";
 
 export type BillingAction = "paid" | "extend" | "suspend" | "date";
@@ -329,9 +330,12 @@ export function InvoiceDialog({
 
           <DialogFooter className="flex-wrap gap-2">
             <div className="mr-auto flex gap-2">
-              <Button variant="outline" onClick={() => window.print()} title={t("Send to a printer, or choose “Save as PDF”")}>
-                <Printer className="mr-2 h-4 w-4" />{t("Print")}
-              </Button>
+              {/* No printing in the apps' web view; the PDF goes to the share sheet. */}
+              {!isNativeApp() && (
+                <Button variant="outline" onClick={() => window.print()} title={t("Send to a printer, or choose “Save as PDF”")}>
+                  <Printer className="mr-2 h-4 w-4" />{t("Print")}
+                </Button>
+              )}
               <Button
                 title={t("Saves a PDF straight to your downloads")}
                 disabled={saving}

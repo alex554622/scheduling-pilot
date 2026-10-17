@@ -7,6 +7,10 @@
  * and a break reminder due in eight minutes needs nothing more than something
  * that is still awake in eight minutes.
  *
+ * Each row goes to every device its owner has: browsers through Web Push
+ * (`push_subscriptions`), and phones running the Android or iOS app through
+ * FCM or APNs (`push_devices`, see native-push.ts).
+ *
  * Safe to run in more than one container. `claim_due_pushes` hands a row to
  * exactly one caller (`for update skip locked`), so a second replica takes the
  * next row rather than the same one.
@@ -14,7 +18,21 @@
  * Server only — see `importProtection` in vite.config.ts.
  */
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { sendPush, vapidKeysFromEnv, type PushSubscriptionRecord } from "@/lib/server/web-push";
+import {
+  sendPush,
+  vapidKeysFromEnv,
+  type PushResult,
+  type PushSubscriptionRecord,
+  type VapidKeys,
+} from "@/lib/server/web-push";
+import {
+  apnsConfigFromEnv,
+  fcmConfigFromEnv,
+  sendApns,
+  sendFcm,
+  type ApnsConfig,
+  type FcmConfig,
+} from "@/lib/server/native-push";
 
 /** How often to look, when the last look found nothing. */
 const IDLE_POLL_MS = 15_000;
@@ -34,6 +52,35 @@ interface QueueRow {
 interface SubscriptionRow extends PushSubscriptionRecord {
   id: string;
   user_id: string;
+}
+
+/** A phone running the Android or iOS app (`push_devices`). */
+interface DeviceRow {
+  id: string;
+  user_id: string;
+  platform: "android" | "ios";
+  token: string;
+}
+
+/**
+ * Who this deployment can send through. Each is optional: a server with only
+ * VAPID keys serves the website exactly as before, and one with only Firebase
+ * and Apple credentials serves only the apps.
+ */
+interface Senders {
+  vapid: VapidKeys | null;
+  fcm: FcmConfig | null;
+  apns: ApnsConfig | null;
+}
+
+/** The two tables a device can be filed in. */
+type DeviceTable = "push_subscriptions" | "push_devices";
+
+/** One device a notification is about to go to, whichever service it uses. */
+interface Target {
+  table: DeviceTable;
+  id: string;
+  send: () => Promise<PushResult>;
 }
 
 /**
@@ -73,14 +120,9 @@ function errText(error: unknown): string {
 async function deliver(
   row: QueueRow,
   subs: SubscriptionRow[],
-  keys: NonNullable<ReturnType<typeof vapidKeysFromEnv>>,
-): Promise<{ error: string | null; gone: string[] }> {
-  if (subs.length === 0) {
-    // Nobody has said yes on any device. Not a failure, and retrying it four
-    // more times would not change that.
-    return { error: null, gone: [] };
-  }
-
+  devices: DeviceRow[],
+  senders: Senders,
+): Promise<{ error: string | null; gone: Target[] }> {
   const payload = {
     title: row.title,
     body: row.body ?? "",
@@ -98,9 +140,45 @@ async function deliver(
   // day, as a chat message would: a shift change is still news to someone
   // whose phone was off over lunch.
   const ttl = row.type === "break_ending" ? 3 * 60 : 24 * 60 * 60;
-  const results = await Promise.all(subs.map((s) => sendPush(s, payload, keys, ttl)));
 
-  const gone: string[] = [];
+  const { vapid, fcm, apns } = senders;
+  const targets: Target[] = [];
+  if (vapid) {
+    for (const s of subs) {
+      targets.push({
+        table: "push_subscriptions",
+        id: s.id,
+        send: () => sendPush(s, payload, vapid, ttl),
+      });
+    }
+  }
+  for (const d of devices) {
+    // A phone whose platform this server has no credentials for is skipped,
+    // not failed: it starts receiving as soon as the credentials are added.
+    if (d.platform === "android" && fcm) {
+      targets.push({
+        table: "push_devices",
+        id: d.id,
+        send: () => sendFcm(fcm, d.token, payload, ttl),
+      });
+    } else if (d.platform === "ios" && apns) {
+      targets.push({
+        table: "push_devices",
+        id: d.id,
+        send: () => sendApns(apns, d.token, payload, ttl),
+      });
+    }
+  }
+
+  if (targets.length === 0) {
+    // Nobody has said yes on any device. Not a failure, and retrying it four
+    // more times would not change that.
+    return { error: null, gone: [] };
+  }
+
+  const results = await Promise.all(targets.map((t) => t.send()));
+
+  const gone: Target[] = [];
   let delivered = false;
   let lastError = "";
   results.forEach((result, i) => {
@@ -108,7 +186,7 @@ async function deliver(
       delivered = true;
       return;
     }
-    if (result.gone) gone.push(subs[i].id);
+    if (result.gone) gone.push(targets[i]);
     lastError = result.error;
   });
 
@@ -118,31 +196,66 @@ async function deliver(
   return { error: lastError || "delivery failed", gone };
 }
 
+/** Said once per process, so a database without `push_devices` does not fill the log. */
+let warnedNoDeviceTable = false;
+
+/** Rows of one owner-keyed table, grouped by owner. */
+async function byOwner<T extends { user_id: string }>(
+  table: DeviceTable,
+  cols: string,
+  userIds: string[],
+): Promise<Map<string, T[]>> {
+  const q = await db.from(table).select(cols).in("user_id", userIds);
+  if (q.error) throw new Error(errText(q.error));
+  const map = new Map<string, T[]>();
+  for (const row of (q.data ?? []) as T[]) {
+    const list = map.get(row.user_id);
+    if (list) list.push(row);
+    else map.set(row.user_id, [row]);
+  }
+  return map;
+}
+
 /** One pass. Returns how many rows it handled, so a full batch can be drained. */
-async function drainOnce(keys: NonNullable<ReturnType<typeof vapidKeysFromEnv>>): Promise<number> {
+async function drainOnce(senders: Senders): Promise<number> {
   const claimed = await db.rpc("claim_due_pushes", { _limit: BATCH });
   if (claimed.error) throw new Error(errText(claimed.error));
   const rows = (claimed.data ?? []) as QueueRow[];
   if (rows.length === 0) return 0;
 
   const userIds = [...new Set(rows.map((r) => r.user_id))];
-  const subsQ = await db
-    .from("push_subscriptions")
-    .select("id, user_id, endpoint, p256dh, auth")
-    .in("user_id", userIds);
-  if (subsQ.error) throw new Error(errText(subsQ.error));
+  const subsByUser = senders.vapid
+    ? await byOwner<SubscriptionRow>(
+        "push_subscriptions",
+        "id, user_id, endpoint, p256dh, auth",
+        userIds,
+      )
+    : new Map<string, SubscriptionRow[]>();
 
-  const byUser = new Map<string, SubscriptionRow[]>();
-  for (const sub of (subsQ.data ?? []) as SubscriptionRow[]) {
-    const list = byUser.get(sub.user_id);
-    if (list) list.push(sub);
-    else byUser.set(sub.user_id, [sub]);
+  let devicesByUser = new Map<string, DeviceRow[]>();
+  if (senders.fcm || senders.apns) {
+    try {
+      devicesByUser = await byOwner<DeviceRow>(
+        "push_devices",
+        "id, user_id, platform, token",
+        userIds,
+      );
+    } catch (e) {
+      // Most likely the migration that adds the table has not been applied.
+      // The website's own deliveries must not wait on that.
+      if (!warnedNoDeviceTable) {
+        warnedNoDeviceTable = true;
+        console.warn("[push] could not read push_devices, so the apps get nothing:", String(e));
+      }
+    }
   }
 
   // Rows for people with no device on file are finished without a send. That
   // is correct, but it is also exactly how "my phone never buzzes" looks from
   // the server, so it is said out loud rather than recorded as a success.
-  const unreachable = rows.filter((r) => !byUser.has(r.user_id));
+  const unreachable = rows.filter(
+    (r) => !subsByUser.has(r.user_id) && !devicesByUser.has(r.user_id),
+  );
   if (unreachable.length > 0) {
     console.info(
       `[push] ${unreachable.length} of ${rows.length} due notification(s) had no registered ` +
@@ -150,25 +263,34 @@ async function drainOnce(keys: NonNullable<ReturnType<typeof vapidKeysFromEnv>>)
     );
   }
 
-  const dead = new Set<string>();
+  const dead: Record<DeviceTable, Set<string>> = {
+    push_subscriptions: new Set(),
+    push_devices: new Set(),
+  };
   await Promise.all(
     rows.map(async (row) => {
-      const { error, gone } = await deliver(row, byUser.get(row.user_id) ?? [], keys);
-      for (const id of gone) dead.add(id);
+      const { error, gone } = await deliver(
+        row,
+        subsByUser.get(row.user_id) ?? [],
+        devicesByUser.get(row.user_id) ?? [],
+        senders,
+      );
+      for (const t of gone) dead[t.table].add(t.id);
       const marked = await db.rpc("mark_push_sent", { _id: row.id, _error: error });
       if (marked.error) console.error("[push] could not mark row", row.id, errText(marked.error));
     }),
   );
 
-  // A subscription the push service has disowned — browser reinstalled, app
+  // A device the push service has disowned — browser reinstalled, app
   // deleted, permission revoked — is never coming back. Left in place it would
   // fail on every notification forever.
-  if (dead.size > 0) {
+  for (const table of Object.keys(dead) as DeviceTable[]) {
+    if (dead[table].size === 0) continue;
     const { error } = await db
-      .from("push_subscriptions")
+      .from(table)
       .delete()
-      .in("id", [...dead]);
-    if (error) console.error("[push] could not clear dead subscriptions", errText(error));
+      .in("id", [...dead[table]]);
+    if (error) console.error(`[push] could not clear dead rows in ${table}`, errText(error));
   }
 
   return rows.length;
@@ -176,6 +298,8 @@ async function drainOnce(keys: NonNullable<ReturnType<typeof vapidKeysFromEnv>>)
 
 /** Guards against the dev server re-evaluating this module on every reload. */
 const RUNNING = Symbol.for("scheduling-pilot.push-dispatcher");
+/** Start-up is attempted twice (push-plugin.ts and server.ts); the warnings are said once. */
+const WARNED = Symbol.for("scheduling-pilot.push-dispatcher.warned");
 
 /**
  * Start the loop, if this deployment is set up for push.
@@ -187,17 +311,35 @@ const RUNNING = Symbol.for("scheduling-pilot.push-dispatcher");
 export function startPushDispatcher(): void {
   const global = globalThis as Record<symbol, unknown>;
   if (global[RUNNING]) return;
+  const warn = global[WARNED] ? () => {} : console.warn;
+  global[WARNED] = true;
 
-  const keys = vapidKeysFromEnv();
-  if (!keys) {
-    console.warn(
-      "[push] VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY are not set — notifications will only " +
-        "appear while the app is open. Run `bun run vapid:keys` to make a pair.",
+  const senders: Senders = {
+    vapid: vapidKeysFromEnv(),
+    fcm: fcmConfigFromEnv(),
+    apns: apnsConfigFromEnv(),
+  };
+  if (!senders.vapid) {
+    warn(
+      "[push] VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY are not set — the website's notifications " +
+        "will only appear while it is open. Run `bun run vapid:keys` to make a pair.",
     );
-    return;
   }
+  if (!senders.fcm) {
+    warn(
+      "[push] FCM_SERVICE_ACCOUNT is not set — the Android app will only show alerts while it " +
+        "is open. See docs/mobile/push-notifications.md.",
+    );
+  }
+  if (!senders.apns) {
+    warn(
+      "[push] APNS_KEY_ID / APNS_TEAM_ID / APNS_PRIVATE_KEY are not set — the iOS app will only " +
+        "show alerts while it is open. See docs/mobile/push-notifications.md.",
+    );
+  }
+  if (!senders.vapid && !senders.fcm && !senders.apns) return;
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.SUPABASE_URL) {
-    console.warn(
+    warn(
       "[push] SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are not set — the queue cannot be read, " +
         "so notifications will only appear while the app is open.",
     );
@@ -205,14 +347,17 @@ export function startPushDispatcher(): void {
   }
 
   global[RUNNING] = true;
-  console.log("[push] dispatcher started");
+  console.log(
+    `[push] dispatcher started (web: ${senders.vapid ? "on" : "off"}, ` +
+      `android: ${senders.fcm ? "on" : "off"}, ios: ${senders.apns ? "on" : "off"})`,
+  );
 
   let stopping = false;
   const tick = async () => {
     while (!stopping) {
       let handled = 0;
       try {
-        handled = await drainOnce(keys);
+        handled = await drainOnce(senders);
       } catch (e) {
         // A database hiccup should slow the loop down, not end it.
         console.error("[push] dispatcher pass failed:", e);

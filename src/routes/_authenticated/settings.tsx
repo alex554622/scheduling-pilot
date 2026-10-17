@@ -19,6 +19,15 @@ import {
   MonitorSmartphone,
   Languages,
 } from "lucide-react";
+import { isNativeApp } from "@/lib/native/platform";
+import {
+  hasNativePushToken,
+  nativePushPermission,
+  registerNativePush,
+  requestNativePushPermission,
+  unregisterNativePush,
+} from "@/lib/native/push";
+import { DeleteAccountCard } from "@/components/delete-account";
 import { useThemePref, type ThemePref } from "@/lib/theme";
 import { LANGUAGES, useLang, useT } from "@/lib/i18n";
 import { SCHEDULE_LAYOUTS, useScheduleLayout } from "@/lib/schedule-layout";
@@ -325,6 +334,8 @@ function SettingsPage() {
           </div>
         </div>
       </div>
+
+      <DeleteAccountCard />
     </div>
   );
 }
@@ -354,6 +365,13 @@ function NotificationSettings() {
   // Screen, so "unsupported" on an iPhone is an instruction, not a dead end.
   const [needsInstall, setNeedsInstall] = useState(false);
   useEffect(() => {
+    // The apps ask the phone, not the web view: its permission and whether
+    // this phone's token is on file (@/lib/native/push).
+    if (isNativeApp()) {
+      void nativePushPermission().then(setPermission);
+      void hasNativePushToken().then(setDeliversClosed);
+      return;
+    }
     const p = desktopPermission();
     setPermission(p);
     setNeedsInstall(
@@ -378,11 +396,19 @@ function NotificationSettings() {
       setDeliversClosed(false);
       // Taken off the server's list as well, or it would keep delivering to a
       // device whose switch says it shouldn't.
-      void unsubscribeFromPush();
+      void (isNativeApp() ? unregisterNativePush() : unsubscribeFromPush());
       return;
     }
     setSubscribing(true);
     try {
+      if (isNativeApp()) {
+        const result = await requestNativePushPermission();
+        setPermission(result);
+        const granted = result === "granted";
+        setDesktop(granted);
+        setDeliversClosed(granted ? await registerNativePush() : false);
+        return;
+      }
       const result = await requestDesktopPermission();
       setPermission(result);
       // A browser that refused is not a preference we can honour, so it is not
@@ -519,8 +545,14 @@ function NotificationSettings() {
                       "Add Scheduling Pilot to your Home Screen first — on iPhone and iPad, notifications are only offered to the installed app.",
                     )
                   : permission === "unsupported"
-                    ? t("This browser doesn't do system notifications.")
-                    : permission === "denied"
+                    ? isNativeApp()
+                      ? t("In this version of the app, alerts show inside the app while it's open.")
+                      : t("This browser doesn't do system notifications.")
+                    : permission === "denied" && isNativeApp()
+                      ? t(
+                          "Notifications are turned off for this app — allow them in your phone's Settings first.",
+                        )
+                      : permission === "denied"
                       ? t(
                           "This browser is blocking notifications — allow them in its site settings first.",
                         )
@@ -539,7 +571,7 @@ function NotificationSettings() {
                     ? t(
                         "These reach you with the app closed — your break reminder will arrive whether or not it's open.",
                       )
-                    : !pushConfigured()
+                    : !isNativeApp() && !pushConfigured()
                       ? t(
                           "This device will only be told while the app is open: delivery to closed apps isn't set up on this server yet.",
                         )

@@ -1,5 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { z } from "zod";
+import { isNativeApp } from "@/lib/native/platform";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -708,15 +709,19 @@ function TimecardsPage() {
             {/* Both produce the same document — see PrintableTimecard. Print goes
               through the browser dialog (where Save as PDF lives); Download
               saves the same page as a self-contained file. */}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => window.print()}
-              title={t("Send to a printer, or choose “Save as PDF”")}
-            >
-              <Printer className="mr-2 h-4 w-4" />
-              {t("Print")}
-            </Button>
+            {/* The apps' web view cannot print; their Download PDF opens the share
+              sheet, which has Print in it. */}
+            {!isNativeApp() && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => window.print()}
+                title={t("Send to a printer, or choose “Save as PDF”")}
+              >
+                <Printer className="mr-2 h-4 w-4" />
+                {t("Print")}
+              </Button>
+            )}
             {isManager && (
               <Button
                 variant="outline"

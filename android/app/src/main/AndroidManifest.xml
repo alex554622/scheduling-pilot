@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      allowBackup="false": the signed-in session is kept in the app's own storage
+      (src/lib/native/auth-storage.ts) and must not be copied into a cloud backup
+      or onto another phone. Signing in again on a new phone is the intended path.
+      usesCleartextTraffic="false": every request (Supabase, the website) is HTTPS.
+    -->
+    <application
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:usesCleartextTraffic="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme">
+
+        <activity
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
+            android:name=".MainActivity"
+            android:label="@string/title_activity_main"
+            android:theme="@style/AppTheme.NoActionBarLaunch"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize"
+            android:exported="true">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!--
+              Android App Links: these schedulingpilot.com links open in the app
+              when it is installed (src/lib/native/bootstrap.ts handles them).
+              Only the app's own pages — the marketing site stays in the browser.
+              Verification needs https://schedulingpilot.com/.well-known/assetlinks.json
+              with the signing-key fingerprints; until that file is live these
+              links simply keep opening in the browser. See docs/mobile/deep-links.md.
+            -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:host="schedulingpilot.com" />
+                <data android:pathPrefix="/reset-password" />
+                <data android:pathPrefix="/join" />
+                <data android:pathPrefix="/dashboard" />
+                <data android:pathPrefix="/clock/" />
+            </intent-filter>
+
+        </activity>
+
+        <!--
+          Push notifications (src/lib/native/push.ts). How a notification looks
+          when Firebase draws it with the app in the background: a one-colour
+          bell (a full-colour icon shows as a white square), tinted blue, on the
+          "alerts" channel unless the server names another.
+        -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_notify" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/notification_accent" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="alerts" />
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths"></meta-data>
+        </provider>
+    </application>
+
+    <!-- Permissions. Each one is used by an existing feature; nothing else is requested. -->
+
+    <!-- Talking to Supabase and the website. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!--
+      The Time clock screen reads location while it is open, to check the
+      geofence and to record where each punch happened (timeclock.tsx); admins
+      use it to place a worksite on the map (worksite.tsx, organization.tsx).
+      Asked the first time one of those screens opens, never at launch, and
+      only while the app is in use — there is no background location.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-feature android:name="android.hardware.location" android:required="false" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+
+    <!--
+      Android 13+ asks before an app may show notifications. Asked from the
+      "Turn on notifications" card or the switch in Settings, never at launch.
+      Older Android versions grant it at install.
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+</manifest>

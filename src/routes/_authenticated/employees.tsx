@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { useT, translate, useLocaleTag } from "@/lib/i18n";
 import { Users, ShieldCheck, Search, Copy, Check, Loader2, UserCog, Trash2, Pencil, Mail, Send, X, Link2, RefreshCw, CalendarClock, Inbox, History, RotateCcw } from "lucide-react";
+import { shareableOrigin } from "@/lib/native/platform";
 
 export const Route = createFileRoute("/_authenticated/employees")({
   component: EmployeesPage,
@@ -766,7 +767,7 @@ function PendingInvitesCard({
   if (invites.length === 0) return null;
 
   const joinUrl = (token: string) =>
-    `${window.location.origin}/join?token=${token}`;
+    `${shareableOrigin()}/join?token=${token}`;
 
   const copy = async (token: string, id: string) => {
     await navigator.clipboard.writeText(joinUrl(token));
@@ -939,7 +940,7 @@ function InviteDialog({
     }
   }
 
-  const joinUrl = created ? `${window.location.origin}/join?token=${created.token}` : "";
+  const joinUrl = created ? `${shareableOrigin()}/join?token=${created.token}` : "";
   const subject = created ? encodeURIComponent(t("You're invited to join {companyName}", { companyName })) : "";
   const body = created
     ? encodeURIComponent(

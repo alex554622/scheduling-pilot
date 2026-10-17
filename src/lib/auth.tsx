@@ -12,6 +12,7 @@ import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { captureAuthLinkError, takeAuthLinkError } from "@/lib/auth-link-error";
 import { keepStorageOnDevice } from "@/lib/installed-app";
+import { releaseNativePush } from "@/lib/native/push";
 import { translate } from "@/lib/i18n";
 import { clearSignupIntent, readSignupIntent, saveSignupIntentError } from "@/lib/signup-intent";
 
@@ -238,6 +239,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // "local" ends only this device's session. The default, "global", revokes
     // every refresh token the user has, so signing out on a laptop also threw
     // them out of the app on their phone.
+    // This phone stops receiving the account's notifications. First, while the
+    // session still exists: row-level security needs it to delete the row.
+    await releaseNativePush();
     await supabase.auth.signOut({ scope: "local" });
     setSession(null);
     setUser(null);

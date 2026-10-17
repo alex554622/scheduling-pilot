@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useLocaleTag, useT } from "@/lib/i18n";
+import { shareableOrigin } from "@/lib/native/platform";
 
 /**
  * Set-up screen for the shared clock-in device: the link a tablet is opened
@@ -135,7 +136,7 @@ function SharedClockInAdminPage() {
     );
   }
 
-  const origin = typeof window === "undefined" ? "" : window.location.origin;
+  const origin = typeof window === "undefined" ? "" : shareableOrigin();
 
   return (
     <div className="space-y-6">
