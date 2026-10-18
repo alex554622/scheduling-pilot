@@ -48,6 +48,11 @@ export function MarketingFooter() {
                   Pricing plans
                 </a>
               </li>
+              <li>
+                <Link to="/download" className="text-muted-foreground hover:text-primary">
+                  Download the app
+                </Link>
+              </li>
             </ul>
           </div>
 

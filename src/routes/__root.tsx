@@ -138,7 +138,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 // here too, before the first paint, so the safe-area padding is in place on the
 // very first frame. Capacitor's bridge defines window.Capacitor before any page
 // script runs.
-const THEME_BOOT = `(function(){try{var c=window.Capacitor;if(c&&c.isNativePlatform&&c.isNativePlatform())document.documentElement.classList.add("native-app")}catch(e){}try{var p=localStorage.getItem("sp-theme")||"light";var d=p==="dark"||(p==="system"&&window.matchMedia("(prefers-color-scheme: dark)").matches);var path=location.pathname;var light=["/","/about","/login","/join","/forgot-password","/reset-password","/delete-account","/employee-scheduling","/shift-trading","/time-clock","/time-off-management","/workforce-management"];if(d&&light.indexOf(path)<0&&path.indexOf("/clock/")!==0)document.documentElement.classList.add("dark")}catch(e){}})();`;
+const THEME_BOOT = `(function(){try{var c=window.Capacitor;if(c&&c.isNativePlatform&&c.isNativePlatform())document.documentElement.classList.add("native-app")}catch(e){}try{var p=localStorage.getItem("sp-theme")||"light";var d=p==="dark"||(p==="system"&&window.matchMedia("(prefers-color-scheme: dark)").matches);var path=location.pathname;var light=["/","/about","/login","/join","/forgot-password","/reset-password","/delete-account","/download","/employee-scheduling","/shift-trading","/time-clock","/time-off-management","/workforce-management"];if(d&&light.indexOf(path)<0&&path.indexOf("/clock/")!==0)document.documentElement.classList.add("dark")}catch(e){}})();`;
 
 function RootShell({ children }: { children: React.ReactNode }) {
   return (

@@ -75,6 +75,12 @@ identity check.
 
 ## 5. Create the upload key (one time, keep it safe)
 
+> **If you set up the APK download ([android-apk.md](android-apk.md)) you already
+> have a key**: use that same `scheduling-pilot-release.keystore` here (alias
+> `schedulingpilot`) instead of creating a new one, and give it to Play as your
+> own app signing key. One key keeps the website APK and the Play app
+> interchangeable.
+
 Google Play signs the app people download with its own key (Play App
 Signing). You sign each upload with your **upload key**. If the upload key is
 lost, Google can reset it, but that takes time, so back it up.

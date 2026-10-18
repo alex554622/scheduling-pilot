@@ -1,0 +1,142 @@
+# Builds the Android app on GitHub's servers: a signed APK for the
+# schedulingpilot.com/download page and a signed .aab for Google Play.
+#
+# Run it from GitHub → Actions → "Android release" → Run workflow. Nothing is
+# published anywhere: the files appear as a downloadable artifact of the run.
+# Setup (secrets, signing key) and what to do with the files:
+# docs/mobile/android-apk.md
+name: Android release
+
+on:
+  workflow_dispatch:
+    inputs:
+      versionName:
+        description: "Version people see, e.g. 1.0.0"
+        required: true
+        default: "1.0.0"
+      versionCode:
+        description: "Whole number, higher than every earlier build (Play and phones refuse a lower one)"
+        required: true
+        default: "1"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      VERSION_NAME: ${{ inputs.versionName }}
+      VERSION_CODE: ${{ inputs.versionCode }}
+    steps:
+      - name: Check the required secrets are set
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          missing=0
+          for name in VITE_SUPABASE_URL VITE_SUPABASE_PUBLISHABLE_KEY ANDROID_KEYSTORE_BASE64 \
+                      ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then echo "::error::Secret $name is not set (docs/mobile/android-apk.md)"; missing=1; fi
+          done
+          [[ "$VERSION_CODE" =~ ^[0-9]+$ ]] || { echo "::error::versionCode must be a whole number"; missing=1; }
+          exit $missing
+
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.0"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Only public values: the URL and the publishable key are compiled into
+      # every copy of the app by design. No server-only key is used here.
+      - name: Build the app's web files
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          printf 'VITE_SUPABASE_URL=%s\nVITE_SUPABASE_PUBLISHABLE_KEY=%s\n' \
+            "$VITE_SUPABASE_URL" "$VITE_SUPABASE_PUBLISHABLE_KEY" > .env
+          bun run build:mobile
+          bun x cap sync android
+          rm .env
+
+      # Optional: Firebase config for lock-screen push (docs/mobile/push-notifications.md).
+      # Without it the app builds and runs; push simply stays off on Android.
+      - name: Add Firebase config, if provided
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
+            echo "google-services.json added"
+          else
+            echo "No GOOGLE_SERVICES_JSON secret: building without Android push"
+          fi
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Restore the signing key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          {
+            echo "storeFile=$RUNNER_TEMP/release.keystore"
+            echo "storePassword=$ANDROID_KEYSTORE_PASSWORD"
+            echo "keyAlias=$ANDROID_KEY_ALIAS"
+            echo "keyPassword=$ANDROID_KEY_PASSWORD"
+          } > android/keystore.properties
+
+      - name: Build the signed APK and app bundle
+        working-directory: android
+        run: |
+          bash ./gradlew --no-daemon assembleRelease bundleRelease \
+            -PversionCode="$VERSION_CODE" -PversionName="$VERSION_NAME"
+
+      - name: Check the signature and describe the release
+        run: |
+          mkdir -p out
+          cp android/app/build/outputs/apk/release/app-release.apk out/scheduling-pilot.apk
+          cp android/app/build/outputs/bundle/release/app-release.aab "out/scheduling-pilot-$VERSION_NAME.aab"
+          apksigner="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner"
+          "$apksigner" verify --print-certs out/scheduling-pilot.apk | tee out/signing-certificate.txt
+          sha=$(sha256sum out/scheduling-pilot.apk | cut -d' ' -f1)
+          size=$(stat -c %s out/scheduling-pilot.apk)
+          cat > out/latest.json <<EOF
+          {
+            "versionName": "$VERSION_NAME",
+            "versionCode": $VERSION_CODE,
+            "sha256": "$sha",
+            "sizeBytes": $size,
+            "builtAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "commit": "$GITHUB_SHA"
+          }
+          EOF
+          cat out/latest.json
+
+      - name: Remove the signing key from the runner
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.keystore" android/keystore.properties android/app/google-services.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scheduling-pilot-android-${{ inputs.versionName }}
+          path: out/
+          retention-days: 30
+          if-no-files-found: error

@@ -20,8 +20,10 @@ android {
         // versionCode must go up by one for every upload to Google Play;
         // versionName is what people see. Keep versionName in step with the iOS
         // MARKETING_VERSION (docs/mobile/README.md, "Releasing an update").
-        versionCode 1
-        versionName "1.0.0"
+        // The APK workflow (.github/workflows/android-release.yml) passes both
+        // with -PversionCode / -PversionName; a local build uses these defaults.
+        versionCode((project.findProperty('versionCode') ?: '1') as Integer)
+        versionName((project.findProperty('versionName') ?: '1.0.0') as String)
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

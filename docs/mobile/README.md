@@ -7,6 +7,7 @@ The Android and iOS apps are this same web app, wrapped with
 | Guide | What it covers |
 | --- | --- |
 | [android.md](android.md) | Installing Android Studio on Windows, running on a phone, the upload key, a signed `.aab`, Google Play |
+| [android-apk.md](android-apk.md) | **The APK download** on schedulingpilot.com/download: the signing key, the GitHub Actions build, publishing a release, and iPhone options without the App Store |
 | [ios.md](ios.md) | What needs a Mac, Xcode signing, TestFlight, App Store Connect |
 | [store-compliance.md](store-compliance.md) | Privacy answers, account deletion, reviewer access, listings, screenshots, the pre-submission checklist |
 | [push-notifications.md](push-notifications.md) | Lock-screen notifications: Firebase (Android), the Apple Push key (iOS), server variables, testing |
