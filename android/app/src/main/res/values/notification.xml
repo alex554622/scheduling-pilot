@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Tint of the notification icon; the app's primary blue (styles.css, --primary). -->
+    <!-- Tint of the notification icon; the app's primary blue (the primary colour in styles.css). -->
     <color name="notification_accent">#2563C9</color>
 </resources>
