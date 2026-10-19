@@ -26,7 +26,11 @@ import { isNativeApp, nativePlatform } from "./platform";
  *
  * The plugin is imported on first use so the website never downloads it.
  */
-const plugin = () => import("@capacitor/push-notifications").then((m) => m.PushNotifications);
+// These resolve to the module, never to the plugin object itself: a Capacitor
+// plugin is a proxy that answers every property, so a promise resolving to one
+// is taken for a thenable and its `then` is called as a native method, which
+// rejects ("Preferences.then() is not implemented on android").
+const plugin = () => import("@capacitor/push-notifications");
 
 /**
  * Android only: does this build have a Firebase config (google-services.json)?
@@ -38,7 +42,7 @@ const PushSetup = registerPlugin<{ isConfigured(): Promise<{ configured: boolean
 
 /** Where the current token is kept, so sign-out can remove it after a restart. */
 const TOKEN_KEY = "native-push-token";
-const preferences = () => import("@capacitor/preferences").then((m) => m.Preferences);
+const preferences = () => import("@capacitor/preferences");
 
 type Permission = NotificationPermission | "unsupported";
 
@@ -63,7 +67,7 @@ export function nativePushAvailable(): Promise<boolean> {
 export async function nativePushPermission(): Promise<Permission> {
   if (!(await nativePushAvailable())) return "unsupported";
   try {
-    const { receive } = await (await plugin()).checkPermissions();
+    const { receive } = await (await plugin()).PushNotifications.checkPermissions();
     return receive === "granted" ? "granted" : receive === "denied" ? "denied" : "default";
   } catch {
     return "unsupported";
@@ -74,7 +78,7 @@ export async function nativePushPermission(): Promise<Permission> {
 export async function requestNativePushPermission(): Promise<Permission> {
   if (!(await nativePushAvailable())) return "unsupported";
   try {
-    const { receive } = await (await plugin()).requestPermissions();
+    const { receive } = await (await plugin()).PushNotifications.requestPermissions();
     return receive === "granted" ? "granted" : receive === "denied" ? "denied" : "default";
   } catch {
     return "denied";
@@ -89,7 +93,7 @@ export async function requestNativePushPermission(): Promise<Permission> {
  */
 async function ensureChannels() {
   if (nativePlatform() !== "android") return;
-  const push = await plugin();
+  const push = (await plugin()).PushNotifications;
   await push
     .createChannel({
       id: "alerts",
@@ -116,7 +120,7 @@ let pendingToken: Promise<string | null> | null = null;
 /** Register with FCM/APNs and wait for the token the OS hands back. */
 function obtainToken(): Promise<string | null> {
   pendingToken ??= (async () => {
-    const push = await plugin();
+    const push = (await plugin()).PushNotifications;
     return await new Promise<string | null>((resolve) => {
       let done = false;
       const handles: { remove: () => Promise<void> }[] = [];
@@ -173,7 +177,7 @@ export async function registerNativePush(): Promise<boolean> {
       _app_version: version,
     });
     if (error) return false;
-    await (await preferences()).set({ key: TOKEN_KEY, value: token });
+    await (await preferences()).Preferences.set({ key: TOKEN_KEY, value: token });
     return true;
   } catch {
     return false;
@@ -184,7 +188,7 @@ export async function registerNativePush(): Promise<boolean> {
 export async function hasNativePushToken(): Promise<boolean> {
   if (!isNativeApp()) return false;
   try {
-    return !!(await (await preferences()).get({ key: TOKEN_KEY })).value;
+    return !!(await (await preferences()).Preferences.get({ key: TOKEN_KEY })).value;
   } catch {
     return false;
   }
@@ -199,7 +203,7 @@ export async function hasNativePushToken(): Promise<boolean> {
 export async function releaseNativePush(): Promise<void> {
   if (!isNativeApp()) return;
   try {
-    const prefs = await preferences();
+    const prefs = (await preferences()).Preferences;
     const { value } = await prefs.get({ key: TOKEN_KEY });
     if (!value) return;
     await (
@@ -220,7 +224,7 @@ export async function unregisterNativePush(): Promise<void> {
   await releaseNativePush();
   if (!(await nativePushAvailable())) return;
   try {
-    await (await plugin()).unregister();
+    await (await plugin()).PushNotifications.unregister();
   } catch {
     /* nothing registered */
   }
@@ -233,7 +237,7 @@ export async function unregisterNativePush(): Promise<void> {
  */
 export async function wireNativePushTaps(router: AnyRouter): Promise<void> {
   if (!(await nativePushAvailable())) return;
-  const push = await plugin();
+  const push = (await plugin()).PushNotifications;
   await push.addListener("pushNotificationActionPerformed", ({ notification }) => {
     const data = (notification.data ?? {}) as Record<string, unknown>;
     const link = typeof data.link === "string" ? data.link : "/dashboard";

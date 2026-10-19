@@ -137,8 +137,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 // The `native-app` class (Android/iOS apps, see lib/native/platform.ts) is set
 // here too, before the first paint, so the safe-area padding is in place on the
 // very first frame. Capacitor's bridge defines window.Capacitor before any page
-// script runs.
-const THEME_BOOT = `(function(){try{var c=window.Capacitor;if(c&&c.isNativePlatform&&c.isNativePlatform())document.documentElement.classList.add("native-app")}catch(e){}try{var p=localStorage.getItem("sp-theme")||"light";var d=p==="dark"||(p==="system"&&window.matchMedia("(prefers-color-scheme: dark)").matches);var path=location.pathname;var light=["/","/about","/login","/join","/forgot-password","/reset-password","/delete-account","/download","/employee-scheduling","/shift-trading","/time-clock","/time-off-management","/workforce-management"];if(d&&light.indexOf(path)<0&&path.indexOf("/clock/")!==0)document.documentElement.classList.add("dark")}catch(e){}})();`;
+// script runs. The apps always launch at "/", so they are also moved to
+// /dashboard here, before the router starts: redirecting from "/" once React is
+// hydrating the prerendered shell makes it throw a hydration mismatch (#418).
+const THEME_BOOT = `(function(){try{var c=window.Capacitor;if(c&&c.isNativePlatform&&c.isNativePlatform()){document.documentElement.classList.add("native-app");if(location.pathname==="/")history.replaceState(history.state,"","/dashboard")}}catch(e){}try{var p=localStorage.getItem("sp-theme")||"light";var d=p==="dark"||(p==="system"&&window.matchMedia("(prefers-color-scheme: dark)").matches);var path=location.pathname;var light=["/","/about","/login","/join","/forgot-password","/reset-password","/delete-account","/download","/employee-scheduling","/shift-trading","/time-clock","/time-off-management","/workforce-management"];if(d&&light.indexOf(path)<0&&path.indexOf("/clock/")!==0)document.documentElement.classList.add("dark")}catch(e){}})();`;
 
 function RootShell({ children }: { children: React.ReactNode }) {
   return (
