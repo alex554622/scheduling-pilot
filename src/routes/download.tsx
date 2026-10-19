@@ -22,7 +22,7 @@ export const Route = createFileRoute("/download")({
  * latest.json that run produced (docs/mobile/android-apk.md). Nothing about the
  * release is written into this page, so publishing a new APK needs no redeploy.
  */
-const ANDROID_DIR = `${import.meta.env.VITE_SUPABASE_URL as string}/storage/v1/object/public/downloads/android`;
+const ANDROID_DIR = `${import.meta.env.VITE_SUPABASE_URL as string}/storage/v1/object/public/downloads`;
 
 interface Release {
   versionName: string;

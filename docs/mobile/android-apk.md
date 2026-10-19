@@ -7,7 +7,7 @@ with the same key, so the two stay compatible.
 ```
 GitHub → Actions → "Android release" → Run      (builds on GitHub's servers)
         ↓  download the artifact (zip)
-Supabase Studio → Storage → downloads/android/   (upload 2 files)
+Supabase Studio → Storage → downloads           (upload 2 files)
         ↓
 schedulingpilot.com/download shows the new version (no redeploy needed)
 ```
@@ -69,7 +69,7 @@ Supabase Studio → **Storage → New bucket**:
 - **Public bucket: on** (anyone with the link can download; nothing else is in it)
 - Leave the file size limit at its default unless it's below 100 MB
 
-Then open the bucket and create a folder called `android`.
+The two files go straight into the bucket, not into a folder.
 
 ## Each release
 
@@ -86,7 +86,7 @@ Then open the bucket and create a folder called `android`.
    - `latest.json`: version, size and checksum, which the download page reads
    - `scheduling-pilot-<version>.aab`: for Google Play (not needed for the website)
    - `signing-certificate.txt`: the key's fingerprint, needed for App Links
-4. Studio → Storage → `downloads/android/`: upload `scheduling-pilot.apk`
+4. Studio → Storage → `downloads` (top level, no folder): upload `scheduling-pilot.apk`
    and `latest.json`. On later releases, delete the old two files first (or
    use replace), so the names stay the same.
 5. Open https://schedulingpilot.com/download and check the new version
