@@ -9,15 +9,18 @@ name: Android release
 
 on:
   workflow_dispatch:
+    # Both may be left empty: each run then numbers itself from the run number
+    # (versionCode N, versionName 1.0.N), which only ever goes up — what
+    # phones and Play require of an update.
     inputs:
       versionName:
-        description: "Version people see, e.g. 1.0.0"
-        required: true
-        default: "1.0.0"
+        description: "Version people see (empty = 1.0.<run number>)"
+        required: false
+        default: ""
       versionCode:
-        description: "Whole number, higher than every earlier build (Play and phones refuse a lower one)"
-        required: true
-        default: "1"
+        description: "Whole number, higher than every earlier build (empty = the run number)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -27,8 +30,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      VERSION_NAME: ${{ inputs.versionName }}
-      VERSION_CODE: ${{ inputs.versionCode }}
+      VERSION_NAME: ${{ inputs.versionName || format('1.0.{0}', github.run_number) }}
+      VERSION_CODE: ${{ inputs.versionCode || github.run_number }}
     steps:
       - name: Check the required secrets are set
         env:
@@ -136,7 +139,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: scheduling-pilot-android-${{ inputs.versionName }}
+          name: scheduling-pilot-android-${{ env.VERSION_NAME }}
           path: out/
           retention-days: 30
           if-no-files-found: error

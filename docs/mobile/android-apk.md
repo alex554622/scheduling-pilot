@@ -73,7 +73,7 @@ The two files go straight into the bucket, not into a folder.
 
 ## Each release
 
-1. **Pick the version.** `versionName` is what people see (`1.0.0`, `1.0.1`, …).
+1. **Pick the version, or leave both boxes empty.** Empty means automatic: build number N becomes version `1.0.N` with versionCode N, always higher than the last. `versionName` is what people see (`1.0.0`, `1.0.1`, …).
    `versionCode` is a whole number that must be **higher than every earlier
    build**, counting builds uploaded to Google Play too. Phones refuse to
    install a lower number over a higher one.
