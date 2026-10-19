@@ -39,6 +39,7 @@ export const LIGHT_ONLY_PATHS = [
   "/reset-password",
   "/delete-account",
   "/download",
+  "/privacy",
   "/employee-scheduling",
   "/shift-trading",
   "/time-clock",

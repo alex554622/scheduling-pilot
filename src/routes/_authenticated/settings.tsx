@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -28,6 +28,7 @@ import {
   unregisterNativePush,
 } from "@/lib/native/push";
 import { DeleteAccountCard } from "@/components/delete-account";
+import { SUPPORT_EMAIL } from "@/lib/contact";
 import { useThemePref, type ThemePref } from "@/lib/theme";
 import { LANGUAGES, useLang, useT } from "@/lib/i18n";
 import { SCHEDULE_LAYOUTS, useScheduleLayout } from "@/lib/schedule-layout";
@@ -336,6 +337,14 @@ function SettingsPage() {
       </div>
 
       <DeleteAccountCard />
+
+      <p className="text-center text-xs text-muted-foreground">
+        <Link to="/privacy" className="underline hover:text-foreground">
+          {t("Privacy policy")}
+        </Link>
+        {" · "}
+        {t("Questions? Email {email}", { email: SUPPORT_EMAIL })}
+      </p>
     </div>
   );
 }

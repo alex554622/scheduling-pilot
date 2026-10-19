@@ -65,5 +65,6 @@ card and page to appear (Coolify Redeploy for the website).
 
 ## Before you publish
 
-- Confirm **support@schedulingpilot.com** is a mailbox someone reads. The
-  page and the error message promise people can email it.
+- Check **valladolidnovatech@gmail.com** regularly (set in `src/lib/contact.ts`).
+  The deletion page, the error message and the privacy policy promise people
+  can email it, and California requests need an answer within 45 days.

@@ -15,9 +15,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { SUPPORT_EMAIL } from "@/lib/contact";
 
 /** Where someone who can't sign in asks for their account to be deleted. */
-export const SUPPORT_EMAIL = "support@schedulingpilot.com";
+export { SUPPORT_EMAIL };
 
 /** The word typed to confirm. Kept in English in both languages, like a code. */
 const CONFIRM_WORD = "DELETE";

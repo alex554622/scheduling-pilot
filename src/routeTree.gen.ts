@@ -14,6 +14,7 @@ import { Route as TimeOffManagementRouteImport } from './routes/time-off-managem
 import { Route as TimeClockRouteImport } from './routes/time-clock'
 import { Route as ShiftTradingRouteImport } from './routes/shift-trading'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as JoinRouteImport } from './routes/join'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
@@ -73,6 +74,11 @@ const ShiftTradingRoute = ShiftTradingRouteImport.update({
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
   path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -266,6 +272,7 @@ export interface FileRoutesByFullPath {
   '/forgot-password': typeof ForgotPasswordRoute
   '/join': typeof JoinRoute
   '/login': typeof LoginRoute
+  '/privacy': typeof PrivacyRoute
   '/reset-password': typeof ResetPasswordRoute
   '/shift-trading': typeof ShiftTradingRoute
   '/time-clock': typeof TimeClockRoute
@@ -307,6 +314,7 @@ export interface FileRoutesByTo {
   '/forgot-password': typeof ForgotPasswordRoute
   '/join': typeof JoinRoute
   '/login': typeof LoginRoute
+  '/privacy': typeof PrivacyRoute
   '/reset-password': typeof ResetPasswordRoute
   '/shift-trading': typeof ShiftTradingRoute
   '/time-clock': typeof TimeClockRoute
@@ -350,6 +358,7 @@ export interface FileRoutesById {
   '/forgot-password': typeof ForgotPasswordRoute
   '/join': typeof JoinRoute
   '/login': typeof LoginRoute
+  '/privacy': typeof PrivacyRoute
   '/reset-password': typeof ResetPasswordRoute
   '/shift-trading': typeof ShiftTradingRoute
   '/time-clock': typeof TimeClockRoute
@@ -393,6 +402,7 @@ export interface FileRouteTypes {
     | '/forgot-password'
     | '/join'
     | '/login'
+    | '/privacy'
     | '/reset-password'
     | '/shift-trading'
     | '/time-clock'
@@ -434,6 +444,7 @@ export interface FileRouteTypes {
     | '/forgot-password'
     | '/join'
     | '/login'
+    | '/privacy'
     | '/reset-password'
     | '/shift-trading'
     | '/time-clock'
@@ -476,6 +487,7 @@ export interface FileRouteTypes {
     | '/forgot-password'
     | '/join'
     | '/login'
+    | '/privacy'
     | '/reset-password'
     | '/shift-trading'
     | '/time-clock'
@@ -519,6 +531,7 @@ export interface RootRouteChildren {
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   JoinRoute: typeof JoinRoute
   LoginRoute: typeof LoginRoute
+  PrivacyRoute: typeof PrivacyRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   ShiftTradingRoute: typeof ShiftTradingRoute
   TimeClockRoute: typeof TimeClockRoute
@@ -562,6 +575,13 @@ declare module '@tanstack/react-router' {
       path: '/reset-password'
       fullPath: '/reset-password'
       preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -895,6 +915,7 @@ const rootRouteChildren: RootRouteChildren = {
   ForgotPasswordRoute: ForgotPasswordRoute,
   JoinRoute: JoinRoute,
   LoginRoute: LoginRoute,
+  PrivacyRoute: PrivacyRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   ShiftTradingRoute: ShiftTradingRoute,
   TimeClockRoute: TimeClockRoute,

@@ -25,7 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { noindexSeo } from "@/lib/seo";
 import { useT } from "@/lib/i18n";
-import { shareableOrigin } from "@/lib/native/platform";
+import { isNativeApp, shareableOrigin } from "@/lib/native/platform";
 
 type Mode = "signin" | "signup";
 type SignupKind = "create" | "join" | "solo";
@@ -468,9 +468,15 @@ function LoginPage() {
             <ShieldCheck className="h-3.5 w-3.5" />
             {t("Secure access for authorized users only.")}
           </p>
-          <p className="mt-3 text-center">
-            <Link to="/" className="text-xs text-muted-foreground hover:text-foreground">
-              {t("← Back to home")}
+          <p className="mt-3 flex justify-center gap-4 text-xs text-muted-foreground">
+            {/* The apps open on sign-in; "home" there would only lead back here. */}
+            {!isNativeApp() && (
+              <Link to="/" className="hover:text-foreground">
+                {t("← Back to home")}
+              </Link>
+            )}
+            <Link to="/privacy" className="hover:text-foreground">
+              {t("Privacy policy")}
             </Link>
           </p>
       </div>

@@ -361,4 +361,6 @@ export const shell: Record<string, string> = {
   "Can't sign in? Email {email} from the address on your account and we'll delete it for you.":
     "¿No puedes iniciar sesión? Escribe a {email} desde la dirección de tu cuenta y la eliminaremos por ti.",
   "Sign in to delete your account": "Inicia sesión para eliminar tu cuenta",
+  "Privacy policy": "Política de privacidad",
+  "Questions? Email {email}": "¿Preguntas? Escribe a {email}",
 };

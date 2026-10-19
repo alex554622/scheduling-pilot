@@ -53,6 +53,16 @@ export function MarketingFooter() {
                   Download the app
                 </Link>
               </li>
+              <li>
+                <Link to="/privacy" className="text-muted-foreground hover:text-primary">
+                  Privacy policy
+                </Link>
+              </li>
+              <li>
+                <Link to="/delete-account" className="text-muted-foreground hover:text-primary">
+                  Delete your account
+                </Link>
+              </li>
             </ul>
           </div>
 

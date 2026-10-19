@@ -10,10 +10,10 @@ document.
 
 | # | Item | Status |
 | --- | --- | --- |
-| 1 | **In-app account deletion** (Apple 5.1.1(v), Google Play User Data) | Built (Settings → Delete account). **The database function must be applied**, see [account-deletion.md](account-deletion.md) |
-| 2 | **Privacy policy URL** on schedulingpilot.com | None exists. Facts for it are in section 4 below |
-| 3 | **Support URL / contact** | Needs a page or at least a published support email (for example support@schedulingpilot.com) |
-| 4 | **Google Play deletion web page** | Built: https://schedulingpilot.com/delete-account (live after the next website Redeploy) |
+| 1 | **In-app account deletion** (Apple 5.1.1(v), Google Play User Data) | Done: Settings → Delete account; database function applied and verified, see [account-deletion.md](account-deletion.md) |
+| 2 | **Privacy policy URL** on schedulingpilot.com | Done: https://schedulingpilot.com/privacy |
+| 3 | **Support URL / contact** | Done: valladolidnovatech@gmail.com, shown in the privacy policy, Settings and the deletion page |
+| 4 | **Google Play deletion web page** | Done: https://schedulingpilot.com/delete-account (live) |
 | 5 | **Reviewer demo account** | Create one (section 6) |
 | 6 | **Developer accounts** | Apple Developer Program (US $99/yr), Google Play Console (US $25 once) |
 
