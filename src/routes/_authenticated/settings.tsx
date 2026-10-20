@@ -1,6 +1,8 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { z } from "zod";
 import { AppRulesPanel } from "@/components/app-rules-panel";
+import { OrganizationPanel } from "@/components/organization-panel";
+import { useCapabilities } from "@/lib/capabilities";
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -52,9 +54,9 @@ import {
   unsubscribeFromPush,
 } from "@/lib/push-subscription";
 
-/** `?tab=rules` opens App rules, which admins reach from here. */
+/** `?tab=organization` or `?tab=rules` opens one of the admin tabs. */
 const searchSchema = z.object({
-  tab: z.enum(["account", "rules"]).optional(),
+  tab: z.enum(["account", "organization", "rules"]).optional(),
 });
 
 export const Route = createFileRoute("/_authenticated/settings")({
@@ -63,9 +65,9 @@ export const Route = createFileRoute("/_authenticated/settings")({
 });
 
 /**
- * Settings, with App rules as a second tab for admins. App rules is its own
- * component, unchanged from when it was a page of its own; this only decides
- * which of the two is on screen.
+ * Settings, with Organization and App rules as further tabs for admins. Each is
+ * its own component, unchanged from when it was a page of its own; this only
+ * decides which one is on screen.
  */
 function SettingsPage() {
   const { primaryRole, loading } = useAuth();
@@ -73,7 +75,10 @@ function SettingsPage() {
   const { tab } = Route.useSearch();
   const navigate = useNavigate();
   const isAdmin = primaryRole === "company_admin" || primaryRole === "super_admin";
-  const showRules = isAdmin && tab === "rules";
+  // Organization is a plan feature, as it was when it had its own menu item.
+  const { capabilities } = useCapabilities();
+  const hasOrg = capabilities.org_structure;
+  const current = !isAdmin || !tab || (tab === "organization" && !hasOrg) ? "account" : tab;
 
   if (loading) return <div className="text-sm text-muted-foreground">{t("Loading…")}</div>;
 
@@ -84,10 +89,13 @@ function SettingsPage() {
           {(
             [
               ["account", t("My account")],
+              ["organization", t("Organization")],
               ["rules", t("App rules")],
             ] as const
-          ).map(([key, label]) => {
-            const active = key === "rules" ? showRules : !showRules;
+          )
+            .filter(([key]) => key !== "organization" || hasOrg)
+            .map(([key, label]) => {
+            const active = key === current;
             return (
               <button
                 key={key}
@@ -97,7 +105,7 @@ function SettingsPage() {
                 onClick={() =>
                   void navigate({
                     to: "/settings",
-                    search: key === "rules" ? { tab: "rules" } : {},
+                    search: key === "account" ? {} : { tab: key },
                     replace: true,
                   })
                 }
@@ -108,7 +116,13 @@ function SettingsPage() {
           })}
         </div>
       )}
-      {showRules ? <AppRulesPanel /> : <AccountSettings />}
+      {current === "rules" ? (
+        <AppRulesPanel />
+      ) : current === "organization" ? (
+        <OrganizationPanel />
+      ) : (
+        <AccountSettings />
+      )}
     </div>
   );
 }

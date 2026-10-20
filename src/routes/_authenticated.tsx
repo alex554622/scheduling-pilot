@@ -19,7 +19,6 @@ import {
   FileClock,
   UserCheck,
   UserCog,
-  Network,
   CalendarCheck,
   ScrollText,
   CreditCard,
@@ -91,13 +90,6 @@ const NAV: NavItem[] = [
     needs: "schedule_design",
   },
   { to: "/employees", label: "Employees", icon: Users, roles: ["company_admin"] },
-  {
-    to: "/organization",
-    label: "Organization",
-    icon: Network,
-    roles: ["company_admin"],
-    needs: "org_structure",
-  },
   {
     to: "/availability",
     label: "Availability",

@@ -124,14 +124,14 @@ export const people: Record<string, string> = {
   "Job title": "Puesto de trabajo",
   "e.g. Barista, Shift Lead": "p. ej. Barista, Líder de turno",
   "— no team —": "— sin equipo —",
-  "No teams yet — add them on Organization → Departments.":
-    "Aún no hay equipos — agrégalos en Organización → Departamentos.",
+  "No teams yet — add them on Settings → Organization → Departments.":
+    "Aún no hay equipos — agrégalos en Configuración → Organización → Departamentos.",
   "The schedule builder can divide its rows under each team.":
     "El creador de horarios puede dividir sus filas bajo cada equipo.",
   "Max weekly hours": "Máximo de horas por semana",
   "Qualified positions": "Puestos calificados",
-  "No positions defined yet — add them under Organization → Positions.":
-    "Aún no hay puestos definidos — agrégalos en Organización → Puestos.",
+  "No positions defined yet — add them under Settings → Organization → Positions.":
+    "Aún no hay puestos definidos — agrégalos en Configuración → Organización → Puestos.",
   "The schedule builder warns when someone is assigned a position they aren’t marked for.":
     "El creador de horarios avisa cuando se asigna a alguien un puesto para el que no está calificado.",
   "Work locations": "Ubicaciones de trabajo",
@@ -167,8 +167,8 @@ export const people: Record<string, string> = {
     "En el horario y las tarjetas de tiempo, aunque sea administrador.",
   "Employees show everywhere. Admins follow “Hide admins from the rosters” in App rules.":
     "Los empleados aparecen en todos lados. Los administradores siguen “Ocultar a los administradores de las listas” en Reglas de la app.",
-  "No locations yet — add them under Organization → Locations.":
-    "Aún no hay ubicaciones — agrégalas en Organización → Ubicaciones.",
+  "No locations yet — add them under Settings → Organization → Locations.":
+    "Aún no hay ubicaciones — agrégalas en Configuración → Organización → Ubicaciones.",
   "Their hours on the timecard are split by the location each shift was worked at.":
     "Sus horas en la tarjeta de tiempo se dividen según la ubicación donde trabajó cada turno.",
   "Pending join requests": "Solicitudes de unión pendientes",

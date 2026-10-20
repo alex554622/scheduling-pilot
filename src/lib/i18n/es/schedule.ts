@@ -124,7 +124,7 @@ export const schedule: Record<string, string> = {
   "End date is before the start date": "La fecha de fin es anterior a la de inicio",
   "— the maximum is 366": "— el máximo es 366",
   "Templates to schedule": "Plantillas a programar",
-  "No shift templates yet — create them under Organization → Shift templates.": "Aún no hay plantillas de turno; créalas en Organización → Plantillas de turno.",
+  "No shift templates yet — create them under Settings → Organization → Shift templates.": "Aún no hay plantillas de turno; créalas en Configuración → Organización → Plantillas de turno.",
   "Repeat on": "Repetir en",
   "People per day": "Personas por día",
   "Who to schedule": "A quién programar",

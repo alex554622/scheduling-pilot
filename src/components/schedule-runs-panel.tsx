@@ -432,7 +432,7 @@ function GenerateDialog({
                 <Label>{t("Templates to schedule")}</Label>
                 {templates.length === 0 ? (
                   <p className="mt-1.5 text-xs text-muted-foreground">
-                    {t("No shift templates yet — create them under Organization → Shift templates.")}
+                    {t("No shift templates yet — create them under Settings → Organization → Shift templates.")}
                   </p>
                 ) : (
                   <div className="mt-1.5 space-y-2">

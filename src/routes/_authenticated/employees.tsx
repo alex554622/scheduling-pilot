@@ -1341,7 +1341,7 @@ function EditMemberDialog({
             </select>
             <p className="mt-1 text-xs text-muted-foreground">
               {(departmentsQ.data ?? []).length === 0
-                ? t("No teams yet — add them on Organization → Departments.")
+                ? t("No teams yet — add them on Settings → Organization → Departments.")
                 : t("The schedule builder can divide its rows under each team.")}
             </p>
           </div>
@@ -1406,7 +1406,7 @@ function EditMemberDialog({
             <Label>{t("Work locations")}</Label>
             {(locationsQ.data ?? []).length === 0 ? (
               <p className="mt-1 text-xs text-muted-foreground">
-                {t("No locations yet — add them under Organization → Locations.")}
+                {t("No locations yet — add them under Settings → Organization → Locations.")}
               </p>
             ) : (
               <div className="mt-1.5 grid gap-1.5 sm:grid-cols-2">
@@ -1686,7 +1686,7 @@ function BulkEditDialog({
             </label>
             {(locationsQ.data ?? []).length === 0 ? (
               <p className="mt-1 text-xs text-muted-foreground">
-                {t("No locations yet — add them under Organization → Locations.")}
+                {t("No locations yet — add them under Settings → Organization → Locations.")}
               </p>
             ) : (
               <div
