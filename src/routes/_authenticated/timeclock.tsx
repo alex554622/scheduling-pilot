@@ -21,7 +21,6 @@ import {
   Settings as SettingsIcon,
   Coffee,
   Play,
-  Users,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/timeclock")({
@@ -424,14 +423,6 @@ function TimeclockPage() {
               {t("My timecard")}
             </Link>
           </Button>
-          {(primaryRole === "company_admin" || primaryRole === "super_admin") && (
-            <Button asChild variant="outline" size="sm">
-              <Link to="/whos-in">
-                <Users className="mr-2 h-4 w-4" />
-                {t("Who's clocked in")}
-              </Link>
-            </Button>
-          )}
           {(primaryRole === "company_admin" || primaryRole === "super_admin") && (
             <Button asChild variant="outline" size="sm">
               <Link to="/worksite">

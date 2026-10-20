@@ -159,8 +159,8 @@ export const people: Record<string, string> = {
   "Nowhere (ghost)": "En ningún lado (fantasma)",
   "Run the member visibility update in Supabase to use this.":
     "Ejecuta la actualización de visibilidad de miembros en Supabase para usar esto.",
-  "Kept off the schedule, the timecards, the dashboard and Who's in. They can still open their own timecard.":
-    "No aparece en el horario, las tarjetas de tiempo, el panel ni en Quién está. Aún puede abrir su propia tarjeta de tiempo.",
+  "Kept off the schedule, the timecards and the dashboard. They can still open their own timecard.":
+    "No aparece en el horario, las tarjetas de tiempo ni el panel. Aún puede abrir su propia tarjeta de tiempo.",
   "On the schedule, but not on the timecard list.": "En el horario, pero no en la lista de tarjetas de tiempo.",
   "On the timecard list, but not on the schedule.": "En la lista de tarjetas de tiempo, pero no en el horario.",
   "On the schedule and the timecards, even if they are an admin.":

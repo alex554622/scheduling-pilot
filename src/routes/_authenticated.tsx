@@ -17,7 +17,6 @@ import {
   PanelLeftOpen,
   Clock,
   FileClock,
-  UserCheck,
   UserCog,
   CalendarCheck,
   ScrollText,
@@ -110,13 +109,6 @@ const NAV: NavItem[] = [
     icon: FileClock,
     roles: ["company_admin", "employee"],
     needs: "timecards",
-  },
-  {
-    to: "/whos-in",
-    label: "Who's in",
-    icon: UserCheck,
-    roles: ["company_admin", "super_admin"],
-    needs: "time_clock",
   },
   {
     to: "/shared-clock-in",

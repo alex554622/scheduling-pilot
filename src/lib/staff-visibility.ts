@@ -45,7 +45,7 @@ export type VisibilityMode = "everywhere" | "schedule_only" | "timecards_only" |
 /**
  * Where a list sits. "schedule" is the schedule grid, the posted schedule and
  * who a shift can be traded to; "timecards" the timecard roster; "roster" the
- * dashboard's and Who's in's list of who is on the floor, which only a ghost
+ * dashboard's list of who is on the floor, which only a ghost
  * is kept off.
  */
 export type VisibilityPlace = "schedule" | "timecards" | "roster";

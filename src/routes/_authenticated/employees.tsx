@@ -1391,7 +1391,7 @@ function EditMemberDialog({
               {visibilityQ.isError
                 ? t("Run the member visibility update in Supabase to use this.")
                 : visibility === "ghost"
-                  ? t("Kept off the schedule, the timecards, the dashboard and Who's in. They can still open their own timecard.")
+                  ? t("Kept off the schedule, the timecards and the dashboard. They can still open their own timecard.")
                   : visibility === "schedule_only"
                     ? t("On the schedule, but not on the timecard list.")
                     : visibility === "timecards_only"
