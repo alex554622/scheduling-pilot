@@ -438,6 +438,45 @@ export type Database = {
           },
         ]
       }
+      employee_locations: {
+        Row: {
+          company_id: string
+          created_at: string
+          employee_id: string
+          id: string
+          location_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          employee_id: string
+          id?: string
+          location_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          employee_id?: string
+          id?: string
+          location_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "employee_locations_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "employee_locations_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "locations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       employee_positions: {
         Row: {
           company_id: string
@@ -1253,6 +1292,7 @@ export type Database = {
           id: string
           kind: string
           latitude: number | null
+          location_id: string | null
           longitude: number | null
           note: string | null
           user_id: string
@@ -1268,6 +1308,7 @@ export type Database = {
           id?: string
           kind: string
           latitude?: number | null
+          location_id?: string | null
           longitude?: number | null
           note?: string | null
           user_id: string
@@ -1283,6 +1324,7 @@ export type Database = {
           id?: string
           kind?: string
           latitude?: number | null
+          location_id?: string | null
           longitude?: number | null
           note?: string | null
           user_id?: string
@@ -1294,6 +1336,13 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "time_punches_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "locations"
             referencedColumns: ["id"]
           },
         ]
@@ -1351,6 +1400,10 @@ export type Database = {
         Returns: Database["public"]["Tables"]["kiosk_devices"]["Row"]
       }
       revoke_kiosk_device: { Args: { _id: string }; Returns: undefined }
+      set_punch_location: {
+        Args: { _punch: string; _location: string | null }
+        Returns: undefined
+      }
       set_employee_clock_code: { Args: { _user: string }; Returns: string }
       clear_employee_clock_code: { Args: { _user: string }; Returns: undefined }
       kiosk_device_info: { Args: { _token: string }; Returns: Json }

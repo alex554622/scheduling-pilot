@@ -118,8 +118,8 @@ export const people: Record<string, string> = {
   "Open email": "Abrir correo",
   "Create invitation": "Crear invitación",
   "Edit member": "Editar miembro",
-  "Name, scheduling limits and qualifications. Roles are managed from the roster.":
-    "Nombre, límites de horario y calificaciones. Los roles se administran desde la lista de personal.",
+  "Name, scheduling limits, qualifications and work locations. Roles are managed from the roster.":
+    "Nombre, límites de horario, calificaciones y ubicaciones de trabajo. Los roles se administran desde la lista de personal.",
   "Full name": "Nombre completo",
   "Job title": "Puesto de trabajo",
   "e.g. Barista, Shift Lead": "p. ej. Barista, Líder de turno",
@@ -134,6 +134,11 @@ export const people: Record<string, string> = {
     "Aún no hay puestos definidos — agrégalos en Organización → Puestos.",
   "The schedule builder warns when someone is assigned a position they aren’t marked for.":
     "El creador de horarios avisa cuando se asigna a alguien un puesto para el que no está calificado.",
+  "Work locations": "Ubicaciones de trabajo",
+  "No locations yet — add them under Organization → Locations.":
+    "Aún no hay ubicaciones — agrégalas en Organización → Ubicaciones.",
+  "Their hours on the timecard are split by the location each shift was worked at.":
+    "Sus horas en la tarjeta de tiempo se dividen según la ubicación donde trabajó cada turno.",
   "Pending join requests": "Solicitudes de unión pendientes",
   "Requested to join": "Solicitó unirse",
 

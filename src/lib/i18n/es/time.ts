@@ -292,4 +292,9 @@ export const time: Record<string, string> = {
   "Nothing posted in the last 24 hours.": "No se ha publicado nada en las últimas 24 horas.",
   "Announcements": "Anuncios",
   "Today": "Hoy",
+
+  // Hours by location
+  "Working at": "Trabajando en",
+  "Automatic (from my schedule)": "Automático (según mi horario)",
+  "Location updated.": "Ubicación actualizada.",
 };

@@ -2,6 +2,7 @@
  * Checks for the roster-wide timecard totals. Run with `bun run test:timecards`.
  */
 import {
+  hoursByLocation,
   punchesInPeriod,
   readBreak,
   totalsByPerson,
@@ -289,6 +290,57 @@ eq(
   ["in@9", "out@10"],
 );
 eq("so the last night pays in full", totalsByPerson(kept).get("a")!.workedMs / HOUR, 8);
+
+console.log("\nhours split by the location each shift was clocked in at");
+const at_ = (p: SimplePunch, loc: string | null): SimplePunch => ({ ...p, location_id: loc });
+t = totalsByPerson([
+  at_(punch("a", "in", 3, 8), "main"),
+  at_(punch("a", "break_start", 3, 12, 0, 30), "main"),
+  at_(punch("a", "break_end", 3, 12, 30), "main"),
+  at_(punch("a", "out", 3, 16), "main"),
+  at_(punch("a", "in", 3, 18), "airport"),
+  at_(punch("a", "out", 3, 21), "airport"),
+  at_(punch("a", "in", 4, 8), "airport"),
+  at_(punch("a", "out", 4, 12), "airport"),
+  at_(punch("a", "in", 5, 9), null),
+  at_(punch("a", "out", 5, 10), null),
+]).get("a")!;
+eq(
+  "each location gets its own shifts, most hours first",
+  t.byLocation.map((l) => [l.locationId, l.workedMs / HOUR]),
+  [["main", 7.5], ["airport", 7], [null, 1]],
+);
+eq(
+  "and the lines add up to the total",
+  t.byLocation.reduce((n, l) => n + l.workedMs, 0),
+  t.workedMs,
+);
+eq("each span knows its location", t.days[0].spans.map((s) => s.locationId), ["main", "airport"]);
+
+console.log("\nthe clock-in decides, whatever the clock-out says");
+t = totalsByPerson([
+  at_(punch("a", "in", 3, 8), "main"),
+  at_(punch("a", "out", 3, 12), "airport"),
+]).get("a")!;
+eq("all four hours at main", t.byLocation, [{ locationId: "main", workedMs: 4 * HOUR }]);
+
+console.log("\na shift still on the clock adds no location line");
+t = totalsByPerson([
+  at_(punch("a", "in", 3, 8), "main"),
+  at_(punch("a", "out", 3, 12), "main"),
+  at_(punch("a", "in", 4, 8), "airport"),
+]).get("a")!;
+eq("only main, with its four hours", t.byLocation, [{ locationId: "main", workedMs: 4 * HOUR }]);
+eq(
+  "the open shift still shows where it is",
+  t.days[1].spans.map((s) => [s.locationId, s.outAt]),
+  [["airport", null]],
+);
+
+console.log("\npunches from before locations existed");
+t = totalsByPerson([punch("a", "in", 3, 8), punch("a", "out", 3, 16)]).get("a")!;
+eq("all filed under no location", t.byLocation, [{ locationId: null, workedMs: 8 * HOUR }]);
+eq("no shifts, no lines", hoursByLocation([]), []);
 
 console.log(
   failures === 0 ? "\nAll timecard checks passed.\n" : `\n${failures} check(s) failed.\n`,

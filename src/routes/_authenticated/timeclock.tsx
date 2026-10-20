@@ -40,6 +40,8 @@ type Punch = {
   within_geofence: boolean;
   /** Length of the break a `break_start` opens. Null on every other kind. */
   break_minutes: number | null;
+  /** Where the stretch is being worked; the clock-in's is the one that counts. */
+  location_id: string | null;
 };
 
 const PUNCH_LABEL: Record<PunchKind, string> = {
@@ -122,7 +124,7 @@ function TimeclockPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("time_punches")
-        .select("id, kind, at, latitude, longitude, distance_m, within_geofence, break_minutes")
+        .select("id, kind, at, latitude, longitude, distance_m, within_geofence, break_minutes, location_id")
         .eq("user_id", user!.id)
         .order("at", { ascending: false })
         // Deep enough to always contain the open shift's clock-in, however many
@@ -134,6 +136,28 @@ function TimeclockPage() {
     },
   });
 
+  // The locations this person can clock in at: the ones they are assigned to,
+  // or every company location when they have none. With two or more they get a
+  // picker; with one or none the database files the shift on its own.
+  const workLocationsQ = useQuery({
+    queryKey: ["my-work-locations", user?.id, company?.id],
+    enabled: !!user?.id && !!company?.id,
+    queryFn: async () => {
+      const [locs, mine] = await Promise.all([
+        supabase.from("locations").select("id, name").eq("company_id", company!.id).order("name"),
+        supabase.from("employee_locations").select("location_id").eq("employee_id", user!.id),
+      ]);
+      if (locs.error) throw locs.error;
+      if (mine.error) throw mine.error;
+      const assigned = new Set((mine.data ?? []).map((r) => r.location_id));
+      const all = locs.data ?? [];
+      return assigned.size > 0 ? all.filter((l) => assigned.has(l.id)) : all;
+    },
+  });
+  const workLocations = workLocationsQ.data ?? [];
+  // Before clocking in: "" leaves it to the schedule and the map.
+  const [pickedLocation, setPickedLocation] = useState("");
+
   const lastPunch = recentQ.data?.[0];
   // Derived status: off | working | on_break
   const status: "off" | "working" | "on_break" =
@@ -143,6 +167,8 @@ function TimeclockPage() {
         ? "on_break"
         : "working";
   const nextKind: "in" | "out" = status === "off" ? "in" : "out";
+  // The clock-in of the shift they are on now, whose location the picker shows.
+  const openIn = status === "off" ? undefined : recentQ.data?.find((p) => p.kind === "in");
 
   // Second-by-second clock driving the break countdown, worked time and
   // earnings. Idle while clocked out — nothing on the card moves then.
@@ -288,15 +314,43 @@ function TimeclockPage() {
         _accuracy: coords.acc,
       });
       if (error) throw error;
+      // Clocked in at a location they picked: file the shift there, over
+      // whatever the database guessed.
+      if (data?.kind === "in" && pickedLocation) {
+        const { error: locErr } = await supabase.rpc("set_punch_location", {
+          _punch: data.id,
+          _location: pickedLocation,
+        });
+        if (locErr) throw locErr;
+      }
       return data;
     },
     onSuccess: () => {
+      setPickedLocation("");
       setFlash({ kind: "ok", msg: nextKind === "in" ? t("Clocked in successfully.") : t("Clocked out successfully.") });
       qc.invalidateQueries({ queryKey: ["my-punches-recent"] });
       qc.invalidateQueries({ queryKey: ["timecards"] });
     },
     onError: (e: any) => setFlash({ kind: "err", msg: e.message || t("Failed to punch") }),
     onSettled: () => setSubmitting(false),
+  });
+
+  // Moving the shift they are on to another location, mid-shift.
+  const moveMut = useMutation({
+    mutationFn: async (locationId: string) => {
+      if (!openIn) return;
+      const { error } = await supabase.rpc("set_punch_location", {
+        _punch: openIn.id,
+        _location: locationId,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setFlash({ kind: "ok", msg: t("Location updated.") });
+      qc.invalidateQueries({ queryKey: ["my-punches-recent"] });
+      qc.invalidateQueries({ queryKey: ["timecards"] });
+    },
+    onError: (e: any) => setFlash({ kind: "err", msg: e.message || t("Failed") }),
   });
 
   const breakMut = useMutation({
@@ -541,6 +595,40 @@ function TimeclockPage() {
             {geoErr && (
               <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
                 {geoErr}
+              </div>
+            )}
+
+            {workLocations.length >= 2 && (
+              <div className="mb-3">
+                <label
+                  htmlFor="work-location"
+                  className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
+                >
+                  <MapPin className="h-3.5 w-3.5" />
+                  {t("Working at")}
+                </label>
+                <select
+                  id="work-location"
+                  className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
+                  value={status === "off" ? pickedLocation : (openIn?.location_id ?? "")}
+                  disabled={moveMut.isPending}
+                  onChange={(e) => {
+                    if (status === "off") setPickedLocation(e.target.value);
+                    else if (e.target.value) {
+                      setFlash(null);
+                      moveMut.mutate(e.target.value);
+                    }
+                  }}
+                >
+                  <option value="" disabled={status !== "off"}>
+                    {status === "off" ? t("Automatic (from my schedule)") : t("Not set")}
+                  </option>
+                  {workLocations.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </select>
               </div>
             )}
 

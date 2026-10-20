@@ -13,6 +13,8 @@ export interface PrintablePair {
   unpaidBreakMs: number;
   paidBreakMs: number;
   offSite: boolean;
+  /** Where it was worked; null when the company keeps no locations. */
+  location?: string | null;
 }
 
 export interface PrintableDay {
@@ -33,6 +35,8 @@ export interface PrintableTimecardProps {
   totals: { workedMs: number; unpaidBreakMs: number; paidBreakMs: number };
   /** Hours split by the company's daily and weekly overtime rules. */
   split: { regularMs: number; overtimeMs: number; doubleTimeMs: number };
+  /** Paid time per location, most first; empty when the company keeps none. */
+  byLocation?: { name: string; ms: number }[];
   /** Plain-English summary of the rules in force, for the footer. */
   overtimeNote: string;
   /** Punch rounding, quoted on the page so the numbers can be audited. */
@@ -66,6 +70,7 @@ export function PrintableTimecard({
   days,
   totals,
   split,
+  byLocation = [],
   overtimeNote,
   roundMinutes,
   formatTime,
@@ -143,7 +148,7 @@ export function PrintableTimecard({
                     shift of a split day it would read as that shift's length. */}
                 <Td className="text-right">{i === 0 ? formatHours(day.totalMs) : ""}</Td>
                 <Td className="text-left text-neutral-600">
-                  {[!pair.outAt ? t("Still clocked in") : null, pair.offSite ? t("Off-site punch") : null]
+                  {[pair.location ?? null, !pair.outAt ? t("Still clocked in") : null, pair.offSite ? t("Off-site punch") : null]
                     .filter(Boolean)
                     .join(" · ")}
                 </Td>
@@ -167,6 +172,14 @@ export function PrintableTimecard({
       <section className="mt-3 flex justify-end" data-print-keep>
         <table className="border-collapse text-[11px]">
           <tbody>
+            {byLocation.map((l, i) => (
+              <SummaryRow
+                key={`${l.name}-${i}`}
+                label={l.name}
+                value={`${formatHours(l.ms)}  (${decimalHours(l.ms)})`}
+                last={i === byLocation.length - 1}
+              />
+            ))}
             <SummaryRow label={t("Regular hours")} value={`${formatHours(split.regularMs)}  (${decimalHours(split.regularMs)})`} />
             {split.overtimeMs > 0 && (
               <SummaryRow label={t("Overtime")} value={`${formatHours(split.overtimeMs)}  (${decimalHours(split.overtimeMs)})`} />
@@ -228,9 +241,20 @@ function Td({ children, className = "" }: { children?: React.ReactNode; classNam
   return <td className={`px-1.5 py-1 text-center align-top tabular-nums ${className}`}>{children}</td>;
 }
 
-function SummaryRow({ label, value, emphasis }: { label: string; value: string; emphasis?: boolean }) {
+function SummaryRow({
+  label,
+  value,
+  emphasis,
+  last,
+}: {
+  label: string;
+  value: string;
+  emphasis?: boolean;
+  /** The last of the per-location lines, ruled off from the pay split below. */
+  last?: boolean;
+}) {
   return (
-    <tr className={emphasis ? "border-t border-black font-bold" : ""}>
+    <tr className={emphasis ? "border-t border-black font-bold" : last ? "border-b border-neutral-300" : ""}>
       <td className="py-1 pr-6 text-right">{label}</td>
       <td className="py-1 text-right tabular-nums">{value}</td>
     </tr>

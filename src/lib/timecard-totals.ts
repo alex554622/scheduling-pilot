@@ -102,6 +102,12 @@ export interface SimplePunch {
   kind: PunchKind;
   at: string;
   break_minutes: number | null;
+  /**
+   * Where the stretch this punch belongs to was worked. Only the clock-in's is
+   * read: the database copies it onto the breaks and clock-out after it, and a
+   * shift is never split between two places.
+   */
+  location_id?: string | null;
 }
 
 /**
@@ -185,6 +191,32 @@ export interface ShiftSpan {
   grossMs: number;
   /** What gets paid: gross less unpaid break time. */
   workedMs: number;
+  /** The clock-in's location; null when it was never filed under one. */
+  locationId: string | null;
+}
+
+/** Paid time at one location. `locationId` null is time filed under none. */
+export interface LocationHours {
+  locationId: string | null;
+  workedMs: number;
+}
+
+/**
+ * Paid time per location, most hours first. Only finished shifts count — one
+ * still on the clock is worth nothing yet, exactly as in the totals — so the
+ * lines always add up to the total beside them.
+ */
+export function hoursByLocation(
+  spans: { locationId: string | null; workedMs: number; outAt?: string | null }[],
+): LocationHours[] {
+  const byLoc = new Map<string | null, number>();
+  for (const s of spans) {
+    if (s.outAt === null) continue;
+    byLoc.set(s.locationId, (byLoc.get(s.locationId) ?? 0) + s.workedMs);
+  }
+  return [...byLoc]
+    .map(([locationId, workedMs]) => ({ locationId, workedMs }))
+    .sort((a, b) => b.workedMs - a.workedMs);
 }
 
 /** A person's day, expanded under their row in the roster-wide table. */
@@ -218,6 +250,13 @@ export interface PersonTotals {
   incompleteBreaks: number;
   /** Break time run past the picked length and not charged to them. */
   overBreakMs: number;
+  /** The period's paid time split by where it was worked — see `hoursByLocation`. */
+  byLocation: LocationHours[];
+}
+
+/** A clock-in with no clock-out yet: shown, worth nothing. */
+function openSpan(p: SimplePunch): ShiftSpan {
+  return { inAt: p.at, outAt: null, grossMs: 0, workedMs: 0, locationId: p.location_id ?? null };
 }
 
 /**
@@ -252,6 +291,7 @@ export function totalsByPerson(
       days: [],
       incompleteBreaks: 0,
       overBreakMs: 0,
+      byLocation: [],
     };
     for (const [key, list] of days) {
       // Grouped by the shift's clock-in day, then rounded — a rounding that
@@ -282,7 +322,7 @@ export function totalsByPerson(
           // still shown as an open span so the gap is visible rather than
           // silently swallowed.
           if (openIn) {
-            detail.spans.push({ inAt: openIn.at, outAt: null, grossMs: 0, workedMs: 0 });
+            detail.spans.push(openSpan(openIn));
           }
           openIn = p;
           unpaid = 0;
@@ -293,7 +333,13 @@ export function totalsByPerson(
             const gross = new Date(p.at).getTime() - new Date(openIn.at).getTime();
             const worked = Math.max(0, gross - unpaid);
             dayMs += worked;
-            detail.spans.push({ inAt: openIn.at, outAt: p.at, grossMs: gross, workedMs: worked });
+            detail.spans.push({
+              inAt: openIn.at,
+              outAt: p.at,
+              grossMs: gross,
+              workedMs: worked,
+              locationId: openIn.location_id ?? null,
+            });
             detail.grossMs += gross;
             detail.unpaidMs += unpaid;
             detail.paidMs += paid;
@@ -327,7 +373,7 @@ export function totalsByPerson(
         }
       }
       // Still on the clock when the period ended — shown, worth nothing.
-      if (openIn) detail.spans.push({ inAt: openIn.at, outAt: null, grossMs: 0, workedMs: 0 });
+      if (openIn) detail.spans.push(openSpan(openIn));
 
       detail.workedMs = dayMs;
       totals.workedMs += dayMs;
@@ -335,6 +381,7 @@ export function totalsByPerson(
       totals.days.push(detail);
     }
     totals.days.sort((a, b) => a.date.getTime() - b.date.getTime());
+    totals.byLocation = hoursByLocation(totals.days.flatMap((d) => d.spans));
     out.set(userId, totals);
   }
   return out;

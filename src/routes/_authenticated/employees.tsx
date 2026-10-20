@@ -1072,6 +1072,7 @@ function EditMemberDialog({
   const [maxHours, setMaxHours] = useState<number>(40);
   const [isActive, setIsActive] = useState(true);
   const [qualified, setQualified] = useState<Set<string>>(new Set());
+  const [worksAt, setWorksAt] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -1113,6 +1114,30 @@ function EditMemberDialog({
     },
   });
 
+  // Where they work. A clock-in is filed under one of these, so their hours
+  // can be split by location on the timecard.
+  const locationsQ = useQuery({
+    queryKey: ["locations", companyId, "names"],
+    enabled: !!member,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("locations").select("id, name").eq("company_id", companyId).order("name");
+      if (error) throw error;
+      return (data ?? []) as { id: string; name: string }[];
+    },
+  });
+
+  const worksAtQ = useQuery({
+    queryKey: ["employee-locations", member?.id],
+    enabled: !!member,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("employee_locations").select("location_id").eq("employee_id", member!.id);
+      if (error) throw error;
+      return (data ?? []).map((r) => r.location_id);
+    },
+  });
+
   const profileQ = useQuery({
     queryKey: ["member-profile", member?.id],
     enabled: !!member,
@@ -1146,6 +1171,18 @@ function EditMemberDialog({
   useEffect(() => {
     if (qualsQ.data) setQualified(new Set(qualsQ.data));
   }, [qualsQ.data]);
+
+  useEffect(() => {
+    if (worksAtQ.data) setWorksAt(new Set(worksAtQ.data));
+  }, [worksAtQ.data]);
+
+  function toggleWorksAt(id: string) {
+    setWorksAt((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
 
   function toggleQual(id: string) {
     setQualified((prev) => {
@@ -1190,6 +1227,23 @@ function EditMemberDialog({
       if (rmErr) { setSaving(false); setErr(rmErr.message); return; }
     }
 
+    // Same for locations.
+    const wasAt = new Set(worksAtQ.data ?? []);
+    const locAdd = [...worksAt].filter((id) => !wasAt.has(id));
+    const locRemove = [...wasAt].filter((id) => !worksAt.has(id));
+    if (locAdd.length) {
+      const { error: addErr } = await supabase.from("employee_locations").insert(
+        locAdd.map((location_id) => ({ company_id: companyId, employee_id: member.id, location_id })),
+      );
+      if (addErr) { setSaving(false); setErr(addErr.message); return; }
+    }
+    if (locRemove.length) {
+      const { error: rmErr } = await supabase
+        .from("employee_locations").delete()
+        .eq("employee_id", member.id).in("location_id", locRemove);
+      if (rmErr) { setSaving(false); setErr(rmErr.message); return; }
+    }
+
     setSaving(false);
     onSaved();
   }
@@ -1200,7 +1254,7 @@ function EditMemberDialog({
         <DialogHeader>
           <DialogTitle>{t("Edit member")}</DialogTitle>
           <DialogDescription>
-            {t("Name, scheduling limits and qualifications. Roles are managed from the roster.")}
+            {t("Name, scheduling limits, qualifications and work locations. Roles are managed from the roster.")}
           </DialogDescription>
         </DialogHeader>
         <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
@@ -1293,6 +1347,35 @@ function EditMemberDialog({
             )}
             <p className="mt-1.5 text-xs text-muted-foreground">
               {t("The schedule builder warns when someone is assigned a position they aren’t marked for.")}
+            </p>
+          </div>
+
+          <div>
+            <Label>{t("Work locations")}</Label>
+            {(locationsQ.data ?? []).length === 0 ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                {t("No locations yet — add them under Organization → Locations.")}
+              </p>
+            ) : (
+              <div className="mt-1.5 grid gap-1.5 sm:grid-cols-2">
+                {(locationsQ.data ?? []).map((l) => (
+                  <label
+                    key={l.id}
+                    className="flex cursor-pointer items-center gap-2 rounded-lg border border-border px-2.5 py-2 text-sm hover:bg-accent"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={worksAt.has(l.id)}
+                      onChange={() => toggleWorksAt(l.id)}
+                      className="h-4 w-4"
+                    />
+                    <span className="truncate text-foreground">{l.name}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              {t("Their hours on the timecard are split by the location each shift was worked at.")}
             </p>
           </div>
 

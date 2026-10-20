@@ -43,7 +43,9 @@ import {
   readBreak,
   roundPunches,
   roundToMinutes,
+  hoursByLocation,
   totalsByPerson,
+  type LocationHours,
   type SimplePunch,
 } from "@/lib/timecard-totals";
 import { fromDayString, toDayString } from "@/lib/schedule-pattern";
@@ -76,6 +78,8 @@ type Punch = {
   break_minutes: number | null;
   latitude: number | null;
   longitude: number | null;
+  /** Where the stretch was worked; the clock-in's is the one that counts. */
+  location_id: string | null;
 };
 
 /** Punch kinds as a manager reads them in the location log. */
@@ -247,6 +251,45 @@ function TimecardsPage() {
     },
   });
 
+  // Location names, for splitting hours by where they were worked. A company
+  // with no locations gets no split at all: every hour would read "No location".
+  const locationsQ = useQuery({
+    queryKey: ["locations", isSuperAdmin ? "all" : company?.id, "names"],
+    enabled: isSuperAdmin || !!company?.id,
+    queryFn: async () => {
+      let q = supabase.from("locations").select("id, name, company_id");
+      if (!isSuperAdmin) q = q.eq("company_id", company!.id);
+      const { data, error } = await q.order("name");
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+  const locations = locationsQ.data ?? [];
+  const hasLocations = locations.length > 0;
+  const locationName = (id: string | null) =>
+    (id && locations.find((l) => l.id === id)?.name) || t("No location");
+  const byLocationText = (lines: LocationHours[]) =>
+    lines.map((l) => `${locationName(l.locationId)} ${fmtDecimal(l.workedMs)}`).join(" · ");
+
+  // A manager moving one stretch to another location. The database moves its
+  // breaks and clock-out with it.
+  const [locationErr, setLocationErr] = useState<string | null>(null);
+  const moveLocation = useMutation({
+    mutationFn: async ({ punchId, locationId }: { punchId: string; locationId: string | null }) => {
+      const { error } = await supabase.rpc("set_punch_location", {
+        _punch: punchId,
+        _location: locationId,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setLocationErr(null);
+      void qc.invalidateQueries({ queryKey: ["timecards"] });
+      void qc.invalidateQueries({ queryKey: ["timecards-all"] });
+    },
+    onError: (e: Error) => setLocationErr(e.message),
+  });
+
   // "Me" is meaningless for a super admin — they have no punches of their own —
   // so fall back to the first person on the roster.
   /** The whole roster at once, rather than one card at a time. */
@@ -269,7 +312,7 @@ function TimecardsPage() {
       const { data, error } = await supabase
         .from("time_punches")
         .select(
-          "id, user_id, kind, at, distance_m, within_geofence, break_minutes, latitude, longitude",
+          "id, user_id, kind, at, distance_m, within_geofence, break_minutes, latitude, longitude, location_id",
         )
         .eq("user_id", targetUserId!)
         .gte("at", fetchFrom)
@@ -289,7 +332,7 @@ function TimecardsPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("time_punches")
-        .select("user_id, kind, at, break_minutes")
+        .select("user_id, kind, at, break_minutes, location_id")
         .gte("at", fetchFrom)
         .lt("at", fetchTo)
         .order("at", { ascending: true });
@@ -317,6 +360,7 @@ function TimecardsPage() {
           days: [],
           incompleteBreaks: 0,
           overBreakMs: 0,
+          byLocation: [],
         };
         const split = splitPeriod(tot.dayTotals, rules, period === "week");
         return {
@@ -332,6 +376,16 @@ function TimecardsPage() {
       })
       .sort((a, b) => b.workedMs - a.workedMs || a.name.localeCompare(b.name));
   }, [viewingAll, allQ.data, roster, rules, period, t]);
+
+  /** Everyone's paid time per location, for the foot of the roster-wide table. */
+  const everyoneByLocation = useMemo(() => {
+    const sum = new Map<string | null, number>();
+    for (const r of everyone)
+      for (const l of r.byLocation) sum.set(l.locationId, (sum.get(l.locationId) ?? 0) + l.workedMs);
+    return [...sum]
+      .map(([locationId, workedMs]) => ({ locationId, workedMs }))
+      .sort((a, b) => b.workedMs - a.workedMs);
+  }, [everyone]);
 
   /** Every punch on screen for this person, deleted in one go. */
   /** Whose punches are being cleared — a super admin has no company of their own. */
@@ -519,7 +573,22 @@ function TimecardsPage() {
       weekUnpaid += dayUnpaidMs;
       weekPaid += dayPaidMs;
     }
-    return { rows, weekTotal, weekUnpaid, weekPaid };
+    // Paid time per location, from the same pairs the day totals came from.
+    const byLocation = hoursByLocation(
+      rows.flatMap((r) =>
+        r.pairs.map((p) => ({
+          locationId: p.in.location_id,
+          outAt: p.out?.at ?? null,
+          workedMs: p.out
+            ? Math.max(
+                0,
+                new Date(p.out.at).getTime() - new Date(p.in.at).getTime() - p.unpaidBreakMs,
+              )
+            : 0,
+        })),
+      ),
+    );
+    return { rows, weekTotal, weekUnpaid, weekPaid, byLocation };
   }, [punchesQ.data, rangeStart, days, rules.punch_round_minutes, rules.cap_break_to_length]);
 
   // The day asked for from the dashboard, opened once that card has loaded —
@@ -575,6 +644,7 @@ function TimecardsPage() {
         paid: p.paidBreakMs > 0 ? fmtHours(p.paidBreakMs) : "—",
         hours: i === 0 ? fmtHours(r.totalMs) : "",
         notes: [
+          hasLocations ? locationName(p.in.location_id) : null,
           !p.out ? t("Still clocked in") : null,
           // Where someone punched from is a manager's business; an employee's
           // own timecard is about their hours.
@@ -614,6 +684,13 @@ function TimecardsPage() {
       overtimeDecimal: overtimeMs > 0 ? dec(overtimeMs) : null,
       doubleTime: doubleTimeMs > 0 ? fmtHours(doubleTimeMs) : null,
       doubleTimeDecimal: doubleTimeMs > 0 ? dec(doubleTimeMs) : null,
+      byLocation: hasLocations
+        ? grouped.byLocation.map((l) => ({
+            name: locationName(l.locationId),
+            hours: fmtHours(l.workedMs),
+            decimal: dec(l.workedMs),
+          }))
+        : [],
       overtimeNote: overtimeNote(rules, period === "week"),
       roundNote: `${rules.punch_round_minutes > 0 ? t("Punch times and hours rounded to the nearest {n} minutes.", { n: rules.punch_round_minutes }) : t("Punch times shown as recorded.")} ${t("Unpaid break time is deducted from hours worked; paid break time is not.")}`,
       filename: `timecard-${employeeName.replace(/[^\w.-]+/g, "-").replace(/^-|-$/g, "")}-${rangeStart.toISOString().slice(0, 10)}.pdf`,
@@ -672,6 +749,7 @@ function TimecardsPage() {
             unpaidBreakMs: p.unpaidBreakMs,
             paidBreakMs: p.paidBreakMs,
             offSite: isManager && (!p.in.within_geofence || (!!p.out && !p.out.within_geofence)),
+            location: hasLocations ? locationName(p.in.location_id) : null,
           })),
         }))}
         totals={{
@@ -684,6 +762,11 @@ function TimecardsPage() {
           rules,
           period === "week",
         )}
+        byLocation={
+          hasLocations
+            ? grouped.byLocation.map((l) => ({ name: locationName(l.locationId), ms: l.workedMs }))
+            : []
+        }
         overtimeNote={overtimeNote(rules, period === "week")}
         roundMinutes={rules.punch_round_minutes}
         formatTime={(iso) => fmtTime(iso, rules.punch_round_minutes)}
@@ -928,6 +1011,12 @@ function TimecardsPage() {
                                 {r.position && (
                                   <div className="text-xs text-muted-foreground">{r.position}</div>
                                 )}
+                                {hasLocations && r.byLocation.length > 0 && (
+                                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                    <MapPin className="h-3 w-3 shrink-0" />
+                                    {byLocationText(r.byLocation)}
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </td>
@@ -988,6 +1077,11 @@ function TimecardsPage() {
                                       {t("still clocked in")}
                                     </span>
                                   )}
+                                  {hasLocations && (
+                                    <span className="ml-2 text-xs text-muted-foreground">
+                                      · {locationName(span.locationId)}
+                                    </span>
+                                  )}
                                 </td>
                                 <td className="px-3 py-1.5 text-right text-muted-foreground">
                                   {fmtDecimal(span.grossMs)}
@@ -1038,6 +1132,20 @@ function TimecardsPage() {
                 )}
               </table>
             </div>
+            {hasLocations && everyoneByLocation.length > 0 && (
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border px-4 py-2 text-sm">
+                <span className="flex items-center gap-1.5 font-medium text-foreground">
+                  <MapPin className="h-4 w-4 text-muted-foreground" />
+                  {t("Paid hours by location")}
+                </span>
+                {everyoneByLocation.map((l) => (
+                  <span key={l.locationId ?? "none"} className="text-muted-foreground">
+                    {locationName(l.locationId)}{" "}
+                    <span className="font-medium text-foreground">{fmtDecimal(l.workedMs)}</span>
+                  </span>
+                ))}
+              </div>
+            )}
             <p className="border-t border-border px-4 py-2 text-xs text-muted-foreground">
               {t("Actual hours is time on the clock. Total paid hours is the same less unpaid breaks, and splits into regular, overtime and double time.")}
             </p>
@@ -1091,6 +1199,41 @@ function TimecardsPage() {
                         {(!p.in.within_geofence || (p.out && !p.out.within_geofence)) && (
                           <span className="text-xs text-destructive">{t("⚠ off-site")}</span>
                         )}
+                        {hasLocations &&
+                          (isManager ? (
+                            <select
+                              className="max-w-[10rem] truncate rounded border border-border bg-background px-1 py-0.5 text-xs text-muted-foreground"
+                              value={p.in.location_id ?? ""}
+                              disabled={moveLocation.isPending}
+                              onChange={(e) =>
+                                moveLocation.mutate({
+                                  punchId: p.in.id,
+                                  locationId: e.target.value || null,
+                                })
+                              }
+                              aria-label={t("Location for the shift starting {time}", {
+                                time: fmtTime(p.in.at, rules.punch_round_minutes),
+                              })}
+                            >
+                              <option value="">{t("No location")}</option>
+                              {locations
+                                .filter(
+                                  (l) =>
+                                    l.company_id === (viewing?.company_id ?? company?.id) ||
+                                    l.id === p.in.location_id,
+                                )
+                                .map((l) => (
+                                  <option key={l.id} value={l.id}>
+                                    {l.name}
+                                  </option>
+                                ))}
+                            </select>
+                          ) : (
+                            <span className="flex items-center gap-0.5 text-xs text-muted-foreground">
+                              <MapPin className="h-3 w-3" />
+                              {locationName(p.in.location_id)}
+                            </span>
+                          ))}
                       </div>
                     ))}
                   </div>
@@ -1168,6 +1311,34 @@ function TimecardsPage() {
                   </div>
                 );
               })()}
+              {/* The total again, split by where it was worked. The lines add
+                  up to it: a shift still on the clock is in neither. */}
+              {hasLocations && grouped.byLocation.length > 0 && (
+                <div className="border-t border-border px-4 py-3 text-sm">
+                  <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    <MapPin className="h-3.5 w-3.5" />
+                    {t("Hours by location")}
+                  </div>
+                  {grouped.byLocation.map((l) => (
+                    <div key={l.locationId ?? "none"} className="grid grid-cols-[1fr_auto] gap-2 py-0.5">
+                      <span className={l.locationId ? "text-foreground" : "text-muted-foreground"}>
+                        {locationName(l.locationId)}
+                      </span>
+                      <span className="text-right font-medium tabular-nums text-foreground">
+                        {fmtHours(l.workedMs)}{" "}
+                        <span className="font-normal text-muted-foreground">
+                          ({fmtDecimal(l.workedMs)})
+                        </span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {locationErr && (
+                <p className="border-t border-border px-4 py-2 text-xs text-destructive">
+                  {locationErr}
+                </p>
+              )}
             </div>
 
             {/* Where each punch was made. Managers only: an employee's own timecard

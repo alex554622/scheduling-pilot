@@ -341,4 +341,10 @@ export const timecards: Record<string, string> = {
   Thursday: "Jueves",
   Friday: "Viernes",
   Saturday: "Sábado",
+
+  // Hours by location
+  "No location": "Sin ubicación",
+  "Hours by location": "Horas por ubicación",
+  "Paid hours by location": "Horas pagadas por ubicación",
+  "Location for the shift starting {time}": "Ubicación del turno que empieza a las {time}",
 };

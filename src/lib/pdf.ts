@@ -333,6 +333,8 @@ export interface TimecardPdfData {
   overtimeDecimal: string | null;
   doubleTime: string | null;
   doubleTimeDecimal: string | null;
+  /** Paid time per location, most first; empty when the company keeps none. */
+  byLocation: { name: string; hours: string; decimal: string }[];
   /** Plain-English summary of the rules in force, printed in the footer. */
   overtimeNote: string;
   roundNote: string;
@@ -473,6 +475,15 @@ export async function downloadTimecardPdf(data: TimecardPdfData): Promise<void> 
             table: {
               widths: ["*", 90],
               body: [
+                ...data.byLocation.map((l) => [
+                  { text: l.name, alignment: "right" as const, fontSize: 8.5, color: MUTED },
+                  {
+                    text: `${l.hours}  (${l.decimal})`,
+                    alignment: "right" as const,
+                    fontSize: 8.5,
+                    color: MUTED,
+                  },
+                ]),
                 [
                   { text: translate("Regular hours"), alignment: "right", fontSize: 8.5 },
                   {
@@ -517,8 +528,13 @@ export async function downloadTimecardPdf(data: TimecardPdfData): Promise<void> 
               ],
             },
             layout: {
-              hLineWidth: (i: number, node) => (i === node.table.body.length - 1 ? 0.8 : 0),
-              hLineColor: () => INK,
+              hLineWidth: (i: number, node) =>
+                i === node.table.body.length - 1
+                  ? 0.8
+                  : i > 0 && i === data.byLocation.length
+                    ? 0.5
+                    : 0,
+              hLineColor: (i: number, node) => (i === node.table.body.length - 1 ? INK : RULE),
               vLineWidth: () => 0,
               paddingTop: () => 3,
               paddingBottom: () => 3,
