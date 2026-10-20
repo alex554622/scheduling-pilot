@@ -9,26 +9,26 @@ import { useAuth } from "@/lib/auth";
  *
  * Distinct from `@/lib/capabilities` (what the plan sells) and from row-level
  * security (what the database will hand over at all). This is the company's own
- * "keep the office off the rosters" rule, `hide_admins_from_staff` on the App
- * rules page.
+ * say over who is on its rosters, set two ways:
  *
- * It started as a rule about what staff were shown, and the office stayed on
- * the manager's own lists — so a company that had decided its admins are not
- * part of the roster still found them in the schedule grid, on the timecard
- * table and on Today's roster, including their own row. An admin is either
- * somebody you schedule and pay or they are not; it cannot depend on who is
- * looking, and least of all on whether they are looking at themselves. The rule
- * applies to every company screen and to every viewer, the hidden admin
- * included. The one exception is a platform admin looking in from outside the
- * company, who sees all of it.
+ *  - **Per person**, from the Edit member dialog (`member_visibility`): shown
+ *    everywhere, on the schedule only, on the timecards only, or nowhere (a
+ *    "ghost").
+ *  - **The company default** for anyone without a setting of their own: an
+ *    employee is shown everywhere; an admin is a ghost while the App rule
+ *    "Hide admins from the rosters" is on, and shown everywhere while it is off.
  *
- * An admin can still open their own timecard, which is reached by name from the
- * "Me" option rather than off a roster — their pay record is theirs to read.
+ * Whichever applies, it applies to every viewer, the hidden person included: a
+ * person is either somebody you schedule and pay or they are not, and that
+ * cannot depend on who is looking. The one exception is a platform admin
+ * looking in from outside the company, who sees all of it. Anyone can still
+ * open their own timecard, which is reached by name from the "Me" option rather
+ * than off a roster — their pay record is theirs to read.
  *
  * Wherever this hides something an employee could otherwise have read for
- * themselves, the query that fetched it should be narrowed too — see the
- * schedule's employee branch, and `company_presence()` in the database. A filter
- * in the browser tidies a list; it does not keep a secret.
+ * themselves, the query that fetched it should be narrowed too — see
+ * `company_presence()` in the database. A filter in the browser tidies a list;
+ * it does not keep a secret.
  */
 
 /**
@@ -39,15 +39,38 @@ import { useAuth } from "@/lib/auth";
  */
 const ADMIN_ROLES = ["super_admin", "company_admin", "supervisor"] as const;
 
+/** A person's own setting; no setting means the company default. */
+export type VisibilityMode = "everywhere" | "schedule_only" | "timecards_only" | "ghost";
+
+/**
+ * Where a list sits. "schedule" is the schedule grid, the posted schedule and
+ * who a shift can be traded to; "timecards" the timecard roster; "roster" the
+ * dashboard's and Who's in's list of who is on the floor, which only a ghost
+ * is kept off.
+ */
+export type VisibilityPlace = "schedule" | "timecards" | "roster";
+
+/** Whether a mode keeps someone off a place. Pure, for the tests and the dialog. */
+export function hiddenFrom(mode: VisibilityMode, place: VisibilityPlace): boolean {
+  switch (mode) {
+    case "everywhere":
+      return false;
+    case "schedule_only":
+      return place === "timecards";
+    case "timecards_only":
+      return place === "schedule";
+    case "ghost":
+      return true;
+  }
+}
+
 export interface StaffVisibility {
-  /** Whether the rule is hiding anyone at all for the signed-in user. */
-  enforced: boolean;
-  /** True until the admin list has landed — nothing is hidden before then. */
+  /** True until the settings have landed — nothing is hidden before then. */
   isLoading: boolean;
-  /** Should this person be kept off the signed-in user's screen? */
-  isHidden: (userId: string) => boolean;
+  /** Should this person be kept off this place on the signed-in user's screen? */
+  isHidden: (userId: string, place: VisibilityPlace) => boolean;
   /** Drop the hidden people out of a list, given how to read each row's user id. */
-  visible: <T>(rows: T[], idOf: (row: T) => string) => T[];
+  visible: <T>(rows: T[], idOf: (row: T) => string, place: VisibilityPlace) => T[];
 }
 
 export function useStaffVisibility(): StaffVisibility {
@@ -56,11 +79,12 @@ export function useStaffVisibility(): StaffVisibility {
 
   // A platform admin is not in the company and is not subject to its rules;
   // everyone inside it gets the same list, admins included.
-  const enforced = rules.hide_admins_from_staff && primaryRole !== "super_admin";
+  const enforced = primaryRole !== "super_admin" && !!company?.id;
+  const hideAdmins = rules.hide_admins_from_staff;
 
   const adminsQ = useQuery({
     queryKey: ["company-admin-ids", company?.id],
-    enabled: enforced && !!company?.id,
+    enabled: enforced && hideAdmins,
     staleTime: 60_000,
     queryFn: async () => {
       const { data, error } = await supabase
@@ -73,23 +97,46 @@ export function useStaffVisibility(): StaffVisibility {
     },
   });
 
-  const adminIds = useMemo(() => new Set(adminsQ.data ?? []), [adminsQ.data]);
+  const settingsQ = useQuery({
+    queryKey: ["member-visibility", company?.id],
+    enabled: enforced,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("member_visibility")
+        .select("user_id, mode")
+        .eq("company_id", company!.id);
+      // Before the migration is applied the table is missing: behave as if
+      // nobody has a setting, which is exactly how things were.
+      if (error) return [];
+      return (data ?? []) as { user_id: string; mode: VisibilityMode }[];
+    },
+  });
 
-  // No exemption for the viewer. The rule only ever hides an admin, so the
-  // only person it could excuse is an admin looking at themselves — and an
-  // admin who is not on the roster is not on it in their own browser either.
-  // An employee is never in `adminIds`, so they can never vanish from their
-  // own screens.
+  const adminIds = useMemo(() => new Set(adminsQ.data ?? []), [adminsQ.data]);
+  const modes = useMemo(
+    () => new Map((settingsQ.data ?? []).map((r) => [r.user_id, r.mode])),
+    [settingsQ.data],
+  );
+
   const isHidden = useCallback(
-    (userId: string) => enforced && adminIds.has(userId),
-    [enforced, adminIds],
+    (userId: string, place: VisibilityPlace) => {
+      if (!enforced) return false;
+      const mode = modes.get(userId) ?? (hideAdmins && adminIds.has(userId) ? "ghost" : "everywhere");
+      return hiddenFrom(mode, place);
+    },
+    [enforced, modes, hideAdmins, adminIds],
   );
 
   const visible = useCallback(
-    <T>(rows: T[], idOf: (row: T) => string) =>
-      enforced ? rows.filter((r) => !isHidden(idOf(r))) : rows,
+    <T>(rows: T[], idOf: (row: T) => string, place: VisibilityPlace) =>
+      enforced ? rows.filter((r) => !isHidden(idOf(r), place)) : rows,
     [enforced, isHidden],
   );
 
-  return { enforced, isLoading: enforced && adminsQ.isLoading, isHidden, visible };
+  return {
+    isLoading: enforced && (settingsQ.isLoading || (hideAdmins && adminsQ.isLoading)),
+    isHidden,
+    visible,
+  };
 }

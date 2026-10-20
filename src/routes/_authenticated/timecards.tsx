@@ -235,7 +235,7 @@ function TimecardsPage() {
    * not hidden, it is just harder to find.
    */
   const roster = useMemo(
-    () => staff.visible(rosterQ.data ?? [], (m) => m.id),
+    () => staff.visible(rosterQ.data ?? [], (m) => m.id, "timecards"),
     [rosterQ.data, staff],
   );
 

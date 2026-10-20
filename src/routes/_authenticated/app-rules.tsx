@@ -381,7 +381,7 @@ function AppRulesPage() {
             </div>
             <ToggleRow
               label="Hide admins from the rosters"
-              description="Admins drop off the dashboard roster, the schedule grid, the timecard table and the list of people a shift can be traded with — on everyone's screen, including their own. They can still open their own timecard. Leave this off if your admins work shifts like anyone else."
+              description="The default for admins: they drop off the dashboard roster, the schedule grid, the timecard table and the list of people a shift can be traded with — on everyone's screen, including their own. They can still open their own timecard. To treat one person differently, use “Shows up on” in their Edit member dialog."
               checked={rules.hide_admins_from_staff}
               onChange={(v) => set("hide_admins_from_staff", v)}
             />

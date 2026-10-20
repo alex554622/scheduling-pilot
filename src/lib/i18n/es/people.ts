@@ -135,6 +135,22 @@ export const people: Record<string, string> = {
   "The schedule builder warns when someone is assigned a position they aren’t marked for.":
     "El creador de horarios avisa cuando se asigna a alguien un puesto para el que no está calificado.",
   "Work locations": "Ubicaciones de trabajo",
+  "Shows up on": "Aparece en",
+  "Company default": "Predeterminado de la empresa",
+  "Schedule and timecards": "Horario y tarjetas de tiempo",
+  "Schedule only": "Solo horario",
+  "Timecards only": "Solo tarjetas de tiempo",
+  "Nowhere (ghost)": "En ningún lado (fantasma)",
+  "Run the member visibility update in Supabase to use this.":
+    "Ejecuta la actualización de visibilidad de miembros en Supabase para usar esto.",
+  "Kept off the schedule, the timecards, the dashboard and Who's in. They can still open their own timecard.":
+    "No aparece en el horario, las tarjetas de tiempo, el panel ni en Quién está. Aún puede abrir su propia tarjeta de tiempo.",
+  "On the schedule, but not on the timecard list.": "En el horario, pero no en la lista de tarjetas de tiempo.",
+  "On the timecard list, but not on the schedule.": "En la lista de tarjetas de tiempo, pero no en el horario.",
+  "On the schedule and the timecards, even if they are an admin.":
+    "En el horario y las tarjetas de tiempo, aunque sea administrador.",
+  "Employees show everywhere. Admins follow “Hide admins from the rosters” in App rules.":
+    "Los empleados aparecen en todos lados. Los administradores siguen “Ocultar a los administradores de las listas” en Reglas de la app.",
   "No locations yet — add them under Organization → Locations.":
     "Aún no hay ubicaciones — agrégalas en Organización → Ubicaciones.",
   "Their hours on the timecard are split by the location each shift was worked at.":
@@ -297,8 +313,8 @@ export const people: Record<string, string> = {
   "Let employees submit time-off requests for approval.":
     "Permite que los empleados envíen solicitudes de tiempo libre para aprobación.",
   "Hide admins from the rosters": "Ocultar a los administradores de las listas",
-  "Admins drop off the dashboard roster, the schedule grid, the timecard table and the list of people a shift can be traded with — on everyone's screen, including their own. They can still open their own timecard. Leave this off if your admins work shifts like anyone else.":
-    "Los administradores desaparecen de la lista del panel, la cuadrícula del horario, la tabla de tarjetas de tiempo y la lista de personas con quienes se puede intercambiar un turno, en la pantalla de todos, incluida la suya. Aún pueden abrir su propia tarjeta de tiempo. Déjalo desactivado si tus administradores trabajan turnos como cualquier otro.",
+  "The default for admins: they drop off the dashboard roster, the schedule grid, the timecard table and the list of people a shift can be traded with — on everyone's screen, including their own. They can still open their own timecard. To treat one person differently, use “Shows up on” in their Edit member dialog.":
+    "Lo predeterminado para los administradores: desaparecen de la lista del panel, la cuadrícula del horario, la tabla de tarjetas de tiempo y la lista de personas con quienes se puede intercambiar un turno, en la pantalla de todos, incluida la suya. Aún pueden abrir su propia tarjeta de tiempo. Para tratar a una persona de otra forma, usa “Aparece en” en su diálogo Editar miembro.",
 
   // Audit log
   "Audit log": "Registro de auditoría",

@@ -668,6 +668,35 @@ export type Database = {
           },
         ]
       }
+      member_visibility: {
+        Row: {
+          company_id: string
+          mode: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          mode: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          mode?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "member_visibility_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       locations: {
         Row: {
           address: string | null

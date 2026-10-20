@@ -254,10 +254,11 @@ function TradesPage() {
         myShifts={myShifts}
         allShifts={shiftsQ.data ?? []}
         /* Someone an employee can't see on the schedule isn't someone they can
-           offer a shift to either, so the picker drops the admins too. */
+           offer a shift to either, so the picker drops them too. */
         teammates={staff.visible(
           (peopleQ.data ?? []).filter((p) => p.id !== user?.id),
           (p) => p.id,
+          "schedule",
         )}
         onSaved={() => { setOpen(false); qc.invalidateQueries({ queryKey: ["trades"] }); }}
       />

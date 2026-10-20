@@ -278,7 +278,7 @@ function DashboardPage() {
     // of the company is not missing, it is off, and listing all of it buried
     // the handful actually working under a column of "no show".
     const members = staff
-      .visible(membersQ.data ?? [], (m) => m.id)
+      .visible(membersQ.data ?? [], (m) => m.id, "roster")
       .filter((m) => dueToday.has(m.id) || byUser.has(m.id));
     const list: Row[] = members.map((m) => {
       const punches = byUser.get(m.id) ?? [];
@@ -469,7 +469,7 @@ function DashboardPage() {
     // morning off the schedule and has gone home drops off, which is the one
     // thing this list cannot know.
     const presence = staff
-      .visible(presenceQ.data ?? [], (p) => p.user_id)
+      .visible(presenceQ.data ?? [], (p) => p.user_id, "roster")
       .filter(
         (p) => dueToday.has(p.user_id) || p.status === "working" || p.status === "on_break",
       )

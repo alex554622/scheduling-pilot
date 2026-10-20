@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { useT, translate, useLocaleTag } from "@/lib/i18n";
 import { Users, ShieldCheck, Search, Copy, Check, Loader2, UserCog, Trash2, Pencil, Mail, Send, X, Link2, RefreshCw, CalendarClock, Inbox, History, RotateCcw } from "lucide-react";
 import { shareableOrigin } from "@/lib/native/platform";
+import type { VisibilityMode } from "@/lib/staff-visibility";
 
 export const Route = createFileRoute("/_authenticated/employees")({
   component: EmployeesPage,
@@ -1072,6 +1073,9 @@ function EditMemberDialog({
   const [maxHours, setMaxHours] = useState<number>(40);
   const [isActive, setIsActive] = useState(true);
   const [worksAt, setWorksAt] = useState<Set<string>>(new Set());
+  // Where they show up; "" is the company default.
+  const [visibility, setVisibility] = useState<VisibilityMode | "">("");
+  const qc = useQueryClient();
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -1101,6 +1105,24 @@ function EditMemberDialog({
       return (data ?? []) as { id: string; name: string }[];
     },
   });
+
+  const visibilityQ = useQuery({
+    queryKey: ["member-visibility-one", member?.id],
+    enabled: !!member,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("member_visibility")
+        .select("mode")
+        .eq("user_id", member!.id)
+        .maybeSingle();
+      if (error) throw error;
+      return (data?.mode ?? "") as VisibilityMode | "";
+    },
+  });
+
+  useEffect(() => {
+    if (visibilityQ.data !== undefined) setVisibility(visibilityQ.data);
+  }, [visibilityQ.data]);
 
   const worksAtQ = useQuery({
     queryKey: ["employee-locations", member?.id],
@@ -1189,6 +1211,21 @@ function EditMemberDialog({
       if (rmErr) { setSaving(false); setErr(rmErr.message); return; }
     }
 
+    // Where they show up: a row for a choice, none for the company default.
+    if (visibilityQ.isSuccess && visibility !== visibilityQ.data) {
+      const { error: visErr } = visibility
+        ? await supabase.from("member_visibility").upsert({
+            user_id: member.id,
+            company_id: companyId,
+            mode: visibility,
+            updated_at: new Date().toISOString(),
+          })
+        : await supabase.from("member_visibility").delete().eq("user_id", member.id);
+      if (visErr) { setSaving(false); setErr(visErr.message); return; }
+      void qc.invalidateQueries({ queryKey: ["member-visibility"] });
+      void qc.invalidateQueries({ queryKey: ["member-visibility-one", member.id] });
+    }
+
     setSaving(false);
     onSaved();
   }
@@ -1264,6 +1301,36 @@ function EditMemberDialog({
                 <option value="inactive">{t("Inactive")}</option>
               </select>
             </div>
+          </div>
+
+          <div>
+            <Label htmlFor="visibility">{t("Shows up on")}</Label>
+            <select
+              id="visibility"
+              className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
+              value={visibility}
+              disabled={visibilityQ.isLoading || visibilityQ.isError}
+              onChange={(e) => setVisibility(e.target.value as VisibilityMode | "")}
+            >
+              <option value="">{t("Company default")}</option>
+              <option value="everywhere">{t("Schedule and timecards")}</option>
+              <option value="schedule_only">{t("Schedule only")}</option>
+              <option value="timecards_only">{t("Timecards only")}</option>
+              <option value="ghost">{t("Nowhere (ghost)")}</option>
+            </select>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {visibilityQ.isError
+                ? t("Run the member visibility update in Supabase to use this.")
+                : visibility === "ghost"
+                  ? t("Kept off the schedule, the timecards, the dashboard and Who's in. They can still open their own timecard.")
+                  : visibility === "schedule_only"
+                    ? t("On the schedule, but not on the timecard list.")
+                    : visibility === "timecards_only"
+                      ? t("On the timecard list, but not on the schedule.")
+                      : visibility === "everywhere"
+                        ? t("On the schedule and the timecards, even if they are an admin.")
+                        : t("Employees show everywhere. Admins follow “Hide admins from the rosters” in App rules.")}
+            </p>
           </div>
 
           <div>

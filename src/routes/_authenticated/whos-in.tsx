@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { useStaffVisibility } from "@/lib/staff-visibility";
 import { Button } from "@/components/ui/button";
 import { useLocaleTag, useT } from "@/lib/i18n";
 import { Clock, Users, Coffee, RefreshCw, ArrowLeft } from "lucide-react";
@@ -32,6 +33,7 @@ function WhosInPage() {
   const t = useT("time");
   const tag = useLocaleTag();
   const { company, primaryRole, loading } = useAuth();
+  const staff = useStaffVisibility();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const isManager = primaryRole === "company_admin" || primaryRole === "super_admin";
@@ -132,7 +134,8 @@ function WhosInPage() {
     // shift — still on the clock from a punch made yesterday evening. A rule of
     // "punched today" alone would hide exactly the one person on the floor at
     // two in the morning.
-    const members = (membersQ.data ?? []).filter((m) => {
+    // A ghost is on no list, this one included.
+    const members = staff.visible(membersQ.data ?? [], (m) => m.id, "roster").filter((m) => {
       const last = lastByUser.get(m.id);
       const onClock = !!last && last.kind !== "out";
       return scheduled.has(m.id) || punchedToday.has(m.id) || onClock;
@@ -166,7 +169,7 @@ function WhosInPage() {
       return a.name.localeCompare(b.name);
     });
     return list;
-  }, [membersQ.data, punchesQ.data, scheduledQ.data, todayStart, t]);
+  }, [membersQ.data, punchesQ.data, scheduledQ.data, todayStart, t, staff]);
 
   // Employees can't end a break before its time is up; an admin can, from here.
   // Recorded like any manager punch, so it shows in the correction audit.

@@ -590,7 +590,7 @@ function CompanyDashboard({ role }: { role: AppRole }) {
   // applied. An admin is either somebody you put on a schedule or they are not,
   // and that cannot depend on who is looking at it. Their own row stays —
   // nobody is hidden from themselves.
-  const members = staff.visible(membersQ.data ?? [], (m) => m.id);
+  const members = staff.visible(membersQ.data ?? [], (m) => m.id, "schedule");
   const teams = teamsQ.data ?? [];
   const shifts = shiftsQ.data ?? [];
 
@@ -605,7 +605,7 @@ function CompanyDashboard({ role }: { role: AppRole }) {
     // than flash a name the rule is about to take away.
     const posted = staff.isLoading
       ? []
-      : staff.visible(postedQ.data ?? [], (s) => s.employee_id ?? "");
+      : staff.visible(postedQ.data ?? [], (s) => s.employee_id ?? "", "schedule");
     return (
       <EmployeeView
         days={days}
