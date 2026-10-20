@@ -11,6 +11,7 @@ export const time: Record<string, string> = {
   "Open the platform overview": "Abre el resumen de la plataforma",
   "to pick one.": "para elegir una.",
   "Who's on duty": "Quién está de turno",
+  "My day": "Mi día",
   "Your shift started {start} — until {end}": "Tu turno empezó a las {start} — hasta las {end}",
   "Your shift starts {start} — until {end}": "Tu turno empieza a las {start} — hasta las {end}",
   "(not published yet)": "(aún sin publicar)",

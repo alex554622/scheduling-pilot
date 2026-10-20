@@ -39,6 +39,12 @@ export type AppRules = {
    * looking in from outside the company still sees everyone.
    */
   hide_admins_from_staff: boolean;
+  /**
+   * Whether an employee's dashboard lists their coworkers. Off, it shows only
+   * them — their own status and their own shift — and `company_presence()`
+   * hands them nothing but their own row. Admins always see everyone.
+   */
+  staff_see_coworkers: boolean;
 };
 
 export const DEFAULT_APP_RULES: AppRules = {
@@ -61,6 +67,7 @@ export const DEFAULT_APP_RULES: AppRules = {
   schedule_advance_notice_hours: 24,
   schedule_menu: "builder",
   hide_admins_from_staff: true,
+  staff_see_coworkers: true,
 };
 
 export function useAppRules() {

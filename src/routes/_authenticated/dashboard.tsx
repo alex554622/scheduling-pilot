@@ -141,7 +141,7 @@ function DashboardPage() {
   // shown the posted schedule only, plus their own shift whether or not it has
   // been published yet.
   const shiftsTodayQ = useQuery<ScheduledShift[]>({
-    queryKey: ["today-shifts", company?.id, dayStart.toISOString(), isManager],
+    queryKey: ["today-shifts", company?.id, dayStart.toISOString(), isManager, rules.staff_see_coworkers],
     // Waiting for `user` keeps the narrowing below from being skipped in the
     // moment before the session lands, which would pull draft shifts down to
     // someone who may not see them.
@@ -153,7 +153,13 @@ function DashboardPage() {
         .eq("company_id", company!.id)
         .gte("starts_at", dayStart.toISOString())
         .lte("starts_at", dayEnd.toISOString());
-      if (!isManager) q = q.or(`published.eq.true,employee_id.eq.${user!.id}`);
+      if (!isManager) {
+        // With coworkers hidden, an employee's dashboard asks only for their
+        // own shifts — other people's are not this screen's to show.
+        q = rules.staff_see_coworkers
+          ? q.or(`published.eq.true,employee_id.eq.${user!.id}`)
+          : q.eq("employee_id", user!.id);
+      }
       const { data, error } = await q.order("starts_at", { ascending: true });
       if (error) throw error;
       return (data ?? []) as ScheduledShift[];
@@ -468,8 +474,12 @@ function DashboardPage() {
     // state can say: on the clock or on a break right now. Someone who worked a
     // morning off the schedule and has gone home drops off, which is the one
     // thing this list cannot know.
+    // With coworkers hidden the database already sends only their own row;
+    // filtering here as well keeps that true before it has the newer function.
+    const seeOthers = rules.staff_see_coworkers;
     const presence = staff
       .visible(presenceQ.data ?? [], (p) => p.user_id, "roster")
+      .filter((p) => seeOthers || p.user_id === user?.id)
       .filter(
         (p) => dueToday.has(p.user_id) || p.status === "working" || p.status === "on_break",
       )
@@ -499,7 +509,9 @@ function DashboardPage() {
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold text-foreground">{t("Who's on duty")}</h1>
+            <h1 className="text-2xl font-semibold text-foreground">
+              {seeOthers ? t("Who's on duty") : t("My day")}
+            </h1>
             <p className="text-sm text-muted-foreground">
               <CalendarDays className="mr-1 inline h-4 w-4 align-text-bottom" />
               {today.toLocaleDateString(tag, {
@@ -586,6 +598,7 @@ function DashboardPage() {
           </div>
         </div>
 
+        {seeOthers && (
         <div className="grid grid-cols-3 gap-3">
           <Stat
             label={t("Working")}
@@ -606,6 +619,7 @@ function DashboardPage() {
             color="slate"
           />
         </div>
+        )}
 
         <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
           <div className="grid grid-cols-[2fr_1fr] border-b border-border bg-muted/30 px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">

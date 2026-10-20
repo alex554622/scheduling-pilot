@@ -385,6 +385,12 @@ export function AppRulesPanel() {
               checked={rules.hide_admins_from_staff}
               onChange={(v) => set("hide_admins_from_staff", v)}
             />
+            <ToggleRow
+              label="Employees can see coworkers on the dashboard"
+              description="On: the dashboard shows each employee who else is working, on a break or due in today. Off: employees see only themselves — their own status and their own shift. Admins always see everyone."
+              checked={rules.staff_see_coworkers}
+              onChange={(v) => set("staff_see_coworkers", v)}
+            />
           </section>
 
           {err && (

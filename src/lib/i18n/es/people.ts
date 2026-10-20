@@ -331,6 +331,9 @@ export const people: Record<string, string> = {
   "Hide admins from the rosters": "Ocultar a los administradores de las listas",
   "The default for admins: they drop off the dashboard roster, the schedule grid, the timecard table and the list of people a shift can be traded with — on everyone's screen, including their own. They can still open their own timecard. To treat one person differently, use “Shows up on” in their Edit member dialog.":
     "Lo predeterminado para los administradores: desaparecen de la lista del panel, la cuadrícula del horario, la tabla de tarjetas de tiempo y la lista de personas con quienes se puede intercambiar un turno, en la pantalla de todos, incluida la suya. Aún pueden abrir su propia tarjeta de tiempo. Para tratar a una persona de otra forma, usa “Aparece en” en su diálogo Editar miembro.",
+  "Employees can see coworkers on the dashboard": "Los empleados pueden ver a sus compañeros en el panel",
+  "On: the dashboard shows each employee who else is working, on a break or due in today. Off: employees see only themselves — their own status and their own shift. Admins always see everyone.":
+    "Activado: el panel muestra a cada empleado quién más está trabajando, en descanso o por entrar hoy. Desactivado: los empleados solo se ven a sí mismos — su propio estado y su propio turno. Los administradores siempre ven a todos.",
 
   // Audit log
   "Audit log": "Registro de auditoría",
