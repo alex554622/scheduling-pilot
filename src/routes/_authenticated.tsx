@@ -19,7 +19,6 @@ import {
   FileClock,
   UserCheck,
   UserCog,
-  ShieldCheck,
   Network,
   CalendarCheck,
   ScrollText,
@@ -132,13 +131,6 @@ const NAV: NavItem[] = [
     label: "Shared clock-in",
     icon: Tablet,
     roles: ["company_admin"],
-    needs: "time_clock",
-  },
-  {
-    to: "/punch-corrections",
-    label: "Punch corrections",
-    icon: ShieldCheck,
-    roles: ["company_admin", "super_admin"],
     needs: "time_clock",
   },
   // Not behind a plan capability: telling your own staff something is not a
