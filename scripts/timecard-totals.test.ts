@@ -3,6 +3,8 @@
  */
 import {
   hoursByLocation,
+  splitByLocation,
+  type LocationMove,
   punchesInPeriod,
   readBreak,
   totalsByPerson,
@@ -337,37 +339,69 @@ eq(
   [["airport", null]],
 );
 
-console.log("\nmoving location mid-shift splits the time at the move");
-// What switch_location writes: out at the old place, in at the new one a
-// second later. 8:00 at the fire department, moved at 11:00, out at 16:00 with
-// a 30-minute unpaid lunch after the move.
-const moveAt = new Date(2026, 7, 3, 11, 0).getTime();
-t = totalsByPerson([
+console.log("\nmoving location mid-shift keeps one time card and splits its hours");
+// 8:00 clocked in at the fire department, tapped Traffic at 11:00, a 30-minute
+// unpaid lunch at 13:00, out at 16:00.
+const day = [
   at_(punch("a", "in", 3, 8), "fire"),
-  at_(punch("a", "out", 3, 11), "fire"),
-  { ...at_(punch("a", "in", 3, 11), "traffic"), at: new Date(moveAt + 1000).toISOString() },
-  at_(punch("a", "break_start", 3, 13, 0, 30), "traffic"),
-  at_(punch("a", "break_end", 3, 13, 30), "traffic"),
-  at_(punch("a", "out", 3, 16), "traffic"),
+  at_(punch("a", "break_start", 3, 13, 0, 30), "fire"),
+  at_(punch("a", "break_end", 3, 13, 30), "fire"),
+  at_(punch("a", "out", 3, 16), "fire"),
+];
+const moves: LocationMove[] = [{ user_id: "a", at: at(3, 11), location_id: "traffic" }];
+t = totalsByPerson(day, 0, true, moves).get("a")!;
+eq("one time card", t.days[0].spans.length, 1);
+eq("seven and a half hours, as without the move", t.workedMs / HOUR, 7.5);
+eq(
+  "three at fire; the lunch comes off traffic's five",
+  t.byLocation.map((l) => [l.locationId, l.workedMs / HOUR]),
+  [["traffic", 4.5], ["fire", 3]],
+);
+eq(
+  "the shift lists them in the order worked",
+  t.days[0].spans[0].byLocation.map((l) => l.locationId),
+  ["fire", "traffic"],
+);
+
+console.log("\nback and forth adds up per place");
+t = totalsByPerson(day, 0, true, [
+  ...moves,
+  { user_id: "a", at: at(3, 14), location_id: "fire" },
 ]).get("a")!;
 eq(
-  "three hours at fire, four and a half at traffic (to the second)",
-  t.byLocation.map((l) => [l.locationId, Math.round(l.workedMs / MINUTE)]),
-  [["traffic", 270], ["fire", 180]],
+  "fire 3 + 2, traffic 3 less lunch",
+  t.byLocation.map((l) => [l.locationId, l.workedMs / HOUR]),
+  [["fire", 5], ["traffic", 2.5]],
 );
-eq("still one day", t.dayTotals.length, 1);
+
+console.log("\nmoves outside the shift, or someone else's, change nothing");
+t = totalsByPerson(day, 0, true, [
+  { user_id: "a", at: at(3, 7), location_id: "traffic" },
+  { user_id: "a", at: at(3, 17), location_id: "traffic" },
+  { user_id: "b", at: at(3, 11), location_id: "traffic" },
+]).get("a")!;
+eq("all at fire", t.byLocation, [{ locationId: "fire", workedMs: 7.5 * HOUR }]);
+
+console.log("\nrounding applies to the move too");
+t = totalsByPerson(day, 5, true, [{ user_id: "a", at: at(3, 11, 2), location_id: "traffic" }]).get(
+  "a",
+)!;
 eq(
-  "and with five-minute rounding the second disappears",
-  totalsByPerson(
-    [
-      at_(punch("a", "in", 3, 8), "fire"),
-      at_(punch("a", "out", 3, 11), "fire"),
-      { ...at_(punch("a", "in", 3, 11), "traffic"), at: new Date(moveAt + 1000).toISOString() },
-      at_(punch("a", "out", 3, 16), "traffic"),
-    ],
-    5,
-  ).get("a")!.workedMs / HOUR,
-  8,
+  "11:02 reads 11:00",
+  t.byLocation.map((l) => [l.locationId, l.workedMs / HOUR]),
+  [["traffic", 4.5], ["fire", 3]],
+);
+
+console.log("\nsplitByLocation on its own");
+eq(
+  "no moves: the whole shift at the clock-in's place",
+  splitByLocation(at(3, 8), at(3, 12), "fire", []),
+  [{ locationId: "fire", workedMs: 4 * HOUR }],
+);
+eq(
+  "a move at the clock-in minute is not a second place",
+  splitByLocation(at(3, 8), at(3, 12), "fire", [{ at: at(3, 8), location_id: "traffic" }]),
+  [{ locationId: "fire", workedMs: 4 * HOUR }],
 );
 
 console.log("\npunches from before locations existed");

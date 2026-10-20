@@ -43,10 +43,9 @@ import {
   readBreak,
   roundPunches,
   roundToMinutes,
-  hoursByLocation,
-  LOCATION_SWITCH,
   totalsByPerson,
   type LocationHours,
+  type LocationMove,
   type SimplePunch,
 } from "@/lib/timecard-totals";
 import { fromDayString, toDayString } from "@/lib/schedule-pattern";
@@ -81,8 +80,6 @@ type Punch = {
   longitude: number | null;
   /** Where the stretch was worked; the clock-in's is the one that counts. */
   location_id: string | null;
-  /** `LOCATION_SWITCH` when this punch is half of a move between locations. */
-  note: string | null;
 };
 
 /** Punch kinds as a manager reads them in the location log. */
@@ -273,6 +270,9 @@ function TimecardsPage() {
     (id && locations.find((l) => l.id === id)?.name) || t("No location");
   const byLocationText = (lines: LocationHours[]) =>
     lines.map((l) => `${locationName(l.locationId)} ${fmtDecimal(l.workedMs)}`).join(" · ");
+  /** Where one shift was worked: its place, or each place and its hours if it moved. */
+  const shiftPlaces = (split: LocationHours[] | undefined, startLocation: string | null) =>
+    split && split.length > 1 ? byLocationText(split) : locationName(startLocation);
 
   // A manager moving one stretch to another location. The database moves its
   // breaks and clock-out with it.
@@ -315,7 +315,7 @@ function TimecardsPage() {
       const { data, error } = await supabase
         .from("time_punches")
         .select(
-          "id, user_id, kind, at, distance_m, within_geofence, break_minutes, latitude, longitude, location_id, note",
+          "id, user_id, kind, at, distance_m, within_geofence, break_minutes, latitude, longitude, location_id",
         )
         .eq("user_id", targetUserId!)
         .gte("at", fetchFrom)
@@ -323,6 +323,24 @@ function TimecardsPage() {
         .order("at", { ascending: true });
       if (error) throw error;
       return punchesInPeriod((data ?? []) as Punch[], rangeStart, rangeEnd);
+    },
+  });
+
+  // Mid-shift location moves over the same stretch, so hours split by place.
+  // Under the "timecards" key, so whatever refreshes the punches refreshes these.
+  const movesQ = useQuery<LocationMove[]>({
+    queryKey: ["timecards", "moves", targetUserId, rangeStart.toISOString(), rangeEnd.toISOString()],
+    enabled: !!targetUserId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("location_moves")
+        .select("user_id, at, location_id")
+        .eq("user_id", targetUserId!)
+        .gte("at", fetchFrom)
+        .lt("at", fetchTo)
+        .order("at", { ascending: true });
+      if (error) throw error;
+      return data ?? [];
     },
   });
 
@@ -344,6 +362,21 @@ function TimecardsPage() {
     },
   });
 
+  const allMovesQ = useQuery<LocationMove[]>({
+    queryKey: ["timecards-all", "moves", rangeStart.toISOString(), rangeEnd.toISOString()],
+    enabled: viewingAll,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("location_moves")
+        .select("user_id, at, location_id")
+        .gte("at", fetchFrom)
+        .lt("at", fetchTo)
+        .order("at", { ascending: true });
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
   /** One line per person: their days, breaks, hours and overtime split. */
   const everyone = useMemo(() => {
     if (!viewingAll) return [];
@@ -351,6 +384,7 @@ function TimecardsPage() {
       allQ.data ?? [],
       rules.punch_round_minutes,
       rules.cap_break_to_length,
+      allMovesQ.data ?? [],
     );
     return roster
       .map((m) => {
@@ -378,7 +412,7 @@ function TimecardsPage() {
         };
       })
       .sort((a, b) => b.workedMs - a.workedMs || a.name.localeCompare(b.name));
-  }, [viewingAll, allQ.data, roster, rules, period, t]);
+  }, [viewingAll, allQ.data, allMovesQ.data, roster, rules, period, t]);
 
   /** Everyone's paid time per location, for the foot of the roster-wide table. */
   const everyoneByLocation = useMemo(() => {
@@ -576,23 +610,31 @@ function TimecardsPage() {
       weekUnpaid += dayUnpaidMs;
       weekPaid += dayPaidMs;
     }
-    // Paid time per location, from the same pairs the day totals came from.
-    const byLocation = hoursByLocation(
-      rows.flatMap((r) =>
-        r.pairs.map((p) => ({
-          locationId: p.in.location_id,
-          outAt: p.out?.at ?? null,
-          workedMs: p.out
-            ? Math.max(
-                0,
-                new Date(p.out.at).getTime() - new Date(p.in.at).getTime() - p.unpaidBreakMs,
-              )
-            : 0,
-        })),
-      ),
+    // Paid time per location, by the same rules as the roster-wide view: each
+    // shift split at the moves made during it. `splits` is each shift's own
+    // split, keyed by its (rounded) clock-in, which is how the pairs read it.
+    const person = targetUserId
+      ? totalsByPerson(
+          punchesQ.data ?? [],
+          rules.punch_round_minutes,
+          rules.cap_break_to_length,
+          movesQ.data ?? [],
+        ).get(targetUserId)
+      : undefined;
+    const byLocation = person?.byLocation ?? [];
+    const splits = new Map(
+      (person?.days ?? []).flatMap((d) => d.spans).map((sp) => [sp.inAt, sp.byLocation] as const),
     );
-    return { rows, weekTotal, weekUnpaid, weekPaid, byLocation };
-  }, [punchesQ.data, rangeStart, days, rules.punch_round_minutes, rules.cap_break_to_length]);
+    return { rows, weekTotal, weekUnpaid, weekPaid, byLocation, splits };
+  }, [
+    punchesQ.data,
+    movesQ.data,
+    targetUserId,
+    rangeStart,
+    days,
+    rules.punch_round_minutes,
+    rules.cap_break_to_length,
+  ]);
 
   // The day asked for from the dashboard, opened once that card has loaded —
   // before then the editor would show the day as having no punches.
@@ -647,7 +689,7 @@ function TimecardsPage() {
         paid: p.paidBreakMs > 0 ? fmtHours(p.paidBreakMs) : "—",
         hours: i === 0 ? fmtHours(r.totalMs) : "",
         notes: [
-          hasLocations ? locationName(p.in.location_id) : null,
+          hasLocations ? shiftPlaces(grouped.splits.get(p.in.at), p.in.location_id) : null,
           !p.out ? t("Still clocked in") : null,
           // Where someone punched from is a manager's business; an employee's
           // own timecard is about their hours.
@@ -752,7 +794,9 @@ function TimecardsPage() {
             unpaidBreakMs: p.unpaidBreakMs,
             paidBreakMs: p.paidBreakMs,
             offSite: isManager && (!p.in.within_geofence || (!!p.out && !p.out.within_geofence)),
-            location: hasLocations ? locationName(p.in.location_id) : null,
+            location: hasLocations
+              ? shiftPlaces(grouped.splits.get(p.in.at), p.in.location_id)
+              : null,
           })),
         }))}
         totals={{
@@ -1082,7 +1126,7 @@ function TimecardsPage() {
                                   )}
                                   {hasLocations && (
                                     <span className="ml-2 text-xs text-muted-foreground">
-                                      · {locationName(span.locationId)}
+                                      · {shiftPlaces(span.byLocation, span.locationId)}
                                     </span>
                                   )}
                                 </td>
@@ -1192,7 +1236,7 @@ function TimecardsPage() {
                         </span>
                         {p.out ? (
                           <span className="rounded bg-blue-100 dark:bg-blue-500/15 px-1.5 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">
-                            {p.out.note === LOCATION_SWITCH ? t("MOVED") : t("OUT")} {fmtTime(p.out.at, rules.punch_round_minutes)}
+                            {t("OUT")} {fmtTime(p.out.at, rules.punch_round_minutes)}
                           </span>
                         ) : (
                           <span className="rounded bg-amber-100 dark:bg-amber-500/15 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
@@ -1234,9 +1278,14 @@ function TimecardsPage() {
                           ) : (
                             <span className="flex items-center gap-0.5 text-xs text-muted-foreground">
                               <MapPin className="h-3 w-3" />
-                              {locationName(p.in.location_id)}
+                              {shiftPlaces(grouped.splits.get(p.in.at), p.in.location_id)}
                             </span>
                           ))}
+                        {hasLocations && isManager && (grouped.splits.get(p.in.at)?.length ?? 0) > 1 && (
+                          <span className="text-xs text-muted-foreground">
+                            {byLocationText(grouped.splits.get(p.in.at)!)}
+                          </span>
+                        )}
                       </div>
                     ))}
                   </div>

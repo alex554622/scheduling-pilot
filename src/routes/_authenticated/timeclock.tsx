@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useAppRules } from "@/lib/app-rules";
-import { LOCATION_SWITCH, readBreak } from "@/lib/timecard-totals";
+import { readBreak } from "@/lib/timecard-totals";
 import { Button } from "@/components/ui/button";
 import { LeafletMap } from "@/components/leaflet-map";
 import { PaySettingsCard } from "@/components/pay-settings-card";
@@ -42,8 +42,6 @@ type Punch = {
   break_minutes: number | null;
   /** Where the stretch is being worked; the clock-in's is the one that counts. */
   location_id: string | null;
-  /** `LOCATION_SWITCH` on the pair a move between locations writes. */
-  note: string | null;
 };
 
 const PUNCH_LABEL: Record<PunchKind, string> = {
@@ -126,7 +124,7 @@ function TimeclockPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("time_punches")
-        .select("id, kind, at, latitude, longitude, distance_m, within_geofence, break_minutes, location_id, note")
+        .select("id, kind, at, latitude, longitude, distance_m, within_geofence, break_minutes, location_id")
         .eq("user_id", user!.id)
         .order("at", { ascending: false })
         // Deep enough to always contain the open shift's clock-in, however many
@@ -169,8 +167,28 @@ function TimeclockPage() {
         ? "on_break"
         : "working";
   const nextKind: "in" | "out" = status === "off" ? "in" : "out";
-  // The clock-in of the shift they are on now, whose location the picker shows.
+  // The clock-in of the shift they are on now.
   const openIn = status === "off" ? undefined : recentQ.data?.find((p) => p.kind === "in");
+
+  // Where they have moved to since clocking in, newest first. Their time counts
+  // at the latest one; before any move, at the clock-in's location.
+  const movesQ = useQuery({
+    queryKey: ["my-location-moves", user?.id, openIn?.id],
+    enabled: !!user?.id && !!openIn,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("location_moves")
+        .select("id, at, location_id")
+        .eq("user_id", user!.id)
+        .gte("at", openIn!.at)
+        .order("at", { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+  const latestMove = openIn ? movesQ.data?.[0] : undefined;
+  const currentLocation = latestMove?.location_id ?? openIn?.location_id ?? null;
+  const currentSince = latestMove?.at ?? openIn?.at;
 
   // Second-by-second clock driving the break countdown, worked time and
   // earnings. Idle while clocked out — nothing on the card moves then.
@@ -206,8 +224,6 @@ function TimeclockPage() {
 
     for (const p of [...(recentQ.data ?? [])].reverse()) {
       const at = new Date(p.at).getTime();
-      // Moving location is not the end of the shift: the timer runs on.
-      if (p.note === LOCATION_SWITCH && (p.kind === "out" || startedAt != null)) continue;
       if (p.kind === "in") {
         startedAt = at;
         closedUnpaidMs = 0;
@@ -355,6 +371,7 @@ function TimeclockPage() {
     },
     onSuccess: (name) => {
       setFlash({ kind: "ok", msg: t("Now counting your time at {place}.", { place: name }) });
+      qc.invalidateQueries({ queryKey: ["my-location-moves"] });
       qc.invalidateQueries({ queryKey: ["my-punches-recent"] });
       qc.invalidateQueries({ queryKey: ["timecards"] });
     },
@@ -488,7 +505,7 @@ function TimeclockPage() {
               <span className="text-muted-foreground">{t("Last punch")}</span>
               <span className="font-medium text-foreground">
                 {lastPunch
-                  ? `${lastPunch.note === LOCATION_SWITCH && lastPunch.kind === "in" ? t("MOVED") : t(PUNCH_LABEL[lastPunch.kind])} · ${new Date(lastPunch.at).toLocaleTimeString(tag, { hour: "numeric", minute: "2-digit" })}`
+                  ? `${t(PUNCH_LABEL[lastPunch.kind])} · ${new Date(lastPunch.at).toLocaleTimeString(tag, { hour: "numeric", minute: "2-digit" })}`
                   : "—"}
               </span>
             </div>
@@ -617,7 +634,7 @@ function TimeclockPage() {
                 <div className="grid grid-cols-2 gap-2">
                   {workLocations.map((l) => {
                     const current =
-                      status === "off" ? pickedLocation === l.id : openIn?.location_id === l.id;
+                      status === "off" ? pickedLocation === l.id : currentLocation === l.id;
                     return (
                       <Button
                         key={l.id}
@@ -652,10 +669,10 @@ function TimeclockPage() {
                       : t("Pick one, or leave it and we'll go by your schedule.")
                     : status === "on_break"
                       ? t("End your break before changing location.")
-                      : openIn?.location_id
+                      : currentLocation && currentSince
                         ? t("Counting at {place} since {time}. Tap another when you move.", {
-                            place: workLocations.find((l) => l.id === openIn.location_id)?.name ?? "",
-                            time: new Date(openIn.at).toLocaleTimeString(tag, {
+                            place: workLocations.find((l) => l.id === currentLocation)?.name ?? "",
+                            time: new Date(currentSince).toLocaleTimeString(tag, {
                               hour: "numeric",
                               minute: "2-digit",
                             }),
@@ -796,11 +813,30 @@ function TimeclockPage() {
               {(recentQ.data ?? []).length === 0 && (
                 <li className="py-3 text-muted-foreground">{t("No punches yet.")}</li>
               )}
-              {(recentQ.data ?? [])
-                .filter((p) => !(p.note === LOCATION_SWITCH && p.kind === "out"))
+              {[
+                ...(recentQ.data ?? []),
+                ...(movesQ.data ?? []).map((m) => ({ ...m, kind: "move" as const })),
+              ]
+                .sort((a, b) => b.at.localeCompare(a.at))
                 .slice(0, 10)
                 .map((p) => {
-                const moved = p.note === LOCATION_SWITCH && p.kind === "in";
+                if (p.kind === "move") {
+                  return (
+                    <li key={p.id} className="flex items-center justify-between py-2">
+                      <div>
+                        <span className="inline-block rounded bg-sky-100 px-1.5 py-0.5 text-xs font-medium text-sky-700 dark:bg-sky-500/15 dark:text-sky-300">
+                          {t("MOVED")}
+                        </span>
+                        <span className="ml-1.5 text-xs text-muted-foreground">
+                          {workLocations.find((l) => l.id === p.location_id)?.name}
+                        </span>
+                        <span className="ml-2 text-foreground">
+                          {new Date(p.at).toLocaleString(tag)}
+                        </span>
+                      </div>
+                    </li>
+                  );
+                }
                 const styles: Record<PunchKind, string> = {
                   in: "bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
                   out: "bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300",
@@ -813,13 +849,8 @@ function TimeclockPage() {
                       <span
                         className={`inline-block rounded px-1.5 py-0.5 text-xs font-medium ${styles[p.kind]}`}
                       >
-                        {moved ? t("MOVED") : t(PUNCH_LABEL[p.kind])}
+                        {t(PUNCH_LABEL[p.kind])}
                       </span>
-                      {moved && (
-                        <span className="ml-1.5 text-xs text-muted-foreground">
-                          {workLocations.find((l) => l.id === p.location_id)?.name}
-                        </span>
-                      )}
                       <span className="ml-2 text-foreground">
                         {new Date(p.at).toLocaleString(tag)}
                       </span>

@@ -27,8 +27,9 @@
 -- pick a location as they clock in).
 --
 -- `switch_location` (at the bottom) is the employee tapping the location they
--- have just moved to mid-shift: the time before the tap stays at the old
--- location and the time after it counts at the new one.
+-- have just moved to mid-shift. It writes a row in `location_moves`, not a
+-- punch: the shift stays one clock-in and one clock-out (one time card), and
+-- the timecard splits its hours at each move.
 --
 -- Re-runnable; applied by hand in Studio.
 
@@ -187,6 +188,37 @@ update public.time_punches p
    set location_id = public.stretch_location(p.user_id, p.at)
  where p.kind <> 'in' and p.location_id is null;
 
+-- ---- moving mid-shift ----
+
+-- One row each time someone on the clock taps the location they have moved
+-- to. From `at` until the next move or their clock-out, their time counts
+-- there. Written only by switch_location; read by the timecards.
+create table if not exists public.location_moves (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references public.companies(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  location_id uuid not null references public.locations(id) on delete cascade,
+  at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+create index if not exists location_moves_user_at_idx on public.location_moves(user_id, at);
+create index if not exists location_moves_company_at_idx on public.location_moves(company_id, at);
+alter table public.location_moves enable row level security;
+
+-- Seen by whoever can see the punches: the person, their company's admins, and
+-- platform super admins.
+drop policy if exists location_moves_view on public.location_moves;
+create policy location_moves_view on public.location_moves for select to authenticated
+  using (
+    user_id = auth.uid()
+    or (company_id = public.current_company_id()
+        and public.has_role(auth.uid(), 'company_admin'::app_role, company_id))
+    or public.has_role(auth.uid(), 'super_admin'::app_role)
+  );
+
+grant select on public.location_moves to authenticated;
+grant all on public.location_moves to service_role;
+
 -- ---- changing it afterwards ----
 
 -- Moves one stretch (a clock-in and the breaks and clock-out after it) to
@@ -249,6 +281,12 @@ begin
      and (q.id = p.id
           or (q.kind <> 'in' and q.at >= p.at
               and q.at < coalesce(next_in, p.at + interval '24 hours')));
+
+  -- The whole stretch is at one place now, so any moves made during it go.
+  delete from public.location_moves m
+   where m.user_id = p.user_id
+     and m.at >= p.at
+     and m.at < coalesce(next_in, p.at + interval '24 hours');
 end; $$;
 
 revoke all on function public.set_punch_location(uuid, uuid) from public, anon;
@@ -256,23 +294,45 @@ grant execute on function public.set_punch_location(uuid, uuid) to authenticated
 
 -- ---- switching location mid-shift ----
 
+-- Where someone on the clock is counting right now: their latest move since
+-- they clocked in, or the clock-in's own location when they have not moved.
+create or replace function public.current_work_location(_user uuid)
+returns uuid
+language plpgsql stable security definer set search_path = public
+as $$
+declare
+  p public.time_punches;
+  moved uuid;
+begin
+  select * into p from public.time_punches
+   where user_id = _user and kind = 'in'
+   order by at desc, created_at desc, id desc
+   limit 1;
+  if p.id is null then return null; end if;
+  select location_id into moved from public.location_moves
+   where user_id = _user and at >= p.at
+   order by at desc, created_at desc
+   limit 1;
+  return coalesce(moved, p.location_id);
+end; $$;
+
+revoke all on function public.current_work_location(uuid) from public, anon, authenticated;
+
 -- Someone on the clock taps the location they have just moved to (Fire
 -- Department → Traffic Department). Their time up to now stays with the old
--- location and everything from now counts at the new one.
+-- location and everything from now counts at the new one. The shift itself is
+-- untouched: still one clock-in and one clock-out.
 --
--- It is written as a clock-out at the old location and a clock-in at the new
--- one, one second apart, both marked with the note 'location_switch'. That way
--- every rule that already reads punches — breaks, rounding, overtime, who is
--- on site — keeps working unchanged, and the timecard shows two stretches
--- with a location each. The second keeps the two in order everywhere they are
--- sorted by time.
+-- Dropped first: an earlier draft returned a time_punches row, and a changed
+-- return type cannot be replaced in place.
+drop function if exists public.switch_location(uuid, double precision, double precision, double precision);
 create or replace function public.switch_location(
   _location uuid,
   _lat double precision,
   _lng double precision,
   _accuracy double precision default null
 )
-returns public.time_punches
+returns public.location_moves
 language plpgsql security definer set search_path = public
 as $$
 declare
@@ -282,9 +342,7 @@ declare
   require_geo boolean;
   dist double precision;
   last_kind text;
-  current_loc uuid;
-  t timestamptz := now();
-  row public.time_punches;
+  row public.location_moves;
 begin
   if uid is null then raise exception 'not authenticated'; end if;
   if _lat is null or _lng is null then raise exception 'location required'; end if;
@@ -324,22 +382,13 @@ begin
     raise exception 'End your break before changing location.';
   end if;
 
-  current_loc := public.stretch_location(uid, t);
-  if current_loc is not distinct from _location then
+  if public.current_work_location(uid) is not distinct from _location then
     raise exception 'You are already at that location.';
   end if;
 
-  insert into public.time_punches
-    (user_id, company_id, kind, at, latitude, longitude, accuracy_m, distance_m, within_geofence, note, location_id)
-  values
-    (uid, cid, 'out', t, _lat, _lng, _accuracy, dist, true, 'location_switch', current_loc);
-
-  insert into public.time_punches
-    (user_id, company_id, kind, at, latitude, longitude, accuracy_m, distance_m, within_geofence, note, location_id)
-  values
-    (uid, cid, 'in', t + interval '1 second', _lat, _lng, _accuracy, dist, true, 'location_switch', _location)
+  insert into public.location_moves (company_id, user_id, location_id)
+  values (cid, uid, _location)
   returning * into row;
-
   return row;
 end; $$;
 

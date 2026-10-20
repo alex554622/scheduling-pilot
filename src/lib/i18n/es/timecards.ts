@@ -345,7 +345,6 @@ export const timecards: Record<string, string> = {
   // Hours by location
   "No location": "Sin ubicación",
   "Hours by location": "Horas por ubicación",
-  MOVED: "CAMBIO",
   "Paid hours by location": "Horas pagadas por ubicación",
   "Location for the shift starting {time}": "Ubicación del turno que empieza a las {time}",
 };

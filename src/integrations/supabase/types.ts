@@ -626,6 +626,48 @@ export type Database = {
         }
         Relationships: []
       }
+      location_moves: {
+        Row: {
+          at: string
+          company_id: string
+          created_at: string
+          id: string
+          location_id: string
+          user_id: string
+        }
+        Insert: {
+          at?: string
+          company_id: string
+          created_at?: string
+          id?: string
+          location_id: string
+          user_id: string
+        }
+        Update: {
+          at?: string
+          company_id?: string
+          created_at?: string
+          id?: string
+          location_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "location_moves_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "location_moves_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "locations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       locations: {
         Row: {
           address: string | null
@@ -1406,7 +1448,7 @@ export type Database = {
       }
       switch_location: {
         Args: { _location: string; _lat: number; _lng: number; _accuracy?: number }
-        Returns: Database["public"]["Tables"]["time_punches"]["Row"]
+        Returns: Database["public"]["Tables"]["location_moves"]["Row"]
       }
       set_employee_clock_code: { Args: { _user: string }; Returns: string }
       clear_employee_clock_code: { Args: { _user: string }; Returns: undefined }

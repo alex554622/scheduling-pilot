@@ -98,12 +98,15 @@ export function readBreak(
 export type PunchKind = "in" | "out" | "break_start" | "break_end";
 
 /**
- * The note on the clock-out and clock-in that `switch_location` writes when
- * someone moves to another location mid-shift. Counted like any other pair —
- * that is the point, it is how the time splits — but shown as a move, and the
- * time clock keeps the shift's own timer running across it.
+ * Someone on the clock tapping the location they have moved to. From `at`
+ * until their next move or their clock-out, their time counts there. A move is
+ * not a punch: the shift stays one clock-in and one clock-out, one time card.
  */
-export const LOCATION_SWITCH = "location_switch";
+export interface LocationMove {
+  user_id: string;
+  at: string;
+  location_id: string;
+}
 
 export interface SimplePunch {
   user_id: string;
@@ -111,9 +114,8 @@ export interface SimplePunch {
   at: string;
   break_minutes: number | null;
   /**
-   * Where the stretch this punch belongs to was worked. Only the clock-in's is
-   * read: the database copies it onto the breaks and clock-out after it, and a
-   * shift is never split between two places.
+   * Where the shift was clocked in. Only the clock-in's is read; a move during
+   * the shift is a `LocationMove`, not a change to this.
    */
   location_id?: string | null;
 }
@@ -201,6 +203,11 @@ export interface ShiftSpan {
   workedMs: number;
   /** The clock-in's location; null when it was never filed under one. */
   locationId: string | null;
+  /**
+   * The paid time split at each move, in the order they were worked. Adds up
+   * to `workedMs`. Empty while still on the clock.
+   */
+  byLocation: LocationHours[];
 }
 
 /** Paid time at one location. `locationId` null is time filed under none. */
@@ -210,18 +217,61 @@ export interface LocationHours {
 }
 
 /**
- * Paid time per location, most hours first. Only finished shifts count — one
- * still on the clock is worth nothing yet, exactly as in the totals — so the
- * lines always add up to the total beside them.
+ * One finished shift's paid time, split at each move. Clock time from the
+ * clock-in to the first move is at the clock-in's location, from there to the
+ * next move at that move's location, and so on to the clock-out. An unpaid
+ * break comes off the part of the shift it started in. Moves outside the shift
+ * are ignored. Places are listed in the order they were first worked, each
+ * once.
+ *
+ * @param unpaidBreaks when each unpaid break started, and what it took off.
  */
-export function hoursByLocation(
-  spans: { locationId: string | null; workedMs: number; outAt?: string | null }[],
+export function splitByLocation(
+  inAt: string,
+  outAt: string,
+  startLocation: string | null,
+  moves: { at: string; location_id: string }[],
+  unpaidBreaks: { at: string; ms: number }[] = [],
 ): LocationHours[] {
-  const byLoc = new Map<string | null, number>();
-  for (const s of spans) {
-    if (s.outAt === null) continue;
-    byLoc.set(s.locationId, (byLoc.get(s.locationId) ?? 0) + s.workedMs);
+  const start = new Date(inAt).getTime();
+  const end = new Date(outAt).getTime();
+  const cuts = moves
+    .map((m) => ({ t: new Date(m.at).getTime(), loc: m.location_id }))
+    .filter((m) => m.t > start && m.t < end)
+    .sort((a, b) => a.t - b.t);
+  const parts: { from: number; to: number; loc: string | null; ms: number }[] = [];
+  let from = start;
+  let loc: string | null = startLocation;
+  for (const c of cuts) {
+    parts.push({ from, to: c.t, loc, ms: c.t - from });
+    from = c.t;
+    loc = c.loc;
   }
+  parts.push({ from, to: end, loc, ms: end - from });
+  for (const b of unpaidBreaks) {
+    const t = new Date(b.at).getTime();
+    const part = parts.find((p) => t >= p.from && t < p.to) ?? parts[parts.length - 1];
+    part.ms -= b.ms;
+  }
+  const out: LocationHours[] = [];
+  for (const p of parts) {
+    const ms = Math.max(0, p.ms);
+    const seen = out.find((o) => o.locationId === p.loc);
+    if (seen) seen.workedMs += ms;
+    else if (ms > 0 || parts.length === 1) out.push({ locationId: p.loc, workedMs: ms });
+  }
+  return out;
+}
+
+/**
+ * Paid time per location across several shifts, most hours first. Only
+ * finished shifts count — one still on the clock is worth nothing yet, exactly
+ * as in the totals — so the lines always add up to the total beside them.
+ */
+export function hoursByLocation(spans: { byLocation: LocationHours[] }[]): LocationHours[] {
+  const byLoc = new Map<string | null, number>();
+  for (const s of spans)
+    for (const l of s.byLocation) byLoc.set(l.locationId, (byLoc.get(l.locationId) ?? 0) + l.workedMs);
   return [...byLoc]
     .map(([locationId, workedMs]) => ({ locationId, workedMs }))
     .sort((a, b) => b.workedMs - a.workedMs);
@@ -264,18 +314,35 @@ export interface PersonTotals {
 
 /** A clock-in with no clock-out yet: shown, worth nothing. */
 function openSpan(p: SimplePunch): ShiftSpan {
-  return { inAt: p.at, outAt: null, grossMs: 0, workedMs: 0, locationId: p.location_id ?? null };
+  return {
+    inAt: p.at,
+    outAt: null,
+    grossMs: 0,
+    workedMs: 0,
+    locationId: p.location_id ?? null,
+    byLocation: [],
+  };
 }
 
 /**
  * @param roundMinutes the company's punch-rounding rule; 0 counts raw times.
  * @param capBreaks the company's `cap_break_to_length` rule — see `readBreak`.
+ * @param moves mid-shift location changes, for splitting each shift's hours
+ * by place. Rounded by the same rule as the punches.
  */
 export function totalsByPerson(
   punches: SimplePunch[],
   roundMinutes = 0,
   capBreaks = true,
+  moves: LocationMove[] = [],
 ): Map<string, PersonTotals> {
+  const movesByUser = new Map<string, LocationMove[]>();
+  for (const m of roundPunches(moves, roundMinutes)) {
+    const list = movesByUser.get(m.user_id);
+    if (list) list.push(m);
+    else movesByUser.set(m.user_id, [m]);
+  }
+
   // Grouped by the day each shift was clocked in on, so a shift past midnight
   // is counted whole on its first day — see `shiftDayKeys`.
   const byUser = new Map<string, Map<string, SimplePunch[]>>();
@@ -324,6 +391,7 @@ export function totalsByPerson(
       let openBreak: SimplePunch | null = null;
       let unpaid = 0;
       let paid = 0;
+      let unpaidBreaks: { at: string; ms: number }[] = [];
       for (const p of ordered) {
         if (p.kind === "in") {
           // A second clock-in without a clock-out abandons the first: it is
@@ -335,6 +403,7 @@ export function totalsByPerson(
           openIn = p;
           unpaid = 0;
           paid = 0;
+          unpaidBreaks = [];
           openBreak = null;
         } else if (p.kind === "out") {
           if (openIn) {
@@ -347,6 +416,13 @@ export function totalsByPerson(
               grossMs: gross,
               workedMs: worked,
               locationId: openIn.location_id ?? null,
+              byLocation: splitByLocation(
+                openIn.at,
+                p.at,
+                openIn.location_id ?? null,
+                movesByUser.get(userId) ?? [],
+                unpaidBreaks,
+              ),
             });
             detail.grossMs += gross;
             detail.unpaidMs += unpaid;
@@ -357,6 +433,7 @@ export function totalsByPerson(
             openIn = null;
             unpaid = 0;
             paid = 0;
+            unpaidBreaks = [];
             openBreak = null;
           }
         } else if (p.kind === "break_start") {
@@ -369,7 +446,10 @@ export function totalsByPerson(
               capBreaks,
             );
             if (read.paid) paid += read.countedMs;
-            else unpaid += read.countedMs;
+            else {
+              unpaid += read.countedMs;
+              unpaidBreaks.push({ at: openBreak.at, ms: read.countedMs });
+            }
             if (read.incomplete) {
               detail.incompleteBreaks += 1;
               totals.incompleteBreaks += 1;
