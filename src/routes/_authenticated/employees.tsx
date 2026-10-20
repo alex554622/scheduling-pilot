@@ -99,6 +99,9 @@ function Roster({
   const [search, setSearch] = useState("");
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState<MemberRow | null>(null);
+  // Ticked rows, for giving several people the same settings at once.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [removing, setRemoving] = useState<MemberRow | null>(null);
 
@@ -161,6 +164,26 @@ function Roster({
       (m) => m.full_name.toLowerCase().includes(q) || (m.position ?? "").toLowerCase().includes(q),
     );
   }, [membersQ.data, search]);
+
+  // Only people still on the roster count as picked: someone removed while
+  // ticked must not be edited by a bulk save.
+  const picked = (membersQ.data ?? []).filter((m) => selected.has(m.id));
+  const allShownPicked = filtered.length > 0 && filtered.every((m) => selected.has(m.id));
+  function togglePick(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+  function togglePickAllShown() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allShownPicked) filtered.forEach((m) => next.delete(m.id));
+      else filtered.forEach((m) => next.add(m.id));
+      return next;
+    });
+  }
 
   const setRoleMut = useMutation({
     mutationFn: async ({ userId, role }: { userId: string; role: AssignableRole }) => {
@@ -418,6 +441,15 @@ function Roster({
 
       <div className="rounded-xl border border-border bg-card">
         <div className="flex items-center gap-2 border-b border-border p-3">
+          <input
+            type="checkbox"
+            className="h-4 w-4 shrink-0"
+            checked={allShownPicked}
+            disabled={filtered.length === 0}
+            onChange={togglePickAllShown}
+            aria-label={t("Select everyone shown")}
+            title={t("Select everyone shown")}
+          />
           <Search className="h-4 w-4 text-muted-foreground" />
           <Input
             placeholder={t("Search by name or position…")}
@@ -426,6 +458,20 @@ function Roster({
             className="h-9 border-0 shadow-none focus-visible:ring-0"
           />
         </div>
+
+        {picked.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-border bg-primary-soft/40 px-3 py-2 text-sm">
+            <span className="font-medium text-foreground">
+              {picked.length === 1 ? t("1 selected") : t("{n} selected", { n: picked.length })}
+            </span>
+            <Button size="sm" onClick={() => setBulkOpen(true)}>
+              <Pencil className="mr-1.5 h-3.5 w-3.5" /> {t("Edit selected")}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+              {t("Clear")}
+            </Button>
+          </div>
+        )}
 
         {membersQ.isLoading ? (
           <div className="p-6 text-sm text-muted-foreground">{t("Loading roster…")}</div>
@@ -447,6 +493,13 @@ function Roster({
               return (
                 <div key={m.id} className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
                   <div className="flex min-w-0 items-center gap-3">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 shrink-0"
+                      checked={selected.has(m.id)}
+                      onChange={() => togglePick(m.id)}
+                      aria-label={t("Select {name}", { name: m.full_name || t("Unnamed") })}
+                    />
                     <div className="grid h-10 w-10 place-items-center rounded-full bg-primary-soft text-sm font-semibold text-primary">
                       {initials}
                     </div>
@@ -527,6 +580,22 @@ function Roster({
         onSaved={() => {
           setEditing(null);
           qc.invalidateQueries({ queryKey: ["company-members", companyId] });
+        }}
+      />
+
+      <BulkEditDialog
+        open={bulkOpen}
+        members={picked}
+        companyId={companyId}
+        onClose={() => setBulkOpen(false)}
+        onSaved={() => {
+          setBulkOpen(false);
+          setSelected(new Set());
+          qc.invalidateQueries({ queryKey: ["company-members", companyId] });
+          qc.invalidateQueries({ queryKey: ["member-profile"] });
+          qc.invalidateQueries({ queryKey: ["employee-locations"] });
+          qc.invalidateQueries({ queryKey: ["member-visibility"] });
+          qc.invalidateQueries({ queryKey: ["member-visibility-one"] });
         }}
       />
 
@@ -1371,6 +1440,294 @@ function EditMemberDialog({
           <Button onClick={save} disabled={saving || !fullName.trim()}>
             {saving && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
             {t("Save")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * The same settings for several people at once. Every field starts at "Leave
+ * as is", and only the fields someone changes are written — ticking ten people
+ * to move them to one team must not also reset their hours or their locations.
+ */
+function BulkEditDialog({
+  open,
+  members,
+  companyId,
+  onClose,
+  onSaved,
+}: {
+  open: boolean;
+  members: MemberRow[];
+  companyId: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const t = useT("people");
+  const KEEP = "__keep__";
+  const [jobTitle, setJobTitle] = useState("");
+  const [departmentId, setDepartmentId] = useState(KEEP);
+  const [maxHours, setMaxHours] = useState("");
+  const [status, setStatus] = useState(KEEP);
+  const [visibility, setVisibility] = useState(KEEP);
+  const [replaceLocations, setReplaceLocations] = useState(false);
+  const [worksAt, setWorksAt] = useState<Set<string>>(new Set());
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  // A fresh form each time it opens.
+  useEffect(() => {
+    if (!open) return;
+    setJobTitle("");
+    setDepartmentId(KEEP);
+    setMaxHours("");
+    setStatus(KEEP);
+    setVisibility(KEEP);
+    setReplaceLocations(false);
+    setWorksAt(new Set());
+    setErr(null);
+  }, [open]);
+
+  const departmentsQ = useQuery({
+    queryKey: ["departments", companyId],
+    enabled: open,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("departments").select("id, name").eq("company_id", companyId).order("name");
+      if (error) throw error;
+      return (data ?? []) as { id: string; name: string }[];
+    },
+  });
+
+  const locationsQ = useQuery({
+    queryKey: ["locations", companyId, "names"],
+    enabled: open,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("locations").select("id, name").eq("company_id", companyId).order("name");
+      if (error) throw error;
+      return (data ?? []) as { id: string; name: string }[];
+    },
+  });
+
+  const hours = maxHours.trim() === "" ? null : Number(maxHours);
+  const hoursBad = hours != null && (!Number.isFinite(hours) || hours < 1 || hours > 168);
+  const nothingChanged =
+    !jobTitle.trim() &&
+    departmentId === KEEP &&
+    hours == null &&
+    status === KEEP &&
+    visibility === KEEP &&
+    !replaceLocations;
+
+  async function save() {
+    const ids = members.map((m) => m.id);
+    if (ids.length === 0) return;
+    setSaving(true);
+    setErr(null);
+    try {
+      const patch: {
+        position?: string;
+        department_id?: string | null;
+        max_weekly_hours?: number;
+        is_active?: boolean;
+      } = {};
+      if (jobTitle.trim()) patch.position = jobTitle.trim();
+      if (departmentId !== KEEP) patch.department_id = departmentId || null;
+      if (hours != null) patch.max_weekly_hours = hours;
+      if (status !== KEEP) patch.is_active = status === "active";
+      if (Object.keys(patch).length > 0) {
+        const { error } = await supabase.from("profiles").update(patch).in("id", ids);
+        if (error) throw error;
+      }
+
+      if (visibility !== KEEP) {
+        const { error } = visibility
+          ? await supabase.from("member_visibility").upsert(
+              ids.map((user_id) => ({
+                user_id,
+                company_id: companyId,
+                mode: visibility,
+                updated_at: new Date().toISOString(),
+              })),
+            )
+          : await supabase.from("member_visibility").delete().in("user_id", ids);
+        if (error) throw error;
+      }
+
+      if (replaceLocations) {
+        const { error: rmErr } = await supabase
+          .from("employee_locations").delete().in("employee_id", ids);
+        if (rmErr) throw rmErr;
+        const rows = ids.flatMap((employee_id) =>
+          [...worksAt].map((location_id) => ({ company_id: companyId, employee_id, location_id })),
+        );
+        if (rows.length) {
+          const { error: addErr } = await supabase.from("employee_locations").insert(rows);
+          if (addErr) throw addErr;
+        }
+      }
+
+      onSaved();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const selectClass =
+    "h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm";
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {members.length === 1
+              ? t("Edit 1 person")
+              : t("Edit {n} people", { n: members.length })}
+          </DialogTitle>
+          <DialogDescription>
+            {t("Only what you change is saved, and it is saved for everyone picked. Anything left as is stays as it was for each person.")}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
+          <p className="text-xs text-muted-foreground">
+            {members.map((m) => m.full_name || t("Unnamed")).join(", ")}
+          </p>
+
+          <div>
+            <Label htmlFor="bulk-title">{t("Job title")}</Label>
+            <Input
+              id="bulk-title"
+              value={jobTitle}
+              onChange={(e) => setJobTitle(e.target.value)}
+              placeholder={t("Leave empty to keep each person's own")}
+              maxLength={120}
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="bulk-team">{t("Team")}</Label>
+            <select
+              id="bulk-team"
+              className={selectClass}
+              value={departmentId}
+              onChange={(e) => setDepartmentId(e.target.value)}
+            >
+              <option value={KEEP}>{t("— leave as is —")}</option>
+              <option value="">{t("— no team —")}</option>
+              {(departmentsQ.data ?? []).map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="bulk-hours">{t("Max weekly hours")}</Label>
+              <Input
+                id="bulk-hours"
+                type="number"
+                min={1}
+                max={168}
+                value={maxHours}
+                onChange={(e) => setMaxHours(e.target.value)}
+                placeholder={t("Leave as is")}
+              />
+            </div>
+            <div>
+              <Label htmlFor="bulk-status">{t("Status")}</Label>
+              <select
+                id="bulk-status"
+                className={selectClass}
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+              >
+                <option value={KEEP}>{t("— leave as is —")}</option>
+                <option value="active">{t("Active")}</option>
+                <option value="inactive">{t("Inactive")}</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <Label htmlFor="bulk-visibility">{t("Shows up on")}</Label>
+            <select
+              id="bulk-visibility"
+              className={selectClass}
+              value={visibility}
+              onChange={(e) => setVisibility(e.target.value)}
+            >
+              <option value={KEEP}>{t("— leave as is —")}</option>
+              <option value="">{t("Company default")}</option>
+              <option value="everywhere">{t("Schedule and timecards")}</option>
+              <option value="schedule_only">{t("Schedule only")}</option>
+              <option value="timecards_only">{t("Timecards only")}</option>
+              <option value="ghost">{t("Nowhere (ghost)")}</option>
+            </select>
+          </div>
+
+          <div>
+            <Label>{t("Work locations")}</Label>
+            <label className="mt-1 flex cursor-pointer items-center gap-2 text-sm text-foreground">
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={replaceLocations}
+                onChange={(e) => setReplaceLocations(e.target.checked)}
+              />
+              {t("Replace their work locations with:")}
+            </label>
+            {(locationsQ.data ?? []).length === 0 ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                {t("No locations yet — add them under Organization → Locations.")}
+              </p>
+            ) : (
+              <div
+                className={`mt-1.5 grid gap-1.5 sm:grid-cols-2 ${replaceLocations ? "" : "opacity-50"}`}
+              >
+                {(locationsQ.data ?? []).map((l) => (
+                  <label
+                    key={l.id}
+                    className="flex cursor-pointer items-center gap-2 rounded-lg border border-border px-2.5 py-2 text-sm hover:bg-accent"
+                  >
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4"
+                      disabled={!replaceLocations}
+                      checked={worksAt.has(l.id)}
+                      onChange={() =>
+                        setWorksAt((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(l.id)) next.delete(l.id); else next.add(l.id);
+                          return next;
+                        })
+                      }
+                    />
+                    <span className="truncate text-foreground">{l.name}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {err && <p className="text-sm text-destructive">{err}</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving}>
+            {t("Cancel")}
+          </Button>
+          <Button onClick={save} disabled={saving || nothingChanged || hoursBad}>
+            {saving && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+            {members.length === 1
+              ? t("Save for 1 person")
+              : t("Save for {n} people", { n: members.length })}
           </Button>
         </DialogFooter>
       </DialogContent>
