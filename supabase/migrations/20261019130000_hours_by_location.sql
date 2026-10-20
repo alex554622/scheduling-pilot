@@ -345,3 +345,6 @@ end; $$;
 
 revoke all on function public.switch_location(uuid, double precision, double precision, double precision) from public, anon;
 grant execute on function public.switch_location(uuid, double precision, double precision, double precision) to authenticated;
+
+-- Make the API see the new functions straight away.
+notify pgrst, 'reload schema';
