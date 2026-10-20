@@ -294,7 +294,15 @@ export const time: Record<string, string> = {
   "Today": "Hoy",
 
   // Hours by location
-  "Working at": "Trabajando en",
-  "Automatic (from my schedule)": "Automático (según mi horario)",
-  "Location updated.": "Ubicación actualizada.",
+  "Where are you clocking in?": "¿Dónde vas a marcar entrada?",
+  "Where are you working now?": "¿Dónde estás trabajando ahora?",
+  "Your time will count at the one you picked.": "Tu tiempo contará en la que elegiste.",
+  "Pick one, or leave it and we'll go by your schedule.":
+    "Elige una, o déjalo y usaremos tu horario.",
+  "End your break before changing location.": "Termina tu descanso antes de cambiar de ubicación.",
+  "Counting at {place} since {time}. Tap another when you move.":
+    "Contando en {place} desde las {time}. Toca otra cuando te muevas.",
+  "Tap where you are so your time counts there.": "Toca dónde estás para que tu tiempo cuente ahí.",
+  "Now counting your time at {place}.": "Ahora tu tiempo cuenta en {place}.",
+  MOVED: "CAMBIO",
 };

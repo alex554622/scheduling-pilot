@@ -1404,6 +1404,10 @@ export type Database = {
         Args: { _punch: string; _location: string | null }
         Returns: undefined
       }
+      switch_location: {
+        Args: { _location: string; _lat: number; _lng: number; _accuracy?: number }
+        Returns: Database["public"]["Tables"]["time_punches"]["Row"]
+      }
       set_employee_clock_code: { Args: { _user: string }; Returns: string }
       clear_employee_clock_code: { Args: { _user: string }; Returns: undefined }
       kiosk_device_info: { Args: { _token: string }; Returns: Json }

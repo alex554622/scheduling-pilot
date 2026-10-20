@@ -97,6 +97,14 @@ export function readBreak(
 
 export type PunchKind = "in" | "out" | "break_start" | "break_end";
 
+/**
+ * The note on the clock-out and clock-in that `switch_location` writes when
+ * someone moves to another location mid-shift. Counted like any other pair —
+ * that is the point, it is how the time splits — but shown as a move, and the
+ * time clock keeps the shift's own timer running across it.
+ */
+export const LOCATION_SWITCH = "location_switch";
+
 export interface SimplePunch {
   user_id: string;
   kind: PunchKind;

@@ -337,6 +337,39 @@ eq(
   [["airport", null]],
 );
 
+console.log("\nmoving location mid-shift splits the time at the move");
+// What switch_location writes: out at the old place, in at the new one a
+// second later. 8:00 at the fire department, moved at 11:00, out at 16:00 with
+// a 30-minute unpaid lunch after the move.
+const moveAt = new Date(2026, 7, 3, 11, 0).getTime();
+t = totalsByPerson([
+  at_(punch("a", "in", 3, 8), "fire"),
+  at_(punch("a", "out", 3, 11), "fire"),
+  { ...at_(punch("a", "in", 3, 11), "traffic"), at: new Date(moveAt + 1000).toISOString() },
+  at_(punch("a", "break_start", 3, 13, 0, 30), "traffic"),
+  at_(punch("a", "break_end", 3, 13, 30), "traffic"),
+  at_(punch("a", "out", 3, 16), "traffic"),
+]).get("a")!;
+eq(
+  "three hours at fire, four and a half at traffic (to the second)",
+  t.byLocation.map((l) => [l.locationId, Math.round(l.workedMs / MINUTE)]),
+  [["traffic", 270], ["fire", 180]],
+);
+eq("still one day", t.dayTotals.length, 1);
+eq(
+  "and with five-minute rounding the second disappears",
+  totalsByPerson(
+    [
+      at_(punch("a", "in", 3, 8), "fire"),
+      at_(punch("a", "out", 3, 11), "fire"),
+      { ...at_(punch("a", "in", 3, 11), "traffic"), at: new Date(moveAt + 1000).toISOString() },
+      at_(punch("a", "out", 3, 16), "traffic"),
+    ],
+    5,
+  ).get("a")!.workedMs / HOUR,
+  8,
+);
+
 console.log("\npunches from before locations existed");
 t = totalsByPerson([punch("a", "in", 3, 8), punch("a", "out", 3, 16)]).get("a")!;
 eq("all filed under no location", t.byLocation, [{ locationId: null, workedMs: 8 * HOUR }]);

@@ -44,6 +44,7 @@ import {
   roundPunches,
   roundToMinutes,
   hoursByLocation,
+  LOCATION_SWITCH,
   totalsByPerson,
   type LocationHours,
   type SimplePunch,
@@ -80,6 +81,8 @@ type Punch = {
   longitude: number | null;
   /** Where the stretch was worked; the clock-in's is the one that counts. */
   location_id: string | null;
+  /** `LOCATION_SWITCH` when this punch is half of a move between locations. */
+  note: string | null;
 };
 
 /** Punch kinds as a manager reads them in the location log. */
@@ -312,7 +315,7 @@ function TimecardsPage() {
       const { data, error } = await supabase
         .from("time_punches")
         .select(
-          "id, user_id, kind, at, distance_m, within_geofence, break_minutes, latitude, longitude, location_id",
+          "id, user_id, kind, at, distance_m, within_geofence, break_minutes, latitude, longitude, location_id, note",
         )
         .eq("user_id", targetUserId!)
         .gte("at", fetchFrom)
@@ -1189,7 +1192,7 @@ function TimecardsPage() {
                         </span>
                         {p.out ? (
                           <span className="rounded bg-blue-100 dark:bg-blue-500/15 px-1.5 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">
-                            {t("OUT")} {fmtTime(p.out.at, rules.punch_round_minutes)}
+                            {p.out.note === LOCATION_SWITCH ? t("MOVED") : t("OUT")} {fmtTime(p.out.at, rules.punch_round_minutes)}
                           </span>
                         ) : (
                           <span className="rounded bg-amber-100 dark:bg-amber-500/15 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">

@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useAppRules } from "@/lib/app-rules";
-import { readBreak } from "@/lib/timecard-totals";
+import { LOCATION_SWITCH, readBreak } from "@/lib/timecard-totals";
 import { Button } from "@/components/ui/button";
 import { LeafletMap } from "@/components/leaflet-map";
 import { PaySettingsCard } from "@/components/pay-settings-card";
@@ -42,6 +42,8 @@ type Punch = {
   break_minutes: number | null;
   /** Where the stretch is being worked; the clock-in's is the one that counts. */
   location_id: string | null;
+  /** `LOCATION_SWITCH` on the pair a move between locations writes. */
+  note: string | null;
 };
 
 const PUNCH_LABEL: Record<PunchKind, string> = {
@@ -124,7 +126,7 @@ function TimeclockPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("time_punches")
-        .select("id, kind, at, latitude, longitude, distance_m, within_geofence, break_minutes, location_id")
+        .select("id, kind, at, latitude, longitude, distance_m, within_geofence, break_minutes, location_id, note")
         .eq("user_id", user!.id)
         .order("at", { ascending: false })
         // Deep enough to always contain the open shift's clock-in, however many
@@ -204,6 +206,8 @@ function TimeclockPage() {
 
     for (const p of [...(recentQ.data ?? [])].reverse()) {
       const at = new Date(p.at).getTime();
+      // Moving location is not the end of the shift: the timer runs on.
+      if (p.note === LOCATION_SWITCH && (p.kind === "out" || startedAt != null)) continue;
       if (p.kind === "in") {
         startedAt = at;
         closedUnpaidMs = 0;
@@ -335,18 +339,22 @@ function TimeclockPage() {
     onSettled: () => setSubmitting(false),
   });
 
-  // Moving the shift they are on to another location, mid-shift.
+  // Moved to another location mid-shift: the time so far stays where it was
+  // worked, and from now on it counts at the new one.
   const moveMut = useMutation({
     mutationFn: async (locationId: string) => {
-      if (!openIn) return;
-      const { error } = await supabase.rpc("set_punch_location", {
-        _punch: openIn.id,
+      if (!coords) throw new Error(translate("Waiting for GPS location…"));
+      const { error } = await supabase.rpc("switch_location", {
         _location: locationId,
+        _lat: coords.lat,
+        _lng: coords.lng,
+        _accuracy: coords.acc,
       });
       if (error) throw error;
+      return workLocations.find((l) => l.id === locationId)?.name ?? "";
     },
-    onSuccess: () => {
-      setFlash({ kind: "ok", msg: t("Location updated.") });
+    onSuccess: (name) => {
+      setFlash({ kind: "ok", msg: t("Now counting your time at {place}.", { place: name }) });
       qc.invalidateQueries({ queryKey: ["my-punches-recent"] });
       qc.invalidateQueries({ queryKey: ["timecards"] });
     },
@@ -480,7 +488,7 @@ function TimeclockPage() {
               <span className="text-muted-foreground">{t("Last punch")}</span>
               <span className="font-medium text-foreground">
                 {lastPunch
-                  ? `${t(PUNCH_LABEL[lastPunch.kind])} · ${new Date(lastPunch.at).toLocaleTimeString(tag, { hour: "numeric", minute: "2-digit" })}`
+                  ? `${lastPunch.note === LOCATION_SWITCH && lastPunch.kind === "in" ? t("MOVED") : t(PUNCH_LABEL[lastPunch.kind])} · ${new Date(lastPunch.at).toLocaleTimeString(tag, { hour: "numeric", minute: "2-digit" })}`
                   : "—"}
               </span>
             </div>
@@ -599,36 +607,61 @@ function TimeclockPage() {
             )}
 
             {workLocations.length >= 2 && (
-              <div className="mb-3">
-                <label
-                  htmlFor="work-location"
-                  className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
-                >
+              <div className="mb-4">
+                <p className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                   <MapPin className="h-3.5 w-3.5" />
-                  {t("Working at")}
-                </label>
-                <select
-                  id="work-location"
-                  className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
-                  value={status === "off" ? pickedLocation : (openIn?.location_id ?? "")}
-                  disabled={moveMut.isPending}
-                  onChange={(e) => {
-                    if (status === "off") setPickedLocation(e.target.value);
-                    else if (e.target.value) {
-                      setFlash(null);
-                      moveMut.mutate(e.target.value);
-                    }
-                  }}
-                >
-                  <option value="" disabled={status !== "off"}>
-                    {status === "off" ? t("Automatic (from my schedule)") : t("Not set")}
-                  </option>
-                  {workLocations.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.name}
-                    </option>
-                  ))}
-                </select>
+                  {status === "off"
+                    ? t("Where are you clocking in?")
+                    : t("Where are you working now?")}
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {workLocations.map((l) => {
+                    const current =
+                      status === "off" ? pickedLocation === l.id : openIn?.location_id === l.id;
+                    return (
+                      <Button
+                        key={l.id}
+                        type="button"
+                        size="sm"
+                        variant={current ? "default" : "outline"}
+                        className="h-auto min-h-9 whitespace-normal py-1.5"
+                        aria-pressed={current}
+                        disabled={
+                          moveMut.isPending ||
+                          (status === "on_break" && !current) ||
+                          (status !== "off" && (!coords || fenceBlocks))
+                        }
+                        onClick={() => {
+                          setFlash(null);
+                          if (status === "off") setPickedLocation(current ? "" : l.id);
+                          else if (!current) moveMut.mutate(l.id);
+                        }}
+                      >
+                        {moveMut.isPending && moveMut.variables === l.id && (
+                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                        )}
+                        {l.name}
+                      </Button>
+                    );
+                  })}
+                </div>
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  {status === "off"
+                    ? pickedLocation
+                      ? t("Your time will count at the one you picked.")
+                      : t("Pick one, or leave it and we'll go by your schedule.")
+                    : status === "on_break"
+                      ? t("End your break before changing location.")
+                      : openIn?.location_id
+                        ? t("Counting at {place} since {time}. Tap another when you move.", {
+                            place: workLocations.find((l) => l.id === openIn.location_id)?.name ?? "",
+                            time: new Date(openIn.at).toLocaleTimeString(tag, {
+                              hour: "numeric",
+                              minute: "2-digit",
+                            }),
+                          })
+                        : t("Tap where you are so your time counts there.")}
+                </p>
               </div>
             )}
 
@@ -763,7 +796,11 @@ function TimeclockPage() {
               {(recentQ.data ?? []).length === 0 && (
                 <li className="py-3 text-muted-foreground">{t("No punches yet.")}</li>
               )}
-              {(recentQ.data ?? []).slice(0, 10).map((p) => {
+              {(recentQ.data ?? [])
+                .filter((p) => !(p.note === LOCATION_SWITCH && p.kind === "out"))
+                .slice(0, 10)
+                .map((p) => {
+                const moved = p.note === LOCATION_SWITCH && p.kind === "in";
                 const styles: Record<PunchKind, string> = {
                   in: "bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
                   out: "bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300",
@@ -776,8 +813,13 @@ function TimeclockPage() {
                       <span
                         className={`inline-block rounded px-1.5 py-0.5 text-xs font-medium ${styles[p.kind]}`}
                       >
-                        {t(PUNCH_LABEL[p.kind])}
+                        {moved ? t("MOVED") : t(PUNCH_LABEL[p.kind])}
                       </span>
+                      {moved && (
+                        <span className="ml-1.5 text-xs text-muted-foreground">
+                          {workLocations.find((l) => l.id === p.location_id)?.name}
+                        </span>
+                      )}
                       <span className="ml-2 text-foreground">
                         {new Date(p.at).toLocaleString(tag)}
                       </span>

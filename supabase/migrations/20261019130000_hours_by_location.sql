@@ -23,7 +23,12 @@
 -- stretch is never split between two places.
 --
 -- `set_punch_location` changes a stretch's location afterwards: a manager for
--- anyone, an employee only for the stretch they are on now.
+-- anyone, an employee only for the stretch they are on now (used when they
+-- pick a location as they clock in).
+--
+-- `switch_location` (at the bottom) is the employee tapping the location they
+-- have just moved to mid-shift: the time before the tap stays at the old
+-- location and the time after it counts at the new one.
 --
 -- Re-runnable; applied by hand in Studio.
 
@@ -248,3 +253,95 @@ end; $$;
 
 revoke all on function public.set_punch_location(uuid, uuid) from public, anon;
 grant execute on function public.set_punch_location(uuid, uuid) to authenticated;
+
+-- ---- switching location mid-shift ----
+
+-- Someone on the clock taps the location they have just moved to (Fire
+-- Department → Traffic Department). Their time up to now stays with the old
+-- location and everything from now counts at the new one.
+--
+-- It is written as a clock-out at the old location and a clock-in at the new
+-- one, one second apart, both marked with the note 'location_switch'. That way
+-- every rule that already reads punches — breaks, rounding, overtime, who is
+-- on site — keeps working unchanged, and the timecard shows two stretches
+-- with a location each. The second keeps the two in order everywhere they are
+-- sorted by time.
+create or replace function public.switch_location(
+  _location uuid,
+  _lat double precision,
+  _lng double precision,
+  _accuracy double precision default null
+)
+returns public.time_punches
+language plpgsql security definer set search_path = public
+as $$
+declare
+  uid uuid := auth.uid();
+  cid uuid;
+  c record;
+  require_geo boolean;
+  dist double precision;
+  last_kind text;
+  current_loc uuid;
+  t timestamptz := now();
+  row public.time_punches;
+begin
+  if uid is null then raise exception 'not authenticated'; end if;
+  if _lat is null or _lng is null then raise exception 'location required'; end if;
+
+  select company_id into cid from public.profiles where id = uid;
+  if cid is null then raise exception 'you must be a member of a company'; end if;
+
+  if not exists (select 1 from public.locations where id = _location and company_id = cid) then
+    raise exception 'that location is not in this company';
+  end if;
+  if exists (select 1 from public.employee_locations where employee_id = uid)
+     and not exists (select 1 from public.employee_locations
+                      where employee_id = uid and location_id = _location) then
+    raise exception 'you are not set up to work at that location';
+  end if;
+
+  -- The same distance rule as clock_punch.
+  select latitude, longitude, geofence_radius_m, settings into c
+    from public.companies where id = cid;
+  require_geo := coalesce((coalesce(c.settings, '{}'::jsonb)->>'require_geofence')::boolean, true);
+  if c.latitude is not null and c.longitude is not null then
+    dist := public.haversine_m(c.latitude, c.longitude, _lat, _lng);
+    if require_geo and dist > coalesce(c.geofence_radius_m, 200) then
+      raise exception 'You are % meters from the worksite (allowed: %m). Move closer to clock in/out.',
+        round(dist)::int, c.geofence_radius_m;
+    end if;
+  end if;
+
+  select kind into last_kind from public.time_punches
+   where user_id = uid
+   order by at desc, created_at desc, id desc
+   limit 1;
+  if last_kind is null or last_kind = 'out' then
+    raise exception 'Clock in first.';
+  end if;
+  if last_kind = 'break_start' then
+    raise exception 'End your break before changing location.';
+  end if;
+
+  current_loc := public.stretch_location(uid, t);
+  if current_loc is not distinct from _location then
+    raise exception 'You are already at that location.';
+  end if;
+
+  insert into public.time_punches
+    (user_id, company_id, kind, at, latitude, longitude, accuracy_m, distance_m, within_geofence, note, location_id)
+  values
+    (uid, cid, 'out', t, _lat, _lng, _accuracy, dist, true, 'location_switch', current_loc);
+
+  insert into public.time_punches
+    (user_id, company_id, kind, at, latitude, longitude, accuracy_m, distance_m, within_geofence, note, location_id)
+  values
+    (uid, cid, 'in', t + interval '1 second', _lat, _lng, _accuracy, dist, true, 'location_switch', _location)
+  returning * into row;
+
+  return row;
+end; $$;
+
+revoke all on function public.switch_location(uuid, double precision, double precision, double precision) from public, anon;
+grant execute on function public.switch_location(uuid, double precision, double precision, double precision) to authenticated;
