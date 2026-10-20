@@ -20,7 +20,6 @@ import {
   UserCheck,
   UserCog,
   ShieldCheck,
-  SlidersHorizontal,
   Network,
   CalendarCheck,
   ScrollText,
@@ -179,12 +178,6 @@ const NAV: NavItem[] = [
     needs: "audit_log",
   },
   { to: "/billing", label: "Billing", icon: CreditCard, roles: ["super_admin", "company_admin"] },
-  {
-    to: "/app-rules",
-    label: "App rules",
-    icon: SlidersHorizontal,
-    roles: ["super_admin", "company_admin"],
-  },
   {
     to: "/settings",
     label: "Settings",

@@ -1,4 +1,6 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { z } from "zod";
+import { AppRulesPanel } from "@/components/app-rules-panel";
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -50,11 +52,68 @@ import {
   unsubscribeFromPush,
 } from "@/lib/push-subscription";
 
+/** `?tab=rules` opens App rules, which admins reach from here. */
+const searchSchema = z.object({
+  tab: z.enum(["account", "rules"]).optional(),
+});
+
 export const Route = createFileRoute("/_authenticated/settings")({
+  validateSearch: (s) => searchSchema.parse(s),
   component: SettingsPage,
 });
 
+/**
+ * Settings, with App rules as a second tab for admins. App rules is its own
+ * component, unchanged from when it was a page of its own; this only decides
+ * which of the two is on screen.
+ */
 function SettingsPage() {
+  const { primaryRole, loading } = useAuth();
+  const t = useT("shell");
+  const { tab } = Route.useSearch();
+  const navigate = useNavigate();
+  const isAdmin = primaryRole === "company_admin" || primaryRole === "super_admin";
+  const showRules = isAdmin && tab === "rules";
+
+  if (loading) return <div className="text-sm text-muted-foreground">{t("Loading…")}</div>;
+
+  return (
+    <div className="space-y-6">
+      {isAdmin && (
+        <div className="inline-flex rounded-md border border-border bg-card p-0.5">
+          {(
+            [
+              ["account", t("My account")],
+              ["rules", t("App rules")],
+            ] as const
+          ).map(([key, label]) => {
+            const active = key === "rules" ? showRules : !showRules;
+            return (
+              <button
+                key={key}
+                type="button"
+                aria-pressed={active}
+                className={`rounded px-3 py-1.5 text-sm font-medium ${active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                onClick={() =>
+                  void navigate({
+                    to: "/settings",
+                    search: key === "rules" ? { tab: "rules" } : {},
+                    replace: true,
+                  })
+                }
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {showRules ? <AppRulesPanel /> : <AccountSettings />}
+    </div>
+  );
+}
+
+function AccountSettings() {
   const { user, profile, primaryRole, company, refresh, loading } = useAuth();
   const t = useT("shell");
   const [fullName, setFullName] = useState("");

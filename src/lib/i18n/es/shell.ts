@@ -261,6 +261,7 @@ export const shell: Record<string, string> = {
   "Audit log": "Bitácora de auditoría",
   "Billing": "Facturación",
   "App rules": "Reglas de la app",
+  "My account": "Mi cuenta",
   "Super Admin": "Superadministrador",
   "Company Admin": "Administrador de empresa",
   "Employee": "Empleado",
