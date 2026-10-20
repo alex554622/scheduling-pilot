@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "936791988348",
+    "project_id": "scheduling-pilot",
+    "storage_bucket": "scheduling-pilot.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:936791988348:android:d4e2239a1aca62591291f9",
+        "android_client_info": {
+          "package_name": "com.schedulingpilot.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCeHuGc8O2GfLI5z17c5p3u7YfFdRQrv8Y"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
