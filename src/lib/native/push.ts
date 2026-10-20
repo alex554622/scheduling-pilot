@@ -63,9 +63,29 @@ export function nativePushAvailable(): Promise<boolean> {
   return configured;
 }
 
+/**
+ * A build without push can still post notifications of its own (the break
+ * alarm, src/lib/native/break-alarm.ts), under the same OS permission. So the
+ * permission is asked and read through that plugin instead of reported as
+ * unsupported.
+ */
+const localNotifications = async () =>
+  (await import("@capacitor/local-notifications")).LocalNotifications;
+
+function asPermission(state: string): Permission {
+  return state === "granted" ? "granted" : state === "denied" ? "denied" : "default";
+}
+
 /** The OS permission, in the same words the website's Notification.permission uses. */
 export async function nativePushPermission(): Promise<Permission> {
-  if (!(await nativePushAvailable())) return "unsupported";
+  if (!isNativeApp()) return "unsupported";
+  if (!(await nativePushAvailable())) {
+    try {
+      return asPermission((await (await localNotifications()).checkPermissions()).display);
+    } catch {
+      return "unsupported";
+    }
+  }
   try {
     const { receive } = await (await plugin()).PushNotifications.checkPermissions();
     return receive === "granted" ? "granted" : receive === "denied" ? "denied" : "default";
@@ -76,7 +96,14 @@ export async function nativePushPermission(): Promise<Permission> {
 
 /** Ask the OS. Android below 13 and an already-answered iPhone answer at once. */
 export async function requestNativePushPermission(): Promise<Permission> {
-  if (!(await nativePushAvailable())) return "unsupported";
+  if (!isNativeApp()) return "unsupported";
+  if (!(await nativePushAvailable())) {
+    try {
+      return asPermission((await (await localNotifications()).requestPermissions()).display);
+    } catch {
+      return "denied";
+    }
+  }
   try {
     const { receive } = await (await plugin()).PushNotifications.requestPermissions();
     return receive === "granted" ? "granted" : receive === "denied" ? "denied" : "default";
@@ -154,6 +181,7 @@ function obtainToken(): Promise<string | null> {
  * it worked. Never prompts: call `requestNativePushPermission` from a tap first.
  */
 export async function registerNativePush(): Promise<boolean> {
+  if (!(await nativePushAvailable())) return false;
   if ((await nativePushPermission()) !== "granted") return false;
   try {
     await ensureChannels();

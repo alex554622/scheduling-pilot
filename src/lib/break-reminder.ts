@@ -8,6 +8,7 @@ import { hasPushSubscription } from "@/lib/push-subscription";
 import { playBreakAlert, playChime } from "@/lib/notify-sound";
 import { useBreakAlertSound } from "@/lib/break-alert-sound";
 import { translate } from "@/lib/i18n";
+import { syncBreakAlarm } from "@/lib/native/break-alarm";
 
 /**
  * "Two minutes left on your break."
@@ -35,6 +36,10 @@ import { translate } from "@/lib/i18n";
  * screen in front of you. Without that division a timer that woke up late
  * would replace the punctual pushed notification — same `break-<punch id>` tag
  * — and buzz the phone again with seconds left on the break.
+ *
+ * In the Android/iOS app a phone that is not registered for push sets its own
+ * alarm instead (src/lib/native/break-alarm.ts), which the OS fires with the
+ * app closed.
  */
 
 /** How far ahead of the end of the break to speak up. */
@@ -105,6 +110,20 @@ export function useBreakReminder(): void {
   const muted = !wants("break_ending");
   const desktop = prefs.desktop;
   const sound = prefs.sound;
+
+  // In the Android/iOS app, also set the phone's own alarm for the warning, so
+  // it goes off on the lock screen with the app closed even where push is not
+  // set up (src/lib/native/break-alarm.ts). Ending the break, clocking out or
+  // switching reminders off clears it. Does nothing on the website.
+  const loaded = lastQ.isSuccess;
+  useEffect(() => {
+    if (!loaded) return;
+    void syncBreakAlarm(
+      startedAt != null && minutes != null && !muted && desktop
+        ? { warnAt: startedAt + minutes * 60_000 - BREAK_WARNING_MS, minutes }
+        : null,
+    );
+  }, [loaded, startedAt, minutes, muted, desktop]);
 
   useEffect(() => {
     if (!punchId || startedAt == null || minutes == null || muted) return;

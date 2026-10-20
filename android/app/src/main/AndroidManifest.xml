@@ -104,4 +104,13 @@
       Older Android versions grant it at install.
     -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!--
+      "Two minutes left on your break" is set as an alarm on the phone when the
+      break starts (src/lib/native/break-alarm.ts). Without this, Android may
+      hold an alarm in Doze for several minutes, which can be after the break
+      is over. Granted by default on Android 12 and 13; on 14+ it is a switch
+      in the app's settings, and the alarm falls back to inexact without it.
+    -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 </manifest>

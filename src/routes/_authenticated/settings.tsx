@@ -22,6 +22,7 @@ import {
 import { isNativeApp } from "@/lib/native/platform";
 import {
   hasNativePushToken,
+  nativePushAvailable,
   nativePushPermission,
   registerNativePush,
   requestNativePushPermission,
@@ -370,6 +371,8 @@ function NotificationSettings() {
   // a subscription is what reaches a phone with the app shut.
   const [subscribing, setSubscribing] = useState(false);
   const [deliversClosed, setDeliversClosed] = useState(false);
+  // An app build without push still sets the break alarm on the phone itself.
+  const [nativePush, setNativePush] = useState(true);
   // Safari only offers notifications to an app that has been added to the Home
   // Screen, so "unsupported" on an iPhone is an instruction, not a dead end.
   const [needsInstall, setNeedsInstall] = useState(false);
@@ -379,6 +382,7 @@ function NotificationSettings() {
     if (isNativeApp()) {
       void nativePushPermission().then(setPermission);
       void hasNativePushToken().then(setDeliversClosed);
+      void nativePushAvailable().then(setNativePush);
       return;
     }
     const p = desktopPermission();
@@ -580,6 +584,10 @@ function NotificationSettings() {
                     ? t(
                         "These reach you with the app closed — your break reminder will arrive whether or not it's open.",
                       )
+                    : isNativeApp() && !nativePush
+                      ? t(
+                          "Your break reminder goes off with the app closed. Other alerts show while the app is open.",
+                        )
                     : !isNativeApp() && !pushConfigured()
                       ? t(
                           "This device will only be told while the app is open: delivery to closed apps isn't set up on this server yet.",
