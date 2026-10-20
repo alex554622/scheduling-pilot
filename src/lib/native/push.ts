@@ -141,6 +141,29 @@ async function ensureChannels() {
       vibration: true,
     })
     .catch(() => {});
+  await push.createChannel(breakAlertChannel()).catch(() => {});
+}
+
+/**
+ * The break reminder for a company approved for the recorded alert. Its own
+ * channel because a channel's sound can never be changed once a phone has it,
+ * and `break` went out with the default one. The server picks between the two
+ * (fcmMessage in src/lib/server/native-push.ts); the phone's own alarm does
+ * the same (src/lib/native/break-alarm.ts).
+ */
+export const BREAK_ALERT_CHANNEL_ID = "break_alert";
+export function breakAlertChannel() {
+  return {
+    id: BREAK_ALERT_CHANNEL_ID,
+    name: tr("Break almost over (alert sound)"),
+    description: tr("A reminder two minutes before your break is up."),
+    importance: 5 as const,
+    visibility: 1 as const,
+    vibration: true,
+    // android/app/src/main/res/raw/break_alert.mp3, trimmed from
+    // public/sounds/notify-alert.mp3 to the part that makes a sound.
+    sound: "break_alert.mp3",
+  };
 }
 
 let pendingToken: Promise<string | null> | null = null;

@@ -31,6 +31,11 @@ export interface NativePayload {
   link: string;
   tag: string;
   type: string;
+  /**
+   * This person's company is approved for the recorded break alert
+   * (`companies.break_alert_sound`). Only ever read for a break reminder.
+   */
+  alertSound?: boolean;
 }
 
 /* ------------------------------------------------------------------- helpers */
@@ -61,8 +66,20 @@ export interface FcmConfig {
   privateKey: string;
 }
 
-/** Android notification channels. Created by the app (src/lib/native/push.ts). */
-export const ANDROID_CHANNELS = { alerts: "alerts", break: "break" } as const;
+/**
+ * Android notification channels. Created by the app (src/lib/native/push.ts).
+ *
+ * A channel's sound is fixed the first time the app creates it, and nothing
+ * the app or the server does afterwards can change it. That is why the
+ * recorded break alert is a channel of its own (playing res/raw/break_alert)
+ * rather than a new sound on `break`, which phones already have with the
+ * default one.
+ */
+export const ANDROID_CHANNELS = {
+  alerts: "alerts",
+  break: "break",
+  breakAlert: "break_alert",
+} as const;
 
 /**
  * The service account, from `FCM_SERVICE_ACCOUNT`: the JSON file Firebase
@@ -140,6 +157,12 @@ async function fcmAccessToken(config: FcmConfig): Promise<string> {
 /** The FCM v1 message body for one device. Exported for the tests. */
 export function fcmMessage(token: string, payload: NativePayload, ttlSeconds: number) {
   const alarm = isAlarm(payload.type);
+  const recorded = alarm && payload.alertSound === true;
+  const channel = recorded
+    ? ANDROID_CHANNELS.breakAlert
+    : alarm
+      ? ANDROID_CHANNELS.break
+      : ANDROID_CHANNELS.alerts;
   return {
     message: {
       token,
@@ -152,11 +175,13 @@ export function fcmMessage(token: string, payload: NativePayload, ttlSeconds: nu
         priority: "HIGH",
         ttl: `${ttlSeconds}s`,
         notification: {
-          channel_id: alarm ? ANDROID_CHANNELS.break : ANDROID_CHANNELS.alerts,
+          channel_id: channel,
           // Same tag as the bell and the website use: a later one for the same
           // event replaces the earlier instead of stacking.
           tag: payload.tag,
-          default_sound: true,
+          // Android 8+ plays the channel's sound and ignores these two; they
+          // are what Android 7 and older go by.
+          ...(recorded ? { sound: "break_alert" } : { default_sound: true }),
           default_vibrate_timings: true,
           notification_priority: alarm ? "PRIORITY_MAX" : "PRIORITY_HIGH",
           visibility: "PRIVATE",

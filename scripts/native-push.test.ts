@@ -86,6 +86,16 @@ eq(
     .channel_id,
   "alerts",
 );
+const approved = fcmMessage("t", { ...payload, alertSound: true }, 180).message.android
+  .notification as Record<string, unknown>;
+eq("approved break goes to the recorded-alert channel", approved.channel_id, "break_alert");
+eq("approved break names the sound for Android 7", approved.sound, "break_alert");
+eq(
+  "the flag does nothing for anything but a break",
+  fcmMessage("t", { ...payload, type: "schedule_changed", alertSound: true }, 60).message.android
+    .notification.channel_id,
+  "alerts",
+);
 
 ok("404 is gone", fcmTokenIsGone(404, ""));
 ok("UNREGISTERED is gone", fcmTokenIsGone(400, '{"errorCode":"UNREGISTERED"}'));

@@ -120,10 +120,10 @@ export function useBreakReminder(): void {
     if (!loaded) return;
     void syncBreakAlarm(
       startedAt != null && minutes != null && !muted && desktop
-        ? { warnAt: startedAt + minutes * 60_000 - BREAK_WARNING_MS, minutes }
+        ? { warnAt: startedAt + minutes * 60_000 - BREAK_WARNING_MS, minutes, alertSound }
         : null,
     );
-  }, [loaded, startedAt, minutes, muted, desktop]);
+  }, [loaded, startedAt, minutes, muted, desktop, alertSound]);
 
   useEffect(() => {
     if (!punchId || startedAt == null || minutes == null || muted) return;

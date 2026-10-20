@@ -122,6 +122,7 @@ async function deliver(
   subs: SubscriptionRow[],
   devices: DeviceRow[],
   senders: Senders,
+  alertSound: boolean,
 ): Promise<{ error: string | null; gone: Target[] }> {
   const payload = {
     title: row.title,
@@ -159,7 +160,7 @@ async function deliver(
       targets.push({
         table: "push_devices",
         id: d.id,
-        send: () => sendFcm(fcm, d.token, payload, ttl),
+        send: () => sendFcm(fcm, d.token, { ...payload, alertSound }, ttl),
       });
     } else if (d.platform === "ios" && apns) {
       targets.push({
@@ -216,6 +217,27 @@ async function byOwner<T extends { user_id: string }>(
   return map;
 }
 
+/**
+ * Which of these people belong to a company approved for the recorded break
+ * alert (`companies.break_alert_sound`). Only the Android app can play it with
+ * the app closed, so this is asked only for break reminders headed there.
+ *
+ * A failed lookup is the standard sound, not a failed notification.
+ */
+async function approvedForAlertSound(userIds: string[]): Promise<Set<string>> {
+  if (userIds.length === 0) return new Set();
+  const q = await db.from("profiles").select("id, companies(break_alert_sound)").in("id", userIds);
+  if (q.error) {
+    console.warn("[push] could not read break_alert_sound:", errText(q.error));
+    return new Set();
+  }
+  const rows = (q.data ?? []) as {
+    id: string;
+    companies: { break_alert_sound?: boolean } | null;
+  }[];
+  return new Set(rows.filter((r) => r.companies?.break_alert_sound === true).map((r) => r.id));
+}
+
 /** One pass. Returns how many rows it handled, so a full batch can be drained. */
 async function drainOnce(senders: Senders): Promise<number> {
   const claimed = await db.rpc("claim_due_pushes", { _limit: BATCH });
@@ -263,6 +285,14 @@ async function drainOnce(senders: Senders): Promise<number> {
     );
   }
 
+  const alertSound = await approvedForAlertSound([
+    ...new Set(
+      rows
+        .filter((r) => r.type === "break_ending" && devicesByUser.has(r.user_id))
+        .map((r) => r.user_id),
+    ),
+  ]);
+
   const dead: Record<DeviceTable, Set<string>> = {
     push_subscriptions: new Set(),
     push_devices: new Set(),
@@ -274,6 +304,7 @@ async function drainOnce(senders: Senders): Promise<number> {
         subsByUser.get(row.user_id) ?? [],
         devicesByUser.get(row.user_id) ?? [],
         senders,
+        alertSound.has(row.user_id),
       );
       for (const t of gone) dead[t.table].add(t.id);
       const marked = await db.rpc("mark_push_sent", { _id: row.id, _error: error });

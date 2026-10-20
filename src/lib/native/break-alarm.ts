@@ -1,6 +1,11 @@
 import { translate } from "@/lib/i18n";
 import { isNativeApp, nativePlatform } from "./platform";
-import { hasNativePushToken, nativePushPermission } from "./push";
+import {
+  BREAK_ALERT_CHANNEL_ID,
+  breakAlertChannel,
+  hasNativePushToken,
+  nativePushPermission,
+} from "./push";
 
 /**
  * "Two minutes left on your break", set as an alarm on the phone itself.
@@ -36,9 +41,8 @@ let channelReady: Promise<void> | null = null;
 function ensureChannel(): Promise<void> {
   if (nativePlatform() !== "android") return Promise.resolve();
   channelReady ??= (async () => {
-    await (
-      await plugin()
-    ).LocalNotifications.createChannel({
+    const local = (await plugin()).LocalNotifications;
+    await local.createChannel({
       id: CHANNEL,
       name: tr("Break almost over"),
       description: tr("A reminder two minutes before your break is up."),
@@ -46,6 +50,7 @@ function ensureChannel(): Promise<void> {
       visibility: 1,
       vibration: true,
     });
+    await local.createChannel(breakAlertChannel());
   })().catch(() => {
     channelReady = null;
   });
@@ -57,6 +62,8 @@ export interface BreakAlarm {
   warnAt: number;
   /** The length the employee picked, for the sentence. */
   minutes: number;
+  /** The company is approved for the recorded alert (useBreakAlertSound). */
+  alertSound: boolean;
 }
 
 /** The last thing asked for, so a re-render does not re-schedule the same alarm. */
@@ -70,7 +77,7 @@ export async function syncBreakAlarm(alarm: BreakAlarm | null): Promise<void> {
   if (!isNativeApp()) return;
   // The server is sending it to this phone already; one is enough.
   const wanted = alarm && alarm.warnAt > Date.now() && !(await hasNativePushToken()) ? alarm : null;
-  const key = wanted ? `${wanted.warnAt}` : null;
+  const key = wanted ? `${wanted.warnAt}:${wanted.alertSound}` : null;
   if (key === current) return;
   current = key;
   try {
@@ -92,7 +99,7 @@ export async function syncBreakAlarm(alarm: BreakAlarm | null): Promise<void> {
           // allowWhileIdle: fire in Doze too, which is where a locked phone in
           // a pocket is by the end of a break.
           schedule: { at: new Date(wanted.warnAt), allowWhileIdle: true },
-          channelId: CHANNEL,
+          channelId: wanted.alertSound ? BREAK_ALERT_CHANNEL_ID : CHANNEL,
           smallIcon: "ic_stat_notify",
           extra: { link: "/timeclock" },
         },

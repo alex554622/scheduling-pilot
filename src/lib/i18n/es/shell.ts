@@ -231,6 +231,7 @@ export const shell: Record<string, string> = {
   "That email link didn't work ({description}). Sign in below, or create your account again to get a new link.": "Ese enlace del correo no funcionó ({description}). Inicia sesión abajo, o crea tu cuenta de nuevo para recibir un nuevo enlace.",
   "That email link didn't work. Sign in below, or create your account again to get a new link.": "Ese enlace del correo no funcionó. Inicia sesión abajo, o crea tu cuenta de nuevo para recibir un nuevo enlace.",
   "Break almost over": "Descanso por terminar",
+  "Break almost over (alert sound)": "Descanso por terminar (sonido de alerta)",
   "Two minutes left on your {minutes}-minute break.": "Quedan dos minutos de tu descanso de {minutes} minutos.",
   "Your break reminder goes off with the app closed. Other alerts show while the app is open.": "El aviso de tu descanso suena aunque la app esté cerrada. Los demás avisos se muestran mientras la app está abierta.",
   "Under 1 minute left on your {minutes}-minute break.": "Queda menos de 1 minuto de tu descanso de {minutes} minutos.",
