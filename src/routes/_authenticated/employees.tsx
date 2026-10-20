@@ -1071,23 +1071,9 @@ function EditMemberDialog({
   const [departmentId, setDepartmentId] = useState("");
   const [maxHours, setMaxHours] = useState<number>(40);
   const [isActive, setIsActive] = useState(true);
-  const [qualified, setQualified] = useState<Set<string>>(new Set());
   const [worksAt, setWorksAt] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-
-  // The positions this company defines, and what this member is already
-  // qualified for. Both feed the scheduler's "not qualified" check.
-  const positionsQ = useQuery({
-    queryKey: ["positions", companyId],
-    enabled: !!member,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("positions").select("id, name").eq("company_id", companyId).order("name");
-      if (error) throw error;
-      return (data ?? []) as { id: string; name: string }[];
-    },
-  });
 
   const departmentsQ = useQuery({
     queryKey: ["departments", companyId],
@@ -1100,17 +1086,6 @@ function EditMemberDialog({
         .order("name");
       if (error) throw error;
       return (data ?? []) as { id: string; name: string }[];
-    },
-  });
-
-  const qualsQ = useQuery({
-    queryKey: ["employee-positions", member?.id],
-    enabled: !!member,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("employee_positions").select("position_id").eq("employee_id", member!.id);
-      if (error) throw error;
-      return (data ?? []).map((r) => r.position_id);
     },
   });
 
@@ -1169,23 +1144,11 @@ function EditMemberDialog({
   }, [profileQ.data]);
 
   useEffect(() => {
-    if (qualsQ.data) setQualified(new Set(qualsQ.data));
-  }, [qualsQ.data]);
-
-  useEffect(() => {
     if (worksAtQ.data) setWorksAt(new Set(worksAtQ.data));
   }, [worksAtQ.data]);
 
   function toggleWorksAt(id: string) {
     setWorksAt((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  }
-
-  function toggleQual(id: string) {
-    setQualified((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
@@ -1209,25 +1172,7 @@ function EditMemberDialog({
       .eq("id", member.id);
     if (error) { setSaving(false); setErr(error.message); return; }
 
-    // Reconcile qualifications against what was loaded, so we only write deltas.
-    const before = new Set(qualsQ.data ?? []);
-    const toAdd = [...qualified].filter((id) => !before.has(id));
-    const toRemove = [...before].filter((id) => !qualified.has(id));
-
-    if (toAdd.length) {
-      const { error: addErr } = await supabase.from("employee_positions").insert(
-        toAdd.map((position_id) => ({ company_id: companyId, employee_id: member.id, position_id })),
-      );
-      if (addErr) { setSaving(false); setErr(addErr.message); return; }
-    }
-    if (toRemove.length) {
-      const { error: rmErr } = await supabase
-        .from("employee_positions").delete()
-        .eq("employee_id", member.id).in("position_id", toRemove);
-      if (rmErr) { setSaving(false); setErr(rmErr.message); return; }
-    }
-
-    // Same for locations.
+    // Reconcile locations against what was loaded, so we only write deltas.
     const wasAt = new Set(worksAtQ.data ?? []);
     const locAdd = [...worksAt].filter((id) => !wasAt.has(id));
     const locRemove = [...wasAt].filter((id) => !worksAt.has(id));
@@ -1254,7 +1199,7 @@ function EditMemberDialog({
         <DialogHeader>
           <DialogTitle>{t("Edit member")}</DialogTitle>
           <DialogDescription>
-            {t("Name, scheduling limits, qualifications and work locations. Roles are managed from the roster.")}
+            {t("Name, scheduling limits and work locations. Roles are managed from the roster.")}
           </DialogDescription>
         </DialogHeader>
         <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
@@ -1319,35 +1264,6 @@ function EditMemberDialog({
                 <option value="inactive">{t("Inactive")}</option>
               </select>
             </div>
-          </div>
-
-          <div>
-            <Label>{t("Qualified positions")}</Label>
-            {(positionsQ.data ?? []).length === 0 ? (
-              <p className="mt-1 text-xs text-muted-foreground">
-                {t("No positions defined yet — add them under Organization → Positions.")}
-              </p>
-            ) : (
-              <div className="mt-1.5 grid gap-1.5 sm:grid-cols-2">
-                {(positionsQ.data ?? []).map((p) => (
-                  <label
-                    key={p.id}
-                    className="flex cursor-pointer items-center gap-2 rounded-lg border border-border px-2.5 py-2 text-sm hover:bg-accent"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={qualified.has(p.id)}
-                      onChange={() => toggleQual(p.id)}
-                      className="h-4 w-4"
-                    />
-                    <span className="truncate text-foreground">{p.name}</span>
-                  </label>
-                ))}
-              </div>
-            )}
-            <p className="mt-1.5 text-xs text-muted-foreground">
-              {t("The schedule builder warns when someone is assigned a position they aren’t marked for.")}
-            </p>
           </div>
 
           <div>

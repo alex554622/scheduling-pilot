@@ -118,8 +118,8 @@ export const people: Record<string, string> = {
   "Open email": "Abrir correo",
   "Create invitation": "Crear invitación",
   "Edit member": "Editar miembro",
-  "Name, scheduling limits, qualifications and work locations. Roles are managed from the roster.":
-    "Nombre, límites de horario, calificaciones y ubicaciones de trabajo. Los roles se administran desde la lista de personal.",
+  "Name, scheduling limits and work locations. Roles are managed from the roster.":
+    "Nombre, límites de horario y ubicaciones de trabajo. Los roles se administran desde la lista de personal.",
   "Full name": "Nombre completo",
   "Job title": "Puesto de trabajo",
   "e.g. Barista, Shift Lead": "p. ej. Barista, Líder de turno",
