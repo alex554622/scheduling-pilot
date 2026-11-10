@@ -1,8 +1,7 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  CalendarRange,
   CheckSquare,
   ChevronLeft,
   ChevronRight,
@@ -25,7 +24,7 @@ import {
   shiftTimes,
   toDayString,
   type DayString,
-} from "@/lib/schedule-pattern";
+} from "@/lib/day-string";
 import { translate, useT } from "@/lib/i18n";
 
 /**
@@ -365,12 +364,6 @@ function ScheduleSheetPage() {
               {t("Select")}
             </Button>
           )}
-          <Button asChild variant="outline" size="sm">
-            <Link to="/schedule-templates">
-              <CalendarRange className="mr-2 h-4 w-4" />
-              {t("Templates")}
-            </Link>
-          </Button>
           <ScheduleCopyPaste
             companyId={company!.id}
             rangeStart={rangeStart}
@@ -522,7 +515,7 @@ function ScheduleSheetPage() {
                   colSpan={days.length + 2}
                   className="px-3 py-6 text-center text-sm text-muted-foreground"
                 >
-                  {t("No shifts this month yet. Add a team below, or build the month from a template.")}
+                  {t("No shifts this month yet. Add a team below.")}
                 </td>
               </tr>
             )}

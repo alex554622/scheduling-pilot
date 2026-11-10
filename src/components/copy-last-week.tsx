@@ -12,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { addDays, fromDayString, toDayString, type DayString } from "@/lib/schedule-pattern";
+import { addDays, fromDayString, toDayString, type DayString } from "@/lib/day-string";
 import {
   dropDuplicates,
   encodeShifts,

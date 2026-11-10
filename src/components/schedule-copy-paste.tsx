@@ -13,7 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { addDays, fromDayString, type DayString } from "@/lib/schedule-pattern";
+import { addDays, fromDayString, type DayString } from "@/lib/day-string";
 import {
   clipboardSpan,
   describeClipboard,

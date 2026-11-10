@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -30,7 +30,6 @@ import {
   ShieldCheck,
   Loader2,
   Download,
-  CalendarRange,
   CheckSquare,
   Plane,
 } from "lucide-react";
@@ -49,7 +48,7 @@ import {
 import { useScheduleLayout, type ScheduleLayout } from "@/lib/schedule-layout";
 import { EraseSelectionBar } from "@/components/erase-days";
 import { useScheduleSelection, type ScheduleSelection } from "@/lib/day-selection";
-import { toDayString } from "@/lib/schedule-pattern";
+import { toDayString } from "@/lib/day-string";
 import { useT, useLocaleTag, localeTag, translate } from "@/lib/i18n";
 
 export const Route = createFileRoute("/_authenticated/schedule")({
@@ -1272,15 +1271,6 @@ function ScheduleBuilder(props: BuilderProps) {
               shifts={shifts}
               members={members}
             />
-          )}
-          {/* Templates are one way in; this builder is the other. */}
-          {canEdit && (
-            <Button asChild variant="outline" size="sm">
-              <Link to="/schedule-templates">
-                <CalendarRange className="mr-2 h-4 w-4" />
-                {t("From template")}
-              </Link>
-            </Button>
           )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

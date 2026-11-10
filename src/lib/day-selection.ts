@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { DayString } from "@/lib/schedule-pattern";
+import type { DayString } from "@/lib/day-string";
 
 /**
  * Picking parts of a schedule to clear.

@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { useAppRules } from "@/lib/app-rules";
 import { useStaffVisibility } from "@/lib/staff-visibility";
 import { PAID_BREAK_MINUTES, readBreak, roundPunches } from "@/lib/timecard-totals";
-import { toDayString } from "@/lib/schedule-pattern";
+import { toDayString } from "@/lib/day-string";
 import { breakAlertsFor, type BreakAlert, type ReminderDismissal, type ReminderKind } from "@/lib/break-reminders";
 import { Button } from "@/components/ui/button";
 import { localeTag, translate, useLocaleTag, useT } from "@/lib/i18n";

@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { fromDayString, toDayString, type DayString } from "@/lib/schedule-pattern";
+import { fromDayString, toDayString, type DayString } from "@/lib/day-string";
 import type { ScheduleSelection } from "@/lib/day-selection";
 import { useT, useLocaleTag } from "@/lib/i18n";
 

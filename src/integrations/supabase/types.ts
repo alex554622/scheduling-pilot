@@ -122,84 +122,6 @@ export type Database = {
         }
         Relationships: []
       }
-      schedule_templates: {
-        Row: {
-          company_id: string | null
-          created_at: string
-          default_work_week_start: number
-          description: string
-          id: string
-          is_editable: boolean
-          is_system_template: boolean
-          name: string
-          owner_id: string | null
-          pattern: Json
-          pattern_length: number
-          schedule_view_type: string
-          updated_at: string
-        }
-        Insert: {
-          company_id?: string | null
-          created_at?: string
-          default_work_week_start?: number
-          description?: string
-          id?: string
-          is_editable?: boolean
-          is_system_template?: boolean
-          name: string
-          owner_id?: string | null
-          pattern?: Json
-          pattern_length?: number
-          schedule_view_type?: string
-          updated_at?: string
-        }
-        Update: {
-          company_id?: string | null
-          created_at?: string
-          default_work_week_start?: number
-          description?: string
-          id?: string
-          is_editable?: boolean
-          is_system_template?: boolean
-          name?: string
-          owner_id?: string | null
-          pattern?: Json
-          pattern_length?: number
-          schedule_view_type?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      schedule_template_teams: {
-        Row: {
-          id: string
-          name: string
-          pattern_offset: number
-          shift_end: string
-          shift_start: string
-          sort_order: number
-          template_id: string
-        }
-        Insert: {
-          id?: string
-          name: string
-          pattern_offset?: number
-          shift_end?: string
-          shift_start?: string
-          sort_order?: number
-          template_id: string
-        }
-        Update: {
-          id?: string
-          name?: string
-          pattern_offset?: number
-          shift_end?: string
-          shift_start?: string
-          sort_order?: number
-          template_id?: string
-        }
-        Relationships: []
-      }
       kiosk_devices: {
         Row: {
           company_id: string
@@ -966,12 +888,6 @@ export type Database = {
           published_by: string | null
           starts_on: string
           status: string
-          source_template_id: string | null
-          pattern_snapshot: Json | null
-          teams_snapshot: Json | null
-          work_week_start: number | null
-          anchor_date: string | null
-          schedule_year: number | null
         }
         Insert: {
           company_id: string
@@ -986,12 +902,6 @@ export type Database = {
           published_by?: string | null
           starts_on: string
           status?: string
-          source_template_id?: string | null
-          pattern_snapshot?: Json | null
-          teams_snapshot?: Json | null
-          work_week_start?: number | null
-          anchor_date?: string | null
-          schedule_year?: number | null
         }
         Update: {
           company_id?: string
@@ -1006,12 +916,6 @@ export type Database = {
           published_by?: string | null
           starts_on?: string
           status?: string
-          source_template_id?: string | null
-          pattern_snapshot?: Json | null
-          teams_snapshot?: Json | null
-          work_week_start?: number | null
-          anchor_date?: string | null
-          schedule_year?: number | null
         }
         Relationships: [
           {

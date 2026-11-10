@@ -48,7 +48,7 @@ import {
   type LocationMove,
   type SimplePunch,
 } from "@/lib/timecard-totals";
-import { fromDayString, toDayString } from "@/lib/schedule-pattern";
+import { fromDayString, toDayString } from "@/lib/day-string";
 import { localeTag, useT } from "@/lib/i18n";
 
 /**

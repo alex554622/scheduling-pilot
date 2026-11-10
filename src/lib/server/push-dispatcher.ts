@@ -86,8 +86,7 @@ interface Target {
 /**
  * The generated Supabase types predate these tables, and regenerating them
  * needs a linked CLI. Casting at the one boundary keeps the rest of the file
- * honestly typed — the same trick the app already uses for `notification_prefs`
- * and the template `pattern` column.
+ * honestly typed — the same trick the app already uses for `notification_prefs`.
  */
 const db = supabaseAdmin as unknown as {
   rpc: (

@@ -33,7 +33,6 @@ import { Route as AuthenticatedTimecardsRouteImport } from './routes/_authentica
 import { Route as AuthenticatedTimeOffRouteImport } from './routes/_authenticated/time-off'
 import { Route as AuthenticatedSharedClockInRouteImport } from './routes/_authenticated/shared-clock-in'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
-import { Route as AuthenticatedScheduleTemplatesRouteImport } from './routes/_authenticated/schedule-templates'
 import { Route as AuthenticatedScheduleSheetRouteImport } from './routes/_authenticated/schedule-sheet'
 import { Route as AuthenticatedScheduleRouteImport } from './routes/_authenticated/schedule'
 import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
@@ -171,12 +170,6 @@ const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedScheduleTemplatesRoute =
-  AuthenticatedScheduleTemplatesRouteImport.update({
-    id: '/schedule-templates',
-    path: '/schedule-templates',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
 const AuthenticatedScheduleSheetRoute =
   AuthenticatedScheduleSheetRouteImport.update({
     id: '/schedule-sheet',
@@ -293,7 +286,6 @@ export interface FileRoutesByFullPath {
   '/reports': typeof AuthenticatedReportsRoute
   '/schedule': typeof AuthenticatedScheduleRoute
   '/schedule-sheet': typeof AuthenticatedScheduleSheetRoute
-  '/schedule-templates': typeof AuthenticatedScheduleTemplatesRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/shared-clock-in': typeof AuthenticatedSharedClockInRoute
   '/time-off': typeof AuthenticatedTimeOffRoute
@@ -335,7 +327,6 @@ export interface FileRoutesByTo {
   '/reports': typeof AuthenticatedReportsRoute
   '/schedule': typeof AuthenticatedScheduleRoute
   '/schedule-sheet': typeof AuthenticatedScheduleSheetRoute
-  '/schedule-templates': typeof AuthenticatedScheduleTemplatesRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/shared-clock-in': typeof AuthenticatedSharedClockInRoute
   '/time-off': typeof AuthenticatedTimeOffRoute
@@ -379,7 +370,6 @@ export interface FileRoutesById {
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
   '/_authenticated/schedule': typeof AuthenticatedScheduleRoute
   '/_authenticated/schedule-sheet': typeof AuthenticatedScheduleSheetRoute
-  '/_authenticated/schedule-templates': typeof AuthenticatedScheduleTemplatesRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/shared-clock-in': typeof AuthenticatedSharedClockInRoute
   '/_authenticated/time-off': typeof AuthenticatedTimeOffRoute
@@ -423,7 +413,6 @@ export interface FileRouteTypes {
     | '/reports'
     | '/schedule'
     | '/schedule-sheet'
-    | '/schedule-templates'
     | '/settings'
     | '/shared-clock-in'
     | '/time-off'
@@ -465,7 +454,6 @@ export interface FileRouteTypes {
     | '/reports'
     | '/schedule'
     | '/schedule-sheet'
-    | '/schedule-templates'
     | '/settings'
     | '/shared-clock-in'
     | '/time-off'
@@ -508,7 +496,6 @@ export interface FileRouteTypes {
     | '/_authenticated/reports'
     | '/_authenticated/schedule'
     | '/_authenticated/schedule-sheet'
-    | '/_authenticated/schedule-templates'
     | '/_authenticated/settings'
     | '/_authenticated/shared-clock-in'
     | '/_authenticated/time-off'
@@ -710,13 +697,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/schedule-templates': {
-      id: '/_authenticated/schedule-templates'
-      path: '/schedule-templates'
-      fullPath: '/schedule-templates'
-      preLoaderRoute: typeof AuthenticatedScheduleTemplatesRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
     '/_authenticated/schedule-sheet': {
       id: '/_authenticated/schedule-sheet'
       path: '/schedule-sheet'
@@ -863,7 +843,6 @@ interface AuthenticatedRouteChildren {
   AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
   AuthenticatedScheduleRoute: typeof AuthenticatedScheduleRoute
   AuthenticatedScheduleSheetRoute: typeof AuthenticatedScheduleSheetRoute
-  AuthenticatedScheduleTemplatesRoute: typeof AuthenticatedScheduleTemplatesRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedSharedClockInRoute: typeof AuthenticatedSharedClockInRoute
   AuthenticatedTimeOffRoute: typeof AuthenticatedTimeOffRoute
@@ -890,7 +869,6 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedReportsRoute: AuthenticatedReportsRoute,
   AuthenticatedScheduleRoute: AuthenticatedScheduleRoute,
   AuthenticatedScheduleSheetRoute: AuthenticatedScheduleSheetRoute,
-  AuthenticatedScheduleTemplatesRoute: AuthenticatedScheduleTemplatesRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedSharedClockInRoute: AuthenticatedSharedClockInRoute,
   AuthenticatedTimeOffRoute: AuthenticatedTimeOffRoute,

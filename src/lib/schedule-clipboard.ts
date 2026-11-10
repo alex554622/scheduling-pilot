@@ -11,7 +11,7 @@
  * both screens showing the same clipboard in the same tab.
  */
 import { translate } from "@/lib/i18n";
-import { addDays, daysBetween, fromDayString, type DayString } from "@/lib/schedule-pattern";
+import { addDays, daysBetween, fromDayString, type DayString } from "@/lib/day-string";
 
 const KEY = "sp-schedule-clipboard";
 const EVENT = "sp-schedule-clipboard-change";

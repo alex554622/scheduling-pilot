@@ -1,4 +1,4 @@
-/** Spanish for the timecards, schedule templates and schedule sheet screens, keyed by the English text. See `@/lib/i18n`. */
+/** Spanish for the timecards and schedule sheet screens, keyed by the English text. See `@/lib/i18n`. */
 export const timecards: Record<string, string> = {
   // Timecards page
   Unnamed: "Sin nombre",
@@ -104,101 +104,20 @@ export const timecards: Record<string, string> = {
   "Keep them": "Conservarlos",
   "Delete {n}": "Eliminar {n}",
 
-  // Schedule templates
-  "New template": "Plantilla nueva",
-  "Team {n}": "Equipo {n}",
-  "Only a company admin can manage schedule templates.":
-    "Solo un administrador de la empresa puede gestionar las plantillas de horario.",
-  SYSTEM: "SISTEMA",
-  CUSTOM: "PERSONAL",
-  "{n}-day rotation": "Rotación de {n} días",
-  "Monthly schedule": "Horario mensual",
+  // Shared with other screens
   "1 team": "1 equipo",
   "{n} teams": "{n} equipos",
-  Preview: "Vista previa",
-  "Use template": "Usar plantilla",
-  Customize: "Personalizar",
-  "{name} (copy)": "{name} (copia)",
-  Duplicate: "Duplicar",
-  'Delete "{name}"? Schedules already created from it are kept.':
-    '¿Eliminar "{name}"? Los horarios ya creados con ella se conservan.',
-  "starts day {n}": "empieza el día {n}",
-  "Schedule templates": "Plantillas de horario",
-  "A rotation described once — the work/off cycle, the teams and their hours — then applied to any month. Templates are optional: you can still":
-    "Una rotación descrita una sola vez (el ciclo de trabajo y descanso, los equipos y sus horas) y luego aplicada a cualquier mes. Las plantillas son opcionales: también puedes",
-  "build a schedule from scratch": "crear un horario desde cero",
-  "Create new template": "Crear plantilla nueva",
-  "Built-in templates": "Plantillas integradas",
-  "No built-in templates found. Run the schedule template migration in Supabase.":
-    "No se encontraron plantillas integradas. Ejecuta la migración de plantillas de horario en Supabase.",
-  "My custom templates": "Mis plantillas personales",
-  "None yet. Customize a built-in template, or create one from scratch.":
-    "Aún no hay ninguna. Personaliza una plantilla integrada o crea una desde cero.",
-  "Customize “{name}”": "Personalizar “{name}”",
-  "This is a built-in Scheduling Pilot template. To make changes, Scheduling Pilot will create a custom copy for your account. The built-in template stays as it is for everyone.":
-    "Esta es una plantilla integrada de Scheduling Pilot. Para hacer cambios, Scheduling Pilot creará una copia personal para tu cuenta. La plantilla integrada se queda como está para todos.",
   Cancel: "Cancelar",
-  Custom: "Personal",
-  "Create custom copy": "Crear copia personal",
   "{n} days": "{n} días",
   Team: "Equipo",
-  W: "T",
-  O: "L",
-  "This template has no teams yet.": "Esta plantilla aún no tiene equipos.",
-  work: "trabajo",
-  off: "libre",
-  "The biweekly periods are a way of reading the month; the cycle itself runs unbroken from pattern day 1.":
-    "Los periodos quincenales son solo una forma de leer el mes; el ciclo sigue sin interrupciones desde el día 1 del patrón.",
-  "{name} — preview": "{name}: vista previa",
-  "Nothing is created from a preview.": "Una vista previa no crea nada.",
-  "Previous month": "Mes anterior",
-  "Next month": "Mes siguiente",
-  "Pattern day 1": "Día 1 del patrón",
   Close: "Cerrar",
-  "Edit template": "Editar plantilla",
-  "Schedules already created from this template keep the settings they were made with.":
-    "Los horarios ya creados con esta plantilla conservan la configuración con la que se hicieron.",
-  "Template name": "Nombre de la plantilla",
   Description: "Descripción",
-  "Schedule type": "Tipo de horario",
-  Monthly: "Mensual",
-  Biweekly: "Quincenal",
-  "Work week starts on": "La semana laboral empieza el",
-  "Pattern length (days)": "Duración del patrón (días)",
-  "Work pattern — click a day to switch it": "Patrón de trabajo: haz clic en un día para cambiarlo",
-  "Cycle day {n}": "Día {n} del ciclo",
-  Teams: "Equipos",
   Name: "Nombre",
   Starts: "Inicio",
   Ends: "Fin",
-  "Starts on cycle day": "Empieza en el día del ciclo",
   "Remove {name}": "Quitar a {name}",
   "Add team": "Agregar equipo",
-  "Save template": "Guardar plantilla",
-  "Create schedule from template": "Crear horario desde una plantilla",
-  "Template: {name}": "Plantilla: {name}",
-  "Created “{name}” with 1 draft shift.": "Se creó “{name}” con 1 turno en borrador.",
-  "Created “{name}” with {n} draft shifts.": "Se creó “{name}” con {n} turnos en borrador.",
-  "Open the schedule to review and publish.": "Abre el horario para revisarlo y publicarlo.",
-  "Schedule name": "Nombre del horario",
-  "Start month": "Mes de inicio",
-  Year: "Año",
-  "The date cycle day 1 falls on. The rotation counts forward and backward from here and never restarts.":
-    "La fecha en que cae el día 1 del ciclo. La rotación cuenta hacia adelante y hacia atrás desde aquí y nunca se reinicia.",
-  "Affects how the month is displayed and totalled, not the rotation.":
-    "Afecta cómo se muestra y se suma el mes, no la rotación.",
-  "Who works each team (optional)": "Quién trabaja en cada equipo (opcional)",
-  "{n} on this team": "{n} en este equipo",
-  "Open shifts": "Turnos abiertos",
   "No employees yet.": "Aún no hay empleados.",
-  "Clear all": "Quitar todos",
-  "Select everyone": "Seleccionar a todos",
-  "Everyone ticked gets their own shift on that team's working days. Leave a team empty to create open shifts and assign them on the schedule later.":
-    "Cada persona marcada recibe su propio turno en los días de trabajo de ese equipo. Deja un equipo vacío para crear turnos abiertos y asignarlos después en el horario.",
-  "Hide preview": "Ocultar vista previa",
-  "This creates": "Esto crea",
-  "draft shifts across {month}.": "turnos en borrador durante {month}.",
-  "Create schedule": "Crear horario",
 
   // Schedule sheet
   "PATROL SCHEDULE": "HORARIO DE PATRULLA",
@@ -212,15 +131,14 @@ export const timecards: Record<string, string> = {
     "El rol publicado, organizado por mes. Haz clic en cualquier casilla para poner a alguien en ese día o quitarlo; cambia el turno real, no solo esta página.",
   "Pick days to erase": "Elige los días a borrar",
   Select: "Seleccionar",
-  Templates: "Plantillas",
   Heading: "Encabezado",
   "Department name": "Nombre del departamento",
   "Sub-heading": "Subencabezado",
   Revised: "Revisado",
   "Click to pick this whole day": "Haz clic para elegir todo este día",
   "Remove {name} from {team} for {month}?": "¿Quitar a {name} de {team} en {month}?",
-  "No shifts this month yet. Add a team below, or build the month from a template.":
-    "Aún no hay turnos este mes. Agrega un equipo abajo o arma el mes a partir de una plantilla.",
+  "No shifts this month yet. Add a team below.":
+    "Aún no hay turnos este mes. Agrega un equipo abajo.",
   "Add a team or unit": "Agregar un equipo o unidad",
   "e.g. TEAM #1": "p. ej., EQUIPO #1",
   "A team stays once someone on it has a day ticked.":
