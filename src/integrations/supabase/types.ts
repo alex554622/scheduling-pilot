@@ -98,6 +98,30 @@ export type Database = {
         }
         Relationships: []
       }
+      ghost_sessions: {
+        Row: {
+          company_id: string
+          ended_at: string | null
+          id: string
+          started_at: string
+          super_admin_id: string
+        }
+        Insert: {
+          company_id: string
+          ended_at?: string | null
+          id?: string
+          started_at?: string
+          super_admin_id: string
+        }
+        Update: {
+          company_id?: string
+          ended_at?: string | null
+          id?: string
+          started_at?: string
+          super_admin_id?: string
+        }
+        Relationships: []
+      }
       schedule_templates: {
         Row: {
           company_id: string | null
@@ -1488,6 +1512,8 @@ export type Database = {
         Returns: Json
       }
       approve_membership: { Args: { _user: string }; Returns: undefined }
+      start_ghost_session: { Args: { _company: string }; Returns: undefined }
+      end_ghost_session: { Args: never; Returns: undefined }
       bootstrap_company: { Args: { _name: string }; Returns: string }
       remove_company_member: {
         Args: {

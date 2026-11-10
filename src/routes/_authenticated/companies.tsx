@@ -40,6 +40,7 @@ import {
   Copy,
   CreditCard,
   Download,
+  Ghost,
   Hourglass,
   Inbox,
   KeyRound,
@@ -945,6 +946,69 @@ function CompanyListRow({ company: c, onOpen }: { company: CompanyRow; onOpen: (
 
 /* ============================================================ the panel == */
 
+/**
+ * Step into this company as if you were one of its admins, to help out as IT.
+ * Asks first: everything changed from inside is real, and the start and end
+ * are written to the company's own audit log.
+ */
+function GhostModeButton({ company }: { company: CompanyRow }) {
+  const t = useT("admin");
+  const { startGhost } = useAuth();
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <>
+      <Button variant="outline" size="sm" onClick={() => setConfirming(true)}>
+        <Ghost className="mr-2 h-3.5 w-3.5" />
+        {t("Enter ghost mode")}
+      </Button>
+      <Dialog open={confirming} onOpenChange={(o) => !busy && setConfirming(o)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("Ghost into {name}?", { name: company.name })}</DialogTitle>
+            <DialogDescription>
+              {t(
+                "You'll see and use the app exactly as an admin of this company does, and can change anything they can. Changes are real, carry your name, and the visit is recorded in the company's audit log. Use Exit ghost mode at the top of the screen to come back.",
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          <DialogFooter>
+            <Button variant="outline" disabled={busy} onClick={() => setConfirming(false)}>
+              {t("Cancel")}
+            </Button>
+            <Button
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true);
+                setError(null);
+                try {
+                  await startGhost(company.id);
+                  // A full reload so no platform-wide cached data leaks into
+                  // the company's screens.
+                  window.location.assign("/dashboard");
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : String(e));
+                  setBusy(false);
+                }
+              }}
+            >
+              {busy ? (
+                <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Ghost className="mr-2 h-3.5 w-3.5" />
+              )}
+              {t("Enter ghost mode")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 function CompanyPanel({
   company,
   members,
@@ -997,6 +1061,9 @@ function CompanyPanel({
             </>
           )}
         </SheetDescription>
+        <div className="pt-2">
+          <GhostModeButton company={company} />
+        </div>
         {undecided && (
           <div className="flex flex-wrap gap-2 pt-2">
             <Button size="sm" disabled={reviewing} onClick={onApprove}>

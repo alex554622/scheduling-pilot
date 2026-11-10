@@ -366,4 +366,7 @@ export const shell: Record<string, string> = {
   "Sign in to delete your account": "Inicia sesión para eliminar tu cuenta",
   "Privacy policy": "Política de privacidad",
   "Questions? Email {email}": "¿Preguntas? Escribe a {email}",
+  "Ghost mode": "Modo fantasma",
+  "You are acting as an admin of {name}. Changes are real and logged.": "Estás actuando como administrador de {name}. Los cambios son reales y quedan registrados.",
+  "Exit ghost mode": "Salir del modo fantasma",
 };

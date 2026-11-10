@@ -34,6 +34,18 @@ export interface CompanyLite {
   join_code: string | null;
 }
 
+/**
+ * A super admin standing in as a company's admin (see the ghost mode
+ * migration). While set, `profile.company_id`, `company` and `roles` all
+ * describe that company and the company_admin role, so every page behaves
+ * exactly as it would for that company's own admin.
+ */
+export interface GhostSession {
+  companyId: string;
+  companyName: string;
+  startedAt: string;
+}
+
 interface AuthCtx {
   session: Session | null;
   user: User | null;
@@ -42,6 +54,12 @@ interface AuthCtx {
   roles: AppRole[];
   /** Highest-priority role for routing/UX — super_admin > company_admin > employee. */
   primaryRole: AppRole | null;
+  /** The company a super admin is ghosting, or null. */
+  ghost: GhostSession | null;
+  /** The account really is a super admin, ghosting or not. */
+  isSuperAdmin: boolean;
+  startGhost: (companyId: string) => Promise<void>;
+  endGhost: () => Promise<void>;
   loading: boolean;
   refresh: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -111,6 +129,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [company, setCompany] = useState<CompanyLite | null>(null);
   const [roles, setRoles] = useState<AppRole[]>([]);
+  const [ghost, setGhost] = useState<GhostSession | null>(null);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   /**
    * Whose profile, roles and company are the ones currently in state.
@@ -132,6 +152,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfile(null);
       setCompany(null);
       setRoles([]);
+      setGhost(null);
+      setIsSuperAdmin(false);
       contextFor.current = null;
       return;
     }
@@ -154,12 +176,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    const realRoles = ((roleRows ?? []) as { role: string }[])
+      .map((r) => normalizeRole(r.role))
+      .filter((r): r is AppRole => r !== null);
+    const superAdmin = realRoles.includes("super_admin");
+    setIsSuperAdmin(superAdmin);
+
+    // Ghost mode: present the super admin as that company's admin. The database
+    // grants the same thing on its side (current_company_id / has_role), so the
+    // two always agree about what this person may see and change.
+    if (superAdmin) {
+      const { data: g } = await supabase
+        .from("ghost_sessions")
+        .select("company_id, started_at")
+        .eq("super_admin_id", uid)
+        .is("ended_at", null)
+        .maybeSingle();
+      const { data: co } = g
+        ? await supabase
+            .from("companies")
+            .select("id, name, plan, status, join_code")
+            .eq("id", g.company_id)
+            .maybeSingle()
+        : { data: null };
+      if (g && co) {
+        setGhost({ companyId: co.id, companyName: co.name, startedAt: g.started_at });
+        setProfile(prof ? { ...prof, company_id: co.id, pending_company_id: null } : null);
+        setRoles(["company_admin"]);
+        setCompany(co);
+        contextFor.current = uid;
+        return;
+      }
+    }
+    setGhost(null);
+
     setProfile(prof ?? null);
-    setRoles(
-      ((roleRows ?? []) as { role: string }[])
-        .map((r) => normalizeRole(r.role))
-        .filter((r): r is AppRole => r !== null),
-    );
+    setRoles(realRoles);
     if (prof?.company_id) {
       const { data: co } = await supabase
         .from("companies")
@@ -235,6 +287,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(() => loadContext(user ?? null), [loadContext, user]);
 
+  const startGhost = useCallback(
+    async (companyId: string) => {
+      const { error } = await supabase.rpc("start_ghost_session", { _company: companyId });
+      if (error) throw error;
+      await loadContext(user ?? null);
+    },
+    [loadContext, user],
+  );
+
+  const endGhost = useCallback(async () => {
+    const { error } = await supabase.rpc("end_ghost_session");
+    if (error) throw error;
+    await loadContext(user ?? null);
+  }, [loadContext, user]);
+
   const signOut = useCallback(async () => {
     // "local" ends only this device's session. The default, "global", revokes
     // every refresh token the user has, so signing out on a laptop also threw
@@ -248,6 +315,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(null);
     setCompany(null);
     setRoles([]);
+    setGhost(null);
+    setIsSuperAdmin(false);
     // Nobody's context is loaded now, so signing back in — even as the same
     // person — waits for a fresh read instead of rendering against these nulls.
     contextFor.current = null;
@@ -256,7 +325,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const primaryRole = ROLE_PRIORITY.find((r) => roles.includes(r)) ?? null;
 
   return (
-    <Ctx.Provider value={{ session, user, profile, company, roles, primaryRole, loading, refresh, signOut }}>
+    <Ctx.Provider
+      value={{
+        session,
+        user,
+        profile,
+        company,
+        roles,
+        primaryRole,
+        ghost,
+        isSuperAdmin,
+        startGhost,
+        endGhost,
+        loading,
+        refresh,
+        signOut,
+      }}
+    >
       {children}
     </Ctx.Provider>
   );

@@ -27,6 +27,7 @@ import {
   Tablet,
   ClipboardList,
   MessageSquare,
+  Ghost,
 } from "lucide-react";
 import { useAuth, ROLE_LABEL, type AppRole } from "@/lib/auth";
 import { useAppRules } from "@/lib/app-rules";
@@ -218,7 +219,8 @@ function RejectionReason({ companyId }: { companyId: string }) {
 }
 
 function AuthLayout() {
-  const { user, loading, primaryRole, profile, company, signOut } = useAuth();
+  const { user, loading, primaryRole, profile, company, ghost, endGhost, signOut } = useAuth();
+  const [leavingGhost, setLeavingGhost] = useState(false);
   const t = useT("shell");
   const localeTag = useLocaleTag();
   const navigate = useNavigate();
@@ -308,8 +310,15 @@ function AuthLayout() {
   }
 
   // Block company members when their company isn't active. Super admins bypass this gate
-  // so they can still reach /companies and approve / unsuspend accounts.
-  if (primaryRole && primaryRole !== "super_admin" && company && company.status !== "active") {
+  // so they can still reach /companies and approve / unsuspend accounts — and so
+  // does a super admin ghosting a company, who may be there to fix exactly that.
+  if (
+    !ghost &&
+    primaryRole &&
+    primaryRole !== "super_admin" &&
+    company &&
+    company.status !== "active"
+  ) {
     const isPending = company.status === "pending";
     const isRejected = company.status === "rejected";
     return (
@@ -588,6 +597,38 @@ function AuthLayout() {
             <NotificationsBell />
           </div>
         </header>
+        {ghost && (
+          <div
+            data-print-hide
+            className="flex flex-wrap items-center justify-between gap-3 border-b border-warning/40 bg-warning/15 px-4 py-2.5 text-sm text-foreground md:px-8"
+          >
+            <span className="flex items-center gap-2">
+              <Ghost className="h-4 w-4 shrink-0" />
+              <span>
+                <span className="font-medium">{t("Ghost mode")}</span> ·{" "}
+                {t("You are acting as an admin of {name}. Changes are real and logged.", {
+                  name: ghost.companyName,
+                })}
+              </span>
+            </span>
+            <button
+              disabled={leavingGhost}
+              onClick={async () => {
+                setLeavingGhost(true);
+                try {
+                  await endGhost();
+                } finally {
+                  // A full reload drops every cached query and live channel
+                  // that was opened for the ghosted company.
+                  window.location.assign("/companies");
+                }
+              }}
+              className="shrink-0 rounded-md border border-border bg-card px-3 py-1 font-medium hover:bg-accent disabled:opacity-60"
+            >
+              {t("Exit ghost mode")}
+            </button>
+          </div>
+        )}
         {(trial.trialing || trial.expired) && (
           <div
             data-print-hide

@@ -342,5 +342,8 @@ export const admin: Record<string, string> = {
   "pending": "pendiente",
   "suspended": "suspendida",
   "rejected": "rechazada",
-  "past_due": "vencida"
+  "past_due": "vencida",
+  "Enter ghost mode": "Entrar en modo fantasma",
+  "Ghost into {name}?": "¿Entrar a {name} en modo fantasma?",
+  "You'll see and use the app exactly as an admin of this company does, and can change anything they can. Changes are real, carry your name, and the visit is recorded in the company's audit log. Use Exit ghost mode at the top of the screen to come back.": "Verás y usarás la aplicación exactamente como un administrador de esta empresa, y podrás cambiar todo lo que él puede. Los cambios son reales, llevan tu nombre y la visita queda registrada en el registro de auditoría de la empresa. Usa Salir del modo fantasma en la parte superior de la pantalla para volver."
 };
