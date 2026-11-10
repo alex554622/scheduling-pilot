@@ -219,7 +219,18 @@ function RejectionReason({ companyId }: { companyId: string }) {
 }
 
 function AuthLayout() {
-  const { user, loading, primaryRole, profile, company, ghost, endGhost, signOut } = useAuth();
+  const {
+    user,
+    loading,
+    loadError,
+    refresh,
+    primaryRole,
+    profile,
+    company,
+    ghost,
+    endGhost,
+    signOut,
+  } = useAuth();
   const [leavingGhost, setLeavingGhost] = useState(false);
   const t = useT("shell");
   const localeTag = useLocaleTag();
@@ -301,10 +312,59 @@ function AuthLayout() {
     if (!loading && !user) navigate({ to: "/login" });
   }, [loading, user, navigate]);
 
+  // The server didn't answer when we asked who this is. Keep asking — every
+  // 10 seconds and the moment the device is back online — so the account
+  // appears by itself once the server is up, with no refresh needed.
+  useEffect(() => {
+    if (!loadError) return;
+    const retry = () => void refresh();
+    const timer = window.setInterval(retry, 10_000);
+    window.addEventListener("online", retry);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("online", retry);
+    };
+  }, [loadError, refresh]);
+
   if (loading || !user) {
     return (
       <div className="grid min-h-screen place-items-center bg-background text-sm text-muted-foreground">
         {t("Loading…")}
+      </div>
+    );
+  }
+
+  // Before any gate below: they all decide from the profile, and with the
+  // server unreachable there is no profile to decide from — only the join-code
+  // screen, shown to someone who already has a company.
+  if (loadError) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-secondary/30 px-4">
+        <div className="w-full max-w-md rounded-2xl border border-border bg-card p-8 text-center shadow-[var(--shadow-card)]">
+          <h2 className="text-xl font-semibold text-foreground">{t("Can't reach the server")}</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {t(
+              "We couldn't load your account. This usually clears up on its own — we'll keep trying.",
+            )}
+          </p>
+          <div className="mt-6 flex justify-center gap-2">
+            <button
+              onClick={() => void refresh()}
+              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+            >
+              {t("Try again")}
+            </button>
+            <button
+              onClick={async () => {
+                await signOut();
+                navigate({ to: "/login" });
+              }}
+              className="rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-accent"
+            >
+              {t("Sign out")}
+            </button>
+          </div>
+        </div>
       </div>
     );
   }

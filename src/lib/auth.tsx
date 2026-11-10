@@ -58,6 +58,11 @@ interface AuthCtx {
   ghost: GhostSession | null;
   /** The account really is a super admin, ghosting or not. */
   isSuperAdmin: boolean;
+  /**
+   * Signed in, but the server didn't answer when asked who this is. Profile,
+   * company and roles are unknown — not empty — so no gate should act on them.
+   */
+  loadError: boolean;
   startGhost: (companyId: string) => Promise<void>;
   endGhost: () => Promise<void>;
   loading: boolean;
@@ -123,6 +128,94 @@ function applySignupIntent(email: string | null | undefined): Promise<boolean> {
   return intentInFlight;
 }
 
+/** Waits between attempts to read the account before giving up. */
+const RETRY_DELAYS_MS = [500, 1500, 3000];
+
+interface LoadedContext {
+  profile: Profile | null;
+  company: CompanyLite | null;
+  roles: AppRole[];
+  ghost: GhostSession | null;
+  isSuperAdmin: boolean;
+}
+
+const PROFILE_COLS = "id, full_name, company_id, pending_company_id, position";
+const COMPANY_COLS = "id, name, plan, status, join_code";
+
+/**
+ * Read who the signed-in person is. Throws when the server didn't answer, so
+ * the caller can tell "no company" apart from "couldn't ask".
+ */
+async function fetchContext(uid: string, email: string | null | undefined): Promise<LoadedContext> {
+  const readProfileAndRoles = async () => {
+    const [p, r] = await Promise.all([
+      supabase.from("profiles").select(PROFILE_COLS).eq("id", uid).maybeSingle(),
+      supabase.from("user_roles").select("role").eq("user_id", uid),
+    ]);
+    if (p.error) throw p.error;
+    if (r.error) throw r.error;
+    return { prof: p.data as Profile | null, roleRows: (r.data ?? []) as { role: string }[] };
+  };
+
+  let { prof, roleRows } = await readProfileAndRoles();
+
+  // A signup that couldn't reach the company RPCs (email confirmation was on,
+  // so there was no session yet) left its request behind. Replay it now, while
+  // `loading` is still true, so the UI never flashes the "no company" gate for
+  // someone whose company is about to appear.
+  if (prof && !prof.company_id && !prof.pending_company_id) {
+    const applied = await applySignupIntent(email);
+    if (applied) ({ prof, roleRows } = await readProfileAndRoles());
+  }
+
+  const roles = roleRows
+    .map((r) => normalizeRole(r.role))
+    .filter((r): r is AppRole => r !== null);
+  const isSuperAdmin = roles.includes("super_admin");
+
+  // Ghost mode: present the super admin as that company's admin. The database
+  // grants the same thing on its side (current_company_id / has_role), so the
+  // two always agree about what this person may see and change. An error here
+  // just means no ghost session (or a database without the table yet).
+  if (isSuperAdmin) {
+    const { data: g } = await supabase
+      .from("ghost_sessions")
+      .select("company_id, started_at")
+      .eq("super_admin_id", uid)
+      .is("ended_at", null)
+      .maybeSingle();
+    if (g) {
+      const { data: co, error } = await supabase
+        .from("companies")
+        .select(COMPANY_COLS)
+        .eq("id", g.company_id)
+        .maybeSingle();
+      if (error) throw error;
+      if (co) {
+        return {
+          profile: prof ? { ...prof, company_id: co.id, pending_company_id: null } : null,
+          company: co,
+          roles: ["company_admin"],
+          ghost: { companyId: co.id, companyName: co.name, startedAt: g.started_at },
+          isSuperAdmin,
+        };
+      }
+    }
+  }
+
+  let company: CompanyLite | null = null;
+  if (prof?.company_id) {
+    const { data: co, error } = await supabase
+      .from("companies")
+      .select(COMPANY_COLS)
+      .eq("id", prof.company_id)
+      .maybeSingle();
+    if (error) throw error;
+    company = co ?? null;
+  }
+  return { profile: prof, company, roles, ghost: null, isSuperAdmin };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
@@ -131,6 +224,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [roles, setRoles] = useState<AppRole[]>([]);
   const [ghost, setGhost] = useState<GhostSession | null>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [loading, setLoading] = useState(true);
   /**
    * Whose profile, roles and company are the ones currently in state.
@@ -146,7 +240,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Pull profile, role memberships, and the company row that the user belongs to.
   // Keep this resilient — a brand-new signup may not have a company yet.
+  /**
+   * Only the newest load may write to state. Sign-in starts two at once (one
+   * from onAuthStateChange, one from getSession), and an older one finishing
+   * last used to overwrite the right answer with a stale one.
+   */
+  const loadSeq = useRef(0);
+
   const loadContext = useCallback(async (authUser: Pick<User, "id" | "email"> | null) => {
+    const seq = ++loadSeq.current;
     const uid = authUser?.id ?? null;
     if (!uid) {
       setProfile(null);
@@ -154,74 +256,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setRoles([]);
       setGhost(null);
       setIsSuperAdmin(false);
+      setLoadError(false);
       contextFor.current = null;
       return;
     }
-    let [{ data: prof }, { data: roleRows }] = await Promise.all([
-      supabase.from("profiles").select("id, full_name, company_id, pending_company_id, position").eq("id", uid).maybeSingle(),
-      supabase.from("user_roles").select("role").eq("user_id", uid),
-    ]);
 
-    // A signup that couldn't reach the company RPCs (email confirmation was on,
-    // so there was no session yet) left its request behind. Replay it now, while
-    // `loading` is still true, so the UI never flashes the "no company" gate for
-    // someone whose company is about to appear.
-    if (prof && !prof.company_id && !prof.pending_company_id) {
-      const applied = await applySignupIntent(authUser?.email);
-      if (applied) {
-        [{ data: prof }, { data: roleRows }] = await Promise.all([
-          supabase.from("profiles").select("id, full_name, company_id, pending_company_id, position").eq("id", uid).maybeSingle(),
-          supabase.from("user_roles").select("role").eq("user_id", uid),
-        ]);
+    // A server that is down or still starting must never read as "this person
+    // has no company": that put people on the join-code screen until they
+    // refreshed. Retry a few times, then say the server can't be reached.
+    let ctx: LoadedContext | null = null;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        ctx = await fetchContext(uid, authUser?.email);
+        break;
+      } catch (e) {
+        if (seq !== loadSeq.current) return;
+        if (attempt >= RETRY_DELAYS_MS.length) {
+          console.warn("[auth] could not load account", e);
+          setLoadError(true);
+          contextFor.current = null;
+          return;
+        }
+        await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
+        if (seq !== loadSeq.current) return;
       }
     }
+    if (seq !== loadSeq.current) return;
 
-    const realRoles = ((roleRows ?? []) as { role: string }[])
-      .map((r) => normalizeRole(r.role))
-      .filter((r): r is AppRole => r !== null);
-    const superAdmin = realRoles.includes("super_admin");
-    setIsSuperAdmin(superAdmin);
-
-    // Ghost mode: present the super admin as that company's admin. The database
-    // grants the same thing on its side (current_company_id / has_role), so the
-    // two always agree about what this person may see and change.
-    if (superAdmin) {
-      const { data: g } = await supabase
-        .from("ghost_sessions")
-        .select("company_id, started_at")
-        .eq("super_admin_id", uid)
-        .is("ended_at", null)
-        .maybeSingle();
-      const { data: co } = g
-        ? await supabase
-            .from("companies")
-            .select("id, name, plan, status, join_code")
-            .eq("id", g.company_id)
-            .maybeSingle()
-        : { data: null };
-      if (g && co) {
-        setGhost({ companyId: co.id, companyName: co.name, startedAt: g.started_at });
-        setProfile(prof ? { ...prof, company_id: co.id, pending_company_id: null } : null);
-        setRoles(["company_admin"]);
-        setCompany(co);
-        contextFor.current = uid;
-        return;
-      }
-    }
-    setGhost(null);
-
-    setProfile(prof ?? null);
-    setRoles(realRoles);
-    if (prof?.company_id) {
-      const { data: co } = await supabase
-        .from("companies")
-        .select("id, name, plan, status, join_code")
-        .eq("id", prof.company_id)
-        .maybeSingle();
-      setCompany(co ?? null);
-    } else {
-      setCompany(null);
-    }
+    setLoadError(false);
+    setIsSuperAdmin(ctx.isSuperAdmin);
+    setGhost(ctx.ghost);
+    setProfile(ctx.profile);
+    setRoles(ctx.roles);
+    setCompany(ctx.company);
     contextFor.current = uid;
   }, []);
 
@@ -310,6 +377,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // session still exists: row-level security needs it to delete the row.
     await releaseNativePush();
     await supabase.auth.signOut({ scope: "local" });
+    // A load still in flight for the account just signed out of must not land.
+    loadSeq.current++;
     setSession(null);
     setUser(null);
     setProfile(null);
@@ -317,6 +386,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setRoles([]);
     setGhost(null);
     setIsSuperAdmin(false);
+    setLoadError(false);
     // Nobody's context is loaded now, so signing back in — even as the same
     // person — waits for a fresh read instead of rendering against these nulls.
     contextFor.current = null;
@@ -335,6 +405,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         primaryRole,
         ghost,
         isSuperAdmin,
+        loadError,
         startGhost,
         endGhost,
         loading,

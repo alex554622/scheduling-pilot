@@ -369,4 +369,6 @@ export const shell: Record<string, string> = {
   "Ghost mode": "Modo fantasma",
   "You are acting as an admin of {name}. Changes are real and logged.": "Estás actuando como administrador de {name}. Los cambios son reales y quedan registrados.",
   "Exit ghost mode": "Salir del modo fantasma",
+  "Can't reach the server": "No se puede conectar con el servidor",
+  "We couldn't load your account. This usually clears up on its own — we'll keep trying.": "No pudimos cargar tu cuenta. Normalmente se resuelve solo; seguiremos intentándolo.",
 };
