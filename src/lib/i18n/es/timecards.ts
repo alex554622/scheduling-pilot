@@ -271,8 +271,10 @@ export const timecards: Record<string, string> = {
   "Simple time card": "Tarjeta de tiempo simple",
   "Detailed time card": "Tarjeta de tiempo detallada",
   "Weekly or bi-weekly hours, as a plain list": "Horas semanales o quincenales, en una lista sencilla",
-  "Bi-weekly, with a total for each week and a notes section": "Quincenal, con un total por semana y una sección de notas",
-  "The detailed time card is always bi-weekly": "La tarjeta de tiempo detallada siempre es quincenal",
+  "Adds a notes section, and a total for each week on a bi-weekly card":
+    "Agrega una sección de notas y, en una tarjeta quincenal, un total por semana",
+  Preview: "Vista previa",
+  "See the time card as it will print": "Ve la tarjeta de tiempo tal como se imprimirá",
   "Week {n} total": "Total semana {n}",
   Note: "Nota",
   "Created by": "Creada por",

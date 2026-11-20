@@ -19,6 +19,7 @@ import {
   Clock,
   Download,
   ExternalLink,
+  Eye,
   Loader2,
   MapPin,
   NotebookPen,
@@ -35,7 +36,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { PrintableTimecard } from "@/components/printable-timecard";
+import { PrintableTimecard, type PrintableTimecardProps } from "@/components/printable-timecard";
 import { TimecardDayEditor, type EditablePunch } from "@/components/timecard-day-editor";
 import { splitPeriod, overtimeNote } from "@/lib/overtime";
 import {
@@ -96,10 +97,14 @@ type Period = "week" | "biweek";
 
 /**
  * Which card is on screen and on paper. "simple" is the plain weekly or
- * bi-weekly list; "detailed" is always bi-weekly, closes each week with a
- * subtotal and carries the manager's dated notes for the period.
+ * bi-weekly list; "detailed" carries the manager's dated notes for the
+ * period and, when it runs two weeks, closes each week with a subtotal.
  */
 type CardFormat = "simple" | "detailed";
+
+/** Where the last-picked card format and pay period are remembered. */
+const CARD_FORMAT_KEY = "timecards.format";
+const CARD_PERIOD_KEY = "timecards.period";
 
 type TimecardNote = {
   id: string;
@@ -167,12 +172,38 @@ function TimecardsPage() {
   const isManager = primaryRole === "company_admin" || isSuperAdmin;
   const [period, setPeriod] = useState<Period>("week");
   const [format, setFormat] = useState<CardFormat>("simple");
+  // The card someone last picked opens again next time, until they pick
+  // another. Kept in this browser only. Read after mount, not in the state
+  // initialiser: the server render has no localStorage, and the two renders
+  // must agree. `prefsLoaded` stops the save below from writing the defaults
+  // over the saved choice before it has been read.
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
+  useEffect(() => {
+    try {
+      const f = localStorage.getItem(CARD_FORMAT_KEY);
+      const p = localStorage.getItem(CARD_PERIOD_KEY);
+      if (f === "simple" || f === "detailed") setFormat(f);
+      if (p === "week" || p === "biweek") setPeriod(p);
+    } catch {
+      // Private window or blocked storage: the defaults stand.
+    }
+    setPrefsLoaded(true);
+  }, []);
+  useEffect(() => {
+    if (!prefsLoaded) return;
+    try {
+      localStorage.setItem(CARD_FORMAT_KEY, format);
+      localStorage.setItem(CARD_PERIOD_KEY, period);
+    } catch {
+      // Not remembered this time; nothing else depends on it.
+    }
+  }, [prefsLoaded, format, period]);
   const detailed = format === "detailed";
-  function chooseFormat(f: CardFormat) {
-    setFormat(f);
-    // The detailed card is a bi-weekly document by definition.
-    if (f === "detailed") setPeriod("biweek");
-  }
+  // Either card runs one week or two. One week needs no subtotal: it would
+  // only repeat the period total right beneath it.
+  const showWeekTotals = detailed && period === "biweek";
+  /** The paper card, drawn on screen in a window — Print without the printer. */
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [noteDay, setNoteDay] = useState("");
   const [noteText, setNoteText] = useState("");
   const [noteErr, setNoteErr] = useState<string | null>(null);
@@ -778,7 +809,7 @@ function TimecardsPage() {
     const dec = (ms: number) => (ms / HOUR).toFixed(2);
     /** The detailed card closes each week with a subtotal line. */
     const weekRow = (dayIndex: number) => {
-      if (!detailed || (dayIndex + 1) % 7 !== 0) return [];
+      if (!showWeekTotals || (dayIndex + 1) % 7 !== 0) return [];
       const w = grouped.weeks[Math.floor(dayIndex / 7)];
       if (!w) return [];
       return [
@@ -921,57 +952,97 @@ function TimecardsPage() {
     company?.name ??
     "Scheduling Pilot";
 
+  /** The paper card, once: what the printer gets and what Preview shows. */
+  const printableProps: PrintableTimecardProps = {
+    format,
+    weekTotals: showWeekTotals ? grouped.weeks : [],
+    notes: notes.map((n) => ({
+      day: n.note_date,
+      note: n.note,
+      author: n.author_name,
+      createdAt: n.created_at,
+    })),
+    companyName: employeeCompanyName,
+    employeeName,
+    position: employeePosition,
+    periodLabel: period === "week" ? t("Weekly") : t("Bi-weekly"),
+    rangeStart,
+    rangeEnd,
+    days: grouped.rows.map((r) => ({
+      date: r.date,
+      totalMs: r.totalMs,
+      pairs: r.pairs.map((p) => ({
+        inAt: p.in.at,
+        outAt: p.out?.at ?? null,
+        unpaidBreakMs: p.unpaidBreakMs,
+        paidBreakMs: p.paidBreakMs,
+        offSite: isManager && (!p.in.within_geofence || (!!p.out && !p.out.within_geofence)),
+        location: hasLocations ? shiftPlaces(grouped.splits.get(p.in.at), p.in.location_id) : null,
+      })),
+    })),
+    totals: {
+      workedMs: grouped.weekTotal,
+      unpaidBreakMs: grouped.weekUnpaid,
+      paidBreakMs: grouped.weekPaid,
+    },
+    split: splitPeriod(
+      grouped.rows.map((r) => r.totalMs),
+      rules,
+      period === "week",
+    ),
+    byLocation: hasLocations
+      ? grouped.byLocation.map((l) => ({ name: locationName(l.locationId), ms: l.workedMs }))
+      : [],
+    overtimeNote: overtimeNote(rules, period === "week"),
+    roundMinutes: rules.punch_round_minutes,
+    formatTime: (iso) => fmtTime(iso, rules.punch_round_minutes),
+    formatHours: fmtHours,
+  };
+
   return (
     <>
-      <PrintableTimecard
-        format={format}
-        weekTotals={grouped.weeks}
-        notes={notes.map((n) => ({
-          day: n.note_date,
-          note: n.note,
-          author: n.author_name,
-          createdAt: n.created_at,
-        }))}
-        companyName={employeeCompanyName}
-        employeeName={employeeName}
-        position={employeePosition}
-        periodLabel={period === "week" ? t("Weekly") : t("Bi-weekly")}
-        rangeStart={rangeStart}
-        rangeEnd={rangeEnd}
-        days={grouped.rows.map((r) => ({
-          date: r.date,
-          totalMs: r.totalMs,
-          pairs: r.pairs.map((p) => ({
-            inAt: p.in.at,
-            outAt: p.out?.at ?? null,
-            unpaidBreakMs: p.unpaidBreakMs,
-            paidBreakMs: p.paidBreakMs,
-            offSite: isManager && (!p.in.within_geofence || (!!p.out && !p.out.within_geofence)),
-            location: hasLocations
-              ? shiftPlaces(grouped.splits.get(p.in.at), p.in.location_id)
-              : null,
-          })),
-        }))}
-        totals={{
-          workedMs: grouped.weekTotal,
-          unpaidBreakMs: grouped.weekUnpaid,
-          paidBreakMs: grouped.weekPaid,
-        }}
-        split={splitPeriod(
-          grouped.rows.map((r) => r.totalMs),
-          rules,
-          period === "week",
-        )}
-        byLocation={
-          hasLocations
-            ? grouped.byLocation.map((l) => ({ name: locationName(l.locationId), ms: l.workedMs }))
-            : []
-        }
-        overtimeNote={overtimeNote(rules, period === "week")}
-        roundMinutes={rules.punch_round_minutes}
-        formatTime={(iso) => fmtTime(iso, rules.punch_round_minutes)}
-        formatHours={fmtHours}
-      />
+      <PrintableTimecard {...printableProps} />
+
+      {/* The same page the printer gets, on screen. Hidden from print itself so
+          printing with it open still yields one copy. */}
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        {/* The header stays put and only the page scrolls, so the window's
+            close button (drawn over the header) never scrolls away. */}
+        <DialogContent
+          data-print-hide
+          className="flex max-h-[92vh] max-w-[8.5in] flex-col gap-0 overflow-hidden p-0"
+        >
+          <DialogHeader className="flex shrink-0 flex-row items-center justify-between gap-2 space-y-0 border-b border-border bg-background px-4 py-3 pr-12">
+            <div>
+              <DialogTitle>{t("Preview")}</DialogTitle>
+              <DialogDescription>
+                {detailed ? t("Detailed time card") : t("Simple time card")} ·{" "}
+                {period === "week" ? t("Weekly") : t("Bi-weekly")}
+              </DialogDescription>
+            </div>
+            {!isNativeApp() && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  // Close first: the browser prints what is on the page, and
+                  // the window would otherwise sit over the card.
+                  setPreviewOpen(false);
+                  setTimeout(() => window.print(), 150);
+                }}
+              >
+                <Printer className="mr-2 h-4 w-4" />
+                {t("Print")}
+              </Button>
+            )}
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto bg-neutral-200 p-3 sm:p-6">
+            <div className="mx-auto bg-white p-4 shadow-md sm:p-[0.5in]">
+              <PrintableTimecard {...printableProps} onScreen />
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <div data-print-hide className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -994,6 +1065,15 @@ function TimecardsPage() {
               saves the same page as a self-contained file. */}
             {/* The apps' web view cannot print; their Download PDF opens the share
               sheet, which has Print in it. */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPreviewOpen(true)}
+              title={t("See the time card as it will print")}
+            >
+              <Eye className="mr-2 h-4 w-4" />
+              {t("Preview")}
+            </Button>
             {!isNativeApp() && (
               <Button
                 variant="outline"
@@ -1049,7 +1129,7 @@ function TimecardsPage() {
           >
             <button
               className={`px-3 py-1 text-xs font-medium rounded ${!detailed ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
-              onClick={() => chooseFormat("simple")}
+              onClick={() => setFormat("simple")}
               aria-pressed={!detailed}
               title={t("Weekly or bi-weekly hours, as a plain list")}
             >
@@ -1057,9 +1137,9 @@ function TimecardsPage() {
             </button>
             <button
               className={`px-3 py-1 text-xs font-medium rounded ${detailed ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
-              onClick={() => chooseFormat("detailed")}
+              onClick={() => setFormat("detailed")}
               aria-pressed={detailed}
-              title={t("Bi-weekly, with a total for each week and a notes section")}
+              title={t("Adds a notes section, and a total for each week on a bi-weekly card")}
             >
               {t("Detailed time card")}
             </button>
@@ -1068,8 +1148,6 @@ function TimecardsPage() {
             <button
               className={`px-3 py-1 text-xs font-medium rounded ${period === "week" ? "bg-primary text-primary-foreground" : "text-muted-foreground"} disabled:opacity-40`}
               onClick={() => setPeriod("week")}
-              disabled={detailed}
-              title={detailed ? t("The detailed time card is always bi-weekly") : undefined}
             >
               {t("Weekly")}
             </button>
@@ -1530,7 +1608,7 @@ function TimecardsPage() {
                       </div>
                     )}
                   </div>
-                  {detailed &&
+                  {showWeekTotals &&
                     (dayIndex + 1) % 7 === 0 &&
                     grouped.weeks[Math.floor(dayIndex / 7)] && (
                       <WeekSubtotal
@@ -1623,7 +1701,9 @@ function TimecardsPage() {
                     {/* The table arrives by a migration applied by hand; until
                         then PostgREST says so in its own words. */}
                     {/timecard_notes|schema cache/i.test((notesQ.error as Error).message)
-                      ? t("Notes aren't set up on the server yet. Ask your administrator to apply the timecard notes update.")
+                      ? t(
+                          "Notes aren't set up on the server yet. Ask your administrator to apply the timecard notes update.",
+                        )
                       : `${t("Couldn't load the notes:")} ${(notesQ.error as Error).message}`}
                   </p>
                 ) : notes.length === 0 ? (

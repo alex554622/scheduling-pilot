@@ -33,7 +33,7 @@ export interface PrintableNote {
   createdAt: string;
 }
 
-/** One week's subtotal on the detailed (bi-weekly) card. */
+/** One week's subtotal on the detailed card, when it runs two weeks. */
 export interface PrintableWeekTotal {
   workedMs: number;
   unpaidBreakMs: number;
@@ -42,7 +42,7 @@ export interface PrintableWeekTotal {
 
 export interface PrintableTimecardProps {
   /**
-   * "simple" is the plain period list. "detailed" is the bi-weekly card: a
+   * "simple" is the plain period list. "detailed" adds, on a bi-weekly card, a
    * subtotal under each week and a Notes section above the signatures.
    */
   format?: "simple" | "detailed";
@@ -50,6 +50,11 @@ export interface PrintableTimecardProps {
   weekTotals?: PrintableWeekTotal[];
   /** Detailed only: every note dated inside the period. */
   notes?: PrintableNote[];
+  /**
+   * Draw the page on screen too, for the Preview window. Left off, the card
+   * exists only on paper (hidden until the browser prints).
+   */
+  onScreen?: boolean;
   companyName: string;
   employeeName: string;
   position?: string | null;
@@ -90,6 +95,7 @@ export function PrintableTimecard({
   format = "simple",
   weekTotals = [],
   notes = [],
+  onScreen = false,
   companyName,
   employeeName,
   position,
@@ -114,7 +120,7 @@ export function PrintableTimecard({
 
   return (
     <div
-      data-print-only
+      data-print-only={onScreen ? undefined : true}
       className="mx-auto max-w-[7.5in] bg-white font-sans text-[11px] leading-snug text-black"
     >
       <header className="flex items-start justify-between border-b-2 border-black pb-2">
