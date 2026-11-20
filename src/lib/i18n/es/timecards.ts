@@ -265,4 +265,25 @@ export const timecards: Record<string, string> = {
   "Hours by location": "Horas por ubicación",
   "Paid hours by location": "Horas pagadas por ubicación",
   "Location for the shift starting {time}": "Ubicación del turno que empieza a las {time}",
+
+  // Simple / detailed time card
+  "Time card format": "Formato de la tarjeta de tiempo",
+  "Simple time card": "Tarjeta de tiempo simple",
+  "Detailed time card": "Tarjeta de tiempo detallada",
+  "Weekly or bi-weekly hours, as a plain list": "Horas semanales o quincenales, en una lista sencilla",
+  "Bi-weekly, with a total for each week and a notes section": "Quincenal, con un total por semana y una sección de notas",
+  "The detailed time card is always bi-weekly": "La tarjeta de tiempo detallada siempre es quincenal",
+  "Week {n} total": "Total semana {n}",
+  Note: "Nota",
+  "Created by": "Creada por",
+  Created: "Creada",
+  "No notes for this period.": "No hay notas para este periodo.",
+  "Add one below — it prints on the detailed time card.": "Agrega una abajo; se imprime en la tarjeta de tiempo detallada.",
+  "Couldn't load the notes:": "No se pudieron cargar las notas:",
+  "Notes aren't set up on the server yet. Ask your administrator to apply the timecard notes update.":
+    "Las notas aún no están configuradas en el servidor. Pide a tu administrador que aplique la actualización de notas.",
+  "Delete note": "Eliminar nota",
+  "Add note": "Agregar nota",
+  "Pick an employee first.": "Elige primero a un empleado.",
+  "e.g. Training: annual conference, Nov 2–5": "p. ej. Capacitación: conferencia anual, 2–5 de nov.",
 };

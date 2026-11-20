@@ -316,6 +316,16 @@ export interface TimecardPdfRow {
   paid: string;
   hours: string;
   notes: string;
+  /** A week's subtotal line on the detailed card, ruled off from the days. */
+  subtotal?: boolean;
+}
+
+/** A dated note in the detailed card's Notes section. */
+export interface TimecardPdfNote {
+  date: string;
+  note: string;
+  author: string;
+  created: string;
 }
 
 export interface TimecardPdfData {
@@ -323,6 +333,10 @@ export interface TimecardPdfData {
   employeeName: string;
   position?: string | null;
   periodLabel: string;
+  /** The heading under the company name: the simple or the detailed card. */
+  title?: string;
+  /** Detailed card only (null on the simple one): the period's notes. */
+  notes?: TimecardPdfNote[] | null;
   rangeLabel: string;
   daysWorked: number;
   rows: TimecardPdfRow[];
@@ -375,7 +389,7 @@ export async function downloadTimecardPdf(data: TimecardPdfData): Promise<void> 
                 characterSpacing: 0.8,
               },
               {
-                text: translate("EMPLOYEE TIMECARD"),
+                text: (data.title ?? translate("Employee timecard")).toUpperCase(),
                 fontSize: 7,
                 color: MUTED,
                 characterSpacing: 1.6,
@@ -436,15 +450,27 @@ export async function downloadTimecardPdf(data: TimecardPdfData): Promise<void> 
               head(translate("Hours"), "right"),
               head(translate("Notes"), "left"),
             ],
-            ...data.rows.map((r) => [
-              { ...cell(r.date, "left"), bold: !!r.date },
-              cell(r.clockIn),
-              cell(r.clockOut),
-              cell(r.unpaid),
-              cell(r.paid),
-              cell(r.hours, "right"),
-              { ...cell(r.notes, "left"), color: MUTED },
-            ]),
+            ...data.rows.map((r) =>
+              r.subtotal
+                ? [
+                    { ...cell(r.date, "left"), bold: true, fillColor: FILL },
+                    { ...cell(""), fillColor: FILL },
+                    { ...cell(""), fillColor: FILL },
+                    { ...cell(r.unpaid), bold: true, fillColor: FILL },
+                    { ...cell(r.paid), bold: true, fillColor: FILL },
+                    { ...cell(r.hours, "right"), bold: true, fillColor: FILL },
+                    { ...cell(r.notes, "left"), fillColor: FILL },
+                  ]
+                : [
+                    { ...cell(r.date, "left"), bold: !!r.date },
+                    cell(r.clockIn),
+                    cell(r.clockOut),
+                    cell(r.unpaid),
+                    cell(r.paid),
+                    cell(r.hours, "right"),
+                    { ...cell(r.notes, "left"), color: MUTED },
+                  ],
+            ),
             [
               { ...cell(translate("Period total"), "left"), bold: true, fillColor: FILL },
               { ...cell(""), fillColor: FILL },
@@ -544,6 +570,47 @@ export async function downloadTimecardPdf(data: TimecardPdfData): Promise<void> 
         ],
         margin: [0, 14, 0, 0],
       },
+
+      ...(data.notes
+        ? [
+            {
+              text: translate("Notes").toUpperCase(),
+              fontSize: 8,
+              bold: true,
+              characterSpacing: 0.6,
+              margin: [0, 22, 0, 4] as [number, number, number, number],
+            },
+            data.notes.length === 0
+              ? { text: translate("No notes for this period."), fontSize: 8.5, color: MUTED }
+              : {
+                  table: {
+                    headerRows: 1,
+                    widths: [78, "*", 95, 95],
+                    body: [
+                      [
+                        head(translate("Date"), "left"),
+                        head(translate("Note"), "left"),
+                        head(translate("Created by"), "left"),
+                        head(translate("Created"), "left"),
+                      ],
+                      ...data.notes.map((n) => [
+                        { ...cell(n.date, "left"), bold: true },
+                        cell(n.note, "left"),
+                        cell(n.author, "left"),
+                        { ...cell(n.created, "left"), color: MUTED },
+                      ]),
+                    ],
+                  },
+                  layout: {
+                    hLineWidth: (i: number) => (i === 0 ? 1 : 0.5),
+                    hLineColor: (i: number) => (i === 0 || i === 1 ? INK : RULE),
+                    vLineWidth: () => 0,
+                    paddingLeft: () => 0,
+                    paddingRight: () => 0,
+                  },
+                },
+          ]
+        : []),
 
       {
         columns: [signatureLine(translate("Employee signature")), signatureLine(translate("Supervisor signature"))],

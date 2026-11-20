@@ -10,6 +10,7 @@ import { useStaffVisibility } from "@/lib/staff-visibility";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   AlertTriangle,
   ChevronDown,
@@ -20,6 +21,7 @@ import {
   ExternalLink,
   Loader2,
   MapPin,
+  NotebookPen,
   Pencil,
   Printer,
   Trash2,
@@ -92,6 +94,21 @@ const KIND_LABEL: Record<Punch["kind"], string> = {
 
 type Period = "week" | "biweek";
 
+/**
+ * Which card is on screen and on paper. "simple" is the plain weekly or
+ * bi-weekly list; "detailed" is always bi-weekly, closes each week with a
+ * subtotal and carries the manager's dated notes for the period.
+ */
+type CardFormat = "simple" | "detailed";
+
+type TimecardNote = {
+  id: string;
+  note_date: string;
+  note: string;
+  author_name: string;
+  created_at: string;
+};
+
 function startOfWeek(d: Date, weekStartDay = 1) {
   const x = new Date(d);
   const day = (x.getDay() - weekStartDay + 7) % 7;
@@ -120,7 +137,11 @@ function fmtDecimal(ms: number) {
 
 /** `Sat Sep 5`, for the day rows under a person. */
 function fmtDayShort(d: Date) {
-  return d.toLocaleDateString(localeTag() ?? [], { weekday: "short", month: "short", day: "numeric" });
+  return d.toLocaleDateString(localeTag() ?? [], {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 /** AP, DG — the initials shown in the avatar circle. */
@@ -145,6 +166,16 @@ function TimecardsPage() {
   const isSuperAdmin = primaryRole === "super_admin";
   const isManager = primaryRole === "company_admin" || isSuperAdmin;
   const [period, setPeriod] = useState<Period>("week");
+  const [format, setFormat] = useState<CardFormat>("simple");
+  const detailed = format === "detailed";
+  function chooseFormat(f: CardFormat) {
+    setFormat(f);
+    // The detailed card is a bi-weekly document by definition.
+    if (f === "detailed") setPeriod("biweek");
+  }
+  const [noteDay, setNoteDay] = useState("");
+  const [noteText, setNoteText] = useState("");
+  const [noteErr, setNoteErr] = useState<string | null>(null);
   const [anchor, setAnchor] = useState<Date>(() => startOfWeek(new Date(), rules.week_start_day));
   const [selectedUser, setSelectedUser] = useState<string | "me">("me");
   const [editingDay, setEditingDay] = useState<Date | null>(null);
@@ -329,7 +360,13 @@ function TimecardsPage() {
   // Mid-shift location moves over the same stretch, so hours split by place.
   // Under the "timecards" key, so whatever refreshes the punches refreshes these.
   const movesQ = useQuery<LocationMove[]>({
-    queryKey: ["timecards", "moves", targetUserId, rangeStart.toISOString(), rangeEnd.toISOString()],
+    queryKey: [
+      "timecards",
+      "moves",
+      targetUserId,
+      rangeStart.toISOString(),
+      rangeEnd.toISOString(),
+    ],
     enabled: !!targetUserId,
     queryFn: async () => {
       const { data, error } = await supabase
@@ -342,6 +379,67 @@ function TimecardsPage() {
       if (error) throw error;
       return data ?? [];
     },
+  });
+
+  // The detailed card's notes for this person and period. Asked for only when
+  // that card is on screen; a database without the table yet reads as an
+  // error in the Notes panel, not a broken page.
+  const periodFirstDay = toDayString(rangeStart);
+  const periodLastDay = toDayString(addDays(rangeEnd, -1));
+  const notesQ = useQuery<TimecardNote[]>({
+    queryKey: ["timecard-notes", targetUserId, periodFirstDay, periodLastDay],
+    enabled: detailed && !!targetUserId,
+    retry: false,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("timecard_notes")
+        .select("id, note_date, note, author_name, created_at")
+        .eq("user_id", targetUserId!)
+        .gte("note_date", periodFirstDay)
+        .lte("note_date", periodLastDay)
+        .order("note_date", { ascending: true })
+        .order("created_at", { ascending: true });
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+  const notes = detailed ? (notesQ.data ?? []) : [];
+
+  const addNote = useMutation({
+    mutationFn: async () => {
+      const noteCompany =
+        roster.find((m) => m.id === targetUserId)?.company_id ?? company?.id ?? null;
+      if (!targetUserId || !noteCompany) throw new Error(t("Pick an employee first."));
+      const { error } = await supabase.from("timecard_notes").insert({
+        company_id: noteCompany,
+        user_id: targetUserId,
+        note_date:
+          noteDay && noteDay >= periodFirstDay && noteDay <= periodLastDay
+            ? noteDay
+            : periodFirstDay,
+        note: noteText.trim(),
+        author_name: profile?.full_name || user?.email || "",
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setNoteText("");
+      setNoteErr(null);
+      void qc.invalidateQueries({ queryKey: ["timecard-notes"] });
+    },
+    onError: (e: Error) => setNoteErr(e.message),
+  });
+
+  const deleteNote = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("timecard_notes").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setNoteErr(null);
+      void qc.invalidateQueries({ queryKey: ["timecard-notes"] });
+    },
+    onError: (e: Error) => setNoteErr(e.message),
   });
 
   // Everyone's punches for the period, for the roster-wide view. Only a
@@ -418,7 +516,8 @@ function TimecardsPage() {
   const everyoneByLocation = useMemo(() => {
     const sum = new Map<string | null, number>();
     for (const r of everyone)
-      for (const l of r.byLocation) sum.set(l.locationId, (sum.get(l.locationId) ?? 0) + l.workedMs);
+      for (const l of r.byLocation)
+        sum.set(l.locationId, (sum.get(l.locationId) ?? 0) + l.workedMs);
     return [...sum]
       .map(([locationId, workedMs]) => ({ locationId, workedMs }))
       .sort((a, b) => b.workedMs - a.workedMs);
@@ -625,7 +724,17 @@ function TimecardsPage() {
     const splits = new Map(
       (person?.days ?? []).flatMap((d) => d.spans).map((sp) => [sp.inAt, sp.byLocation] as const),
     );
-    return { rows, weekTotal, weekUnpaid, weekPaid, byLocation, splits };
+    // Seven days at a time, for the detailed card's per-week subtotals.
+    const weeks: { workedMs: number; unpaidBreakMs: number; paidBreakMs: number }[] = [];
+    for (let w = 0; w * 7 < rows.length; w++) {
+      const slice = rows.slice(w * 7, w * 7 + 7);
+      weeks.push({
+        workedMs: slice.reduce((n, r) => n + r.totalMs, 0),
+        unpaidBreakMs: slice.reduce((n, r) => n + r.unpaidBreakMs, 0),
+        paidBreakMs: slice.reduce((n, r) => n + r.paidBreakMs, 0),
+      });
+    }
+    return { rows, weekTotal, weekUnpaid, weekPaid, byLocation, splits, weeks };
   }, [
     punchesQ.data,
     movesQ.data,
@@ -667,7 +776,25 @@ function TimecardsPage() {
   function buildTimecardPdfData() {
     const HOUR = 3_600_000;
     const dec = (ms: number) => (ms / HOUR).toFixed(2);
-    const rows = grouped.rows.flatMap((r) => {
+    /** The detailed card closes each week with a subtotal line. */
+    const weekRow = (dayIndex: number) => {
+      if (!detailed || (dayIndex + 1) % 7 !== 0) return [];
+      const w = grouped.weeks[Math.floor(dayIndex / 7)];
+      if (!w) return [];
+      return [
+        {
+          date: t("Week {n} total", { n: Math.floor(dayIndex / 7) + 1 }),
+          clockIn: "",
+          clockOut: "",
+          unpaid: fmtHours(w.unpaidBreakMs),
+          paid: fmtHours(w.paidBreakMs),
+          hours: fmtHours(w.workedMs),
+          notes: `${dec(w.workedMs)} ${t("hrs")}`,
+          subtotal: true,
+        },
+      ];
+    };
+    const dayRows = (r: (typeof grouped.rows)[number]) => {
       if (r.pairs.length === 0) {
         return [
           {
@@ -700,7 +827,8 @@ function TimecardsPage() {
           .filter(Boolean)
           .join(" · "),
       }));
-    });
+    };
+    const rows = grouped.rows.flatMap((r, dayIndex) => [...dayRows(r), ...weekRow(dayIndex)]);
 
     const { regularMs, overtimeMs, doubleTimeMs } = splitPeriod(
       grouped.rows.map((r) => r.totalMs),
@@ -714,6 +842,21 @@ function TimecardsPage() {
       employeeName,
       position: employeePosition,
       periodLabel: period === "week" ? t("Weekly") : t("Bi-weekly"),
+      title: detailed ? t("Detailed time card") : t("Employee timecard"),
+      notes: detailed
+        ? notes.map((n) => ({
+            date: fmtDate(fromDayString(n.note_date)),
+            note: n.note,
+            author: n.author_name || "—",
+            created: new Date(n.created_at).toLocaleString(localeTag(), {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+              hour: "numeric",
+              minute: "2-digit",
+            }),
+          }))
+        : null,
       rangeLabel: `${rangeStart.toLocaleDateString(localeTag(), { month: "long", day: "numeric", year: "numeric" })} – ${lastDay.toLocaleDateString(localeTag(), { month: "long", day: "numeric", year: "numeric" })}`,
       daysWorked: grouped.rows.filter((r) => r.pairs.length > 0).length,
       rows,
@@ -738,7 +881,7 @@ function TimecardsPage() {
         : [],
       overtimeNote: overtimeNote(rules, period === "week"),
       roundNote: `${rules.punch_round_minutes > 0 ? t("Punch times and hours rounded to the nearest {n} minutes.", { n: rules.punch_round_minutes }) : t("Punch times shown as recorded.")} ${t("Unpaid break time is deducted from hours worked; paid break time is not.")}`,
-      filename: `timecard-${employeeName.replace(/[^\w.-]+/g, "-").replace(/^-|-$/g, "")}-${rangeStart.toISOString().slice(0, 10)}.pdf`,
+      filename: `${detailed ? "detailed-timecard" : "timecard"}-${employeeName.replace(/[^\w.-]+/g, "-").replace(/^-|-$/g, "")}-${rangeStart.toISOString().slice(0, 10)}.pdf`,
     };
   }
 
@@ -755,7 +898,9 @@ function TimecardsPage() {
   if (loading) return <div className="text-sm text-muted-foreground">{t("Loading…")}</div>;
   // A super admin has no company of their own but can read every timecard.
   if (!company && !isSuperAdmin)
-    return <div className="text-sm text-muted-foreground">{t("Join a company to view timecards.")}</div>;
+    return (
+      <div className="text-sm text-muted-foreground">{t("Join a company to view timecards.")}</div>
+    );
 
   // Whose card is on screen — the roster row when a manager has picked someone,
   // otherwise the signed-in user's own profile.
@@ -779,6 +924,14 @@ function TimecardsPage() {
   return (
     <>
       <PrintableTimecard
+        format={format}
+        weekTotals={grouped.weeks}
+        notes={notes.map((n) => ({
+          day: n.note_date,
+          note: n.note,
+          author: n.author_name,
+          createdAt: n.created_at,
+        }))}
         companyName={employeeCompanyName}
         employeeName={employeeName}
         position={employeePosition}
@@ -825,8 +978,8 @@ function TimecardsPage() {
           <div>
             <h1 className="text-2xl font-semibold text-foreground">{t("Timecards")}</h1>
             <p className="text-sm text-muted-foreground">
-              {period === "week" ? t("Weekly totals") : t("Bi-weekly totals")} · {fmtDate(rangeStart)} –{" "}
-              {fmtDate(addDays(rangeEnd, -1))}
+              {period === "week" ? t("Weekly totals") : t("Bi-weekly totals")} ·{" "}
+              {fmtDate(rangeStart)} – {fmtDate(addDays(rangeEnd, -1))}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -889,10 +1042,34 @@ function TimecardsPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card p-3">
+          <div
+            className="inline-flex rounded-md border border-border p-0.5"
+            role="group"
+            aria-label={t("Time card format")}
+          >
+            <button
+              className={`px-3 py-1 text-xs font-medium rounded ${!detailed ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+              onClick={() => chooseFormat("simple")}
+              aria-pressed={!detailed}
+              title={t("Weekly or bi-weekly hours, as a plain list")}
+            >
+              {t("Simple time card")}
+            </button>
+            <button
+              className={`px-3 py-1 text-xs font-medium rounded ${detailed ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+              onClick={() => chooseFormat("detailed")}
+              aria-pressed={detailed}
+              title={t("Bi-weekly, with a total for each week and a notes section")}
+            >
+              {t("Detailed time card")}
+            </button>
+          </div>
           <div className="inline-flex rounded-md border border-border p-0.5">
             <button
-              className={`px-3 py-1 text-xs font-medium rounded ${period === "week" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+              className={`px-3 py-1 text-xs font-medium rounded ${period === "week" ? "bg-primary text-primary-foreground" : "text-muted-foreground"} disabled:opacity-40`}
               onClick={() => setPeriod("week")}
+              disabled={detailed}
+              title={detailed ? t("The detailed time card is always bi-weekly") : undefined}
             >
               {t("Weekly")}
             </button>
@@ -904,7 +1081,12 @@ function TimecardsPage() {
             </button>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <Button variant="outline" size="icon" onClick={() => nav(-1)} aria-label={t("Previous")}>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => nav(-1)}
+              aria-label={t("Previous")}
+            >
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <Button
@@ -967,7 +1149,9 @@ function TimecardsPage() {
           <div className="flex items-start gap-3 rounded-xl border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-200">
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
             <p>
-              {t("You're the only person on this company's roster, so there are no other timecards to open. Add employees from the")}{" "}
+              {t(
+                "You're the only person on this company's roster, so there are no other timecards to open. Add employees from the",
+              )}{" "}
               <Link to="/employees" className="underline">
                 {t("Employees")}
               </Link>
@@ -1043,7 +1227,11 @@ function TimecardsPage() {
                                   )
                                 }
                                 aria-expanded={open}
-                                aria-label={open ? t("Hide {name}'s time cards", { name: r.name }) : t("Show {name}'s time cards", { name: r.name })}
+                                aria-label={
+                                  open
+                                    ? t("Hide {name}'s time cards", { name: r.name })
+                                    : t("Show {name}'s time cards", { name: r.name })
+                                }
                                 className="rounded p-0.5 text-muted-foreground hover:bg-muted disabled:opacity-30"
                               >
                                 <ChevronDown
@@ -1194,7 +1382,9 @@ function TimecardsPage() {
               </div>
             )}
             <p className="border-t border-border px-4 py-2 text-xs text-muted-foreground">
-              {t("Actual hours is time on the clock. Total paid hours is the same less unpaid breaks, and splits into regular, overtime and double time.")}
+              {t(
+                "Actual hours is time on the clock. Total paid hours is the same less unpaid breaks, and splits into regular, overtime and double time.",
+              )}
             </p>
           </div>
         )}
@@ -1221,115 +1411,135 @@ function TimecardsPage() {
                   {isManager && " " + t("Use Edit on a day to add one.")}
                 </div>
               )}
-              {grouped.rows.map((r) => (
-                <div
-                  key={r.date.toISOString()}
-                  className={`grid ${isManager ? "grid-cols-[1fr_2fr_1fr_auto]" : "grid-cols-[1fr_2fr_1fr]"} items-start gap-2 border-b border-border px-4 py-3 text-sm last:border-0`}
-                >
-                  <div className="font-medium text-foreground">{fmtDate(r.date)}</div>
-                  <div className="space-y-1">
-                    {r.pairs.length === 0 && <span className="text-muted-foreground">—</span>}
-                    {r.pairs.map((p, i) => (
-                      <div key={i} className="flex items-center gap-2">
-                        <span className="rounded bg-emerald-100 dark:bg-emerald-500/15 px-1.5 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">
-                          {t("IN")} {fmtTime(p.in.at, rules.punch_round_minutes)}
-                        </span>
-                        {p.out ? (
-                          <span className="rounded bg-blue-100 dark:bg-blue-500/15 px-1.5 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">
-                            {t("OUT")} {fmtTime(p.out.at, rules.punch_round_minutes)}
+              {grouped.rows.map((r, dayIndex) => (
+                <Fragment key={r.date.toISOString()}>
+                  <div
+                    className={`grid ${isManager ? "grid-cols-[1fr_2fr_1fr_auto]" : "grid-cols-[1fr_2fr_1fr]"} items-start gap-2 border-b border-border px-4 py-3 text-sm last:border-0`}
+                  >
+                    <div className="font-medium text-foreground">{fmtDate(r.date)}</div>
+                    <div className="space-y-1">
+                      {r.pairs.length === 0 && <span className="text-muted-foreground">—</span>}
+                      {r.pairs.map((p, i) => (
+                        <div key={i} className="flex items-center gap-2">
+                          <span className="rounded bg-emerald-100 dark:bg-emerald-500/15 px-1.5 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                            {t("IN")} {fmtTime(p.in.at, rules.punch_round_minutes)}
                           </span>
-                        ) : (
-                          <span className="rounded bg-amber-100 dark:bg-amber-500/15 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
-                            {t("Still clocked in")}
-                          </span>
-                        )}
-                        {(!p.in.within_geofence || (p.out && !p.out.within_geofence)) && (
-                          <span className="text-xs text-destructive">{t("⚠ off-site")}</span>
-                        )}
-                        {hasLocations &&
-                          (isManager ? (
-                            <select
-                              className="max-w-[10rem] truncate rounded border border-border bg-background px-1 py-0.5 text-xs text-muted-foreground"
-                              value={p.in.location_id ?? ""}
-                              disabled={moveLocation.isPending}
-                              onChange={(e) =>
-                                moveLocation.mutate({
-                                  punchId: p.in.id,
-                                  locationId: e.target.value || null,
-                                })
-                              }
-                              aria-label={t("Location for the shift starting {time}", {
-                                time: fmtTime(p.in.at, rules.punch_round_minutes),
-                              })}
-                            >
-                              <option value="">{t("No location")}</option>
-                              {locations
-                                .filter(
-                                  (l) =>
-                                    l.company_id === (viewing?.company_id ?? company?.id) ||
-                                    l.id === p.in.location_id,
-                                )
-                                .map((l) => (
-                                  <option key={l.id} value={l.id}>
-                                    {l.name}
-                                  </option>
-                                ))}
-                            </select>
-                          ) : (
-                            <span className="flex items-center gap-0.5 text-xs text-muted-foreground">
-                              <MapPin className="h-3 w-3" />
-                              {shiftPlaces(grouped.splits.get(p.in.at), p.in.location_id)}
+                          {p.out ? (
+                            <span className="rounded bg-blue-100 dark:bg-blue-500/15 px-1.5 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">
+                              {t("OUT")} {fmtTime(p.out.at, rules.punch_round_minutes)}
                             </span>
-                          ))}
-                        {hasLocations && isManager && (grouped.splits.get(p.in.at)?.length ?? 0) > 1 && (
-                          <span className="text-xs text-muted-foreground">
-                            {byLocationText(grouped.splits.get(p.in.at)!)}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                  <div className="text-right font-medium text-foreground">
-                    {fmtHours(r.totalMs)}
-                    {(r.unpaidBreakMs > 0 || r.paidBreakMs > 0) && (
-                      <div className="text-[10px] font-normal text-muted-foreground">
-                        {r.unpaidBreakMs > 0 && <>{t("unpaid")} {fmtHours(r.unpaidBreakMs)}</>}
-                        {r.unpaidBreakMs > 0 && r.paidBreakMs > 0 && " · "}
-                        {r.paidBreakMs > 0 && <>{t("paid")} {fmtHours(r.paidBreakMs)}</>}
-                      </div>
-                    )}
-                    {/* Back on the clock before the break was up. The day is
+                          ) : (
+                            <span className="rounded bg-amber-100 dark:bg-amber-500/15 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
+                              {t("Still clocked in")}
+                            </span>
+                          )}
+                          {(!p.in.within_geofence || (p.out && !p.out.within_geofence)) && (
+                            <span className="text-xs text-destructive">{t("⚠ off-site")}</span>
+                          )}
+                          {hasLocations &&
+                            (isManager ? (
+                              <select
+                                className="max-w-[10rem] truncate rounded border border-border bg-background px-1 py-0.5 text-xs text-muted-foreground"
+                                value={p.in.location_id ?? ""}
+                                disabled={moveLocation.isPending}
+                                onChange={(e) =>
+                                  moveLocation.mutate({
+                                    punchId: p.in.id,
+                                    locationId: e.target.value || null,
+                                  })
+                                }
+                                aria-label={t("Location for the shift starting {time}", {
+                                  time: fmtTime(p.in.at, rules.punch_round_minutes),
+                                })}
+                              >
+                                <option value="">{t("No location")}</option>
+                                {locations
+                                  .filter(
+                                    (l) =>
+                                      l.company_id === (viewing?.company_id ?? company?.id) ||
+                                      l.id === p.in.location_id,
+                                  )
+                                  .map((l) => (
+                                    <option key={l.id} value={l.id}>
+                                      {l.name}
+                                    </option>
+                                  ))}
+                              </select>
+                            ) : (
+                              <span className="flex items-center gap-0.5 text-xs text-muted-foreground">
+                                <MapPin className="h-3 w-3" />
+                                {shiftPlaces(grouped.splits.get(p.in.at), p.in.location_id)}
+                              </span>
+                            ))}
+                          {hasLocations &&
+                            isManager &&
+                            (grouped.splits.get(p.in.at)?.length ?? 0) > 1 && (
+                              <span className="text-xs text-muted-foreground">
+                                {byLocationText(grouped.splits.get(p.in.at)!)}
+                              </span>
+                            )}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="text-right font-medium text-foreground">
+                      {fmtHours(r.totalMs)}
+                      {(r.unpaidBreakMs > 0 || r.paidBreakMs > 0) && (
+                        <div className="text-[10px] font-normal text-muted-foreground">
+                          {r.unpaidBreakMs > 0 && (
+                            <>
+                              {t("unpaid")} {fmtHours(r.unpaidBreakMs)}
+                            </>
+                          )}
+                          {r.unpaidBreakMs > 0 && r.paidBreakMs > 0 && " · "}
+                          {r.paidBreakMs > 0 && (
+                            <>
+                              {t("paid")} {fmtHours(r.paidBreakMs)}
+                            </>
+                          )}
+                        </div>
+                      )}
+                      {/* Back on the clock before the break was up. The day is
                         flagged rather than docked — what they took is what
                         came off the shift. */}
-                    {r.incompleteBreaks > 0 && (
-                      <div className="text-[10px] font-normal text-destructive">
-                        ⚠{" "}
-                        {r.incompleteBreaks === 1
-                          ? t("incomplete break")
-                          : t("{n} incomplete breaks", { n: r.incompleteBreaks })}
-                      </div>
-                    )}
-                    {/* Time they ran over and were not charged for. */}
-                    {r.overBreakMs > 0 && (
-                      <div className="text-[10px] font-normal text-muted-foreground">
-                        {t("{time} over, not counted", { time: fmtHours(r.overBreakMs) })}
+                      {r.incompleteBreaks > 0 && (
+                        <div className="text-[10px] font-normal text-destructive">
+                          ⚠{" "}
+                          {r.incompleteBreaks === 1
+                            ? t("incomplete break")
+                            : t("{n} incomplete breaks", { n: r.incompleteBreaks })}
+                        </div>
+                      )}
+                      {/* Time they ran over and were not charged for. */}
+                      {r.overBreakMs > 0 && (
+                        <div className="text-[10px] font-normal text-muted-foreground">
+                          {t("{time} over, not counted", { time: fmtHours(r.overBreakMs) })}
+                        </div>
+                      )}
+                    </div>
+                    {isManager && (
+                      <div className="w-16 text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2"
+                          onClick={() => setEditingDay(r.date)}
+                          aria-label={t("Edit punches for {date}", { date: fmtDate(r.date) })}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
                       </div>
                     )}
                   </div>
-                  {isManager && (
-                    <div className="w-16 text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 px-2"
-                        onClick={() => setEditingDay(r.date)}
-                        aria-label={t("Edit punches for {date}", { date: fmtDate(r.date) })}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  )}
-                </div>
+                  {detailed &&
+                    (dayIndex + 1) % 7 === 0 &&
+                    grouped.weeks[Math.floor(dayIndex / 7)] && (
+                      <WeekSubtotal
+                        n={Math.floor(dayIndex / 7) + 1}
+                        week={grouped.weeks[Math.floor(dayIndex / 7)]}
+                        isManager={isManager}
+                      />
+                    )}
+                </Fragment>
               ))}
               {(() => {
                 const split = splitPeriod(
@@ -1372,7 +1582,10 @@ function TimecardsPage() {
                     {t("Hours by location")}
                   </div>
                   {grouped.byLocation.map((l) => (
-                    <div key={l.locationId ?? "none"} className="grid grid-cols-[1fr_auto] gap-2 py-0.5">
+                    <div
+                      key={l.locationId ?? "none"}
+                      className="grid grid-cols-[1fr_auto] gap-2 py-0.5"
+                    >
                       <span className={l.locationId ? "text-foreground" : "text-muted-foreground"}>
                         {locationName(l.locationId)}
                       </span>
@@ -1392,6 +1605,123 @@ function TimecardsPage() {
                 </p>
               )}
             </div>
+
+            {detailed && (
+              <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+                <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
+                  <NotebookPen className="h-4 w-4 text-muted-foreground" />
+                  <h2 className="font-semibold text-foreground">{t("Notes")}</h2>
+                  <span className="text-xs text-muted-foreground">
+                    {employeeName} · {fmtDate(rangeStart)} – {fmtDate(addDays(rangeEnd, -1))}
+                  </span>
+                  {notesQ.isFetching && (
+                    <Loader2 className="ml-auto h-4 w-4 animate-spin text-muted-foreground" />
+                  )}
+                </div>
+                {notesQ.error ? (
+                  <p className="px-4 py-4 text-sm text-destructive">
+                    {/* The table arrives by a migration applied by hand; until
+                        then PostgREST says so in its own words. */}
+                    {/timecard_notes|schema cache/i.test((notesQ.error as Error).message)
+                      ? t("Notes aren't set up on the server yet. Ask your administrator to apply the timecard notes update.")
+                      : `${t("Couldn't load the notes:")} ${(notesQ.error as Error).message}`}
+                  </p>
+                ) : notes.length === 0 ? (
+                  <p className="px-4 py-4 text-sm text-muted-foreground">
+                    {t("No notes for this period.")}
+                    {isManager && " " + t("Add one below — it prints on the detailed time card.")}
+                  </p>
+                ) : (
+                  <ul className="divide-y divide-border">
+                    {notes.map((n) => (
+                      <li key={n.id} className="flex items-start gap-3 px-4 py-3 text-sm">
+                        <div className="w-28 shrink-0 font-medium text-foreground">
+                          {fmtDate(fromDayString(n.note_date))}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="whitespace-pre-wrap break-words text-foreground">
+                            {n.note}
+                          </p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {n.author_name || "—"} ·{" "}
+                            {new Date(n.created_at).toLocaleString(localeTag(), {
+                              month: "short",
+                              day: "numeric",
+                              hour: "numeric",
+                              minute: "2-digit",
+                            })}
+                          </p>
+                        </div>
+                        {isManager && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-muted-foreground hover:text-destructive"
+                            disabled={deleteNote.isPending}
+                            onClick={() => deleteNote.mutate(n.id)}
+                            aria-label={t("Delete note")}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {isManager && !notesQ.error && (
+                  <form
+                    className="space-y-2 border-t border-border bg-muted/20 px-4 py-3"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (noteText.trim()) addNote.mutate();
+                    }}
+                  >
+                    <div className="flex flex-wrap items-end gap-2">
+                      <div className="space-y-1">
+                        <Label htmlFor="timecard-note-day" className="text-xs">
+                          {t("Date")}
+                        </Label>
+                        <Input
+                          id="timecard-note-day"
+                          type="date"
+                          className="h-9 w-44"
+                          min={periodFirstDay}
+                          max={periodLastDay}
+                          value={
+                            noteDay && noteDay >= periodFirstDay && noteDay <= periodLastDay
+                              ? noteDay
+                              : periodFirstDay
+                          }
+                          onChange={(e) => setNoteDay(e.target.value)}
+                        />
+                      </div>
+                      <div className="min-w-[14rem] flex-1 space-y-1">
+                        <Label htmlFor="timecard-note-text" className="text-xs">
+                          {t("Note")}
+                        </Label>
+                        <Textarea
+                          id="timecard-note-text"
+                          rows={2}
+                          maxLength={1000}
+                          placeholder={t("e.g. Training: annual conference, Nov 2–5")}
+                          value={noteText}
+                          onChange={(e) => setNoteText(e.target.value)}
+                        />
+                      </div>
+                      <Button
+                        type="submit"
+                        size="sm"
+                        disabled={!noteText.trim() || addNote.isPending}
+                      >
+                        {addNote.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        {t("Add note")}
+                      </Button>
+                    </div>
+                    {noteErr && <p className="text-xs text-destructive">{noteErr}</p>}
+                  </form>
+                )}
+              </div>
+            )}
 
             {/* Where each punch was made. Managers only: an employee's own timecard
           is about their hours, not a map of their movements. */}
@@ -1416,7 +1746,9 @@ function TimecardsPage() {
                         className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-sm"
                       >
                         <div className="min-w-0">
-                          <span className="font-medium text-foreground">{t(KIND_LABEL[p.kind])}</span>{" "}
+                          <span className="font-medium text-foreground">
+                            {t(KIND_LABEL[p.kind])}
+                          </span>{" "}
                           <span className="text-muted-foreground">
                             {new Date(p.at).toLocaleString(localeTag(), {
                               month: "short",
@@ -1462,13 +1794,17 @@ function TimecardsPage() {
               <DialogHeader>
                 <DialogTitle>{t("Delete timecards")}</DialogTitle>
                 <DialogDescription>
-                  {t("Each deleted punch is recorded in the audit log under your name, but the hours themselves are gone. Anything already paid from these timecards will no longer add up.")}
+                  {t(
+                    "Each deleted punch is recorded in the audit log under your name, but the hours themselves are gone. Anything already paid from these timecards will no longer add up.",
+                  )}
                 </DialogDescription>
               </DialogHeader>
 
               {wipeDone !== null ? (
                 <p className="rounded-md bg-primary-soft px-3 py-2 text-sm text-primary">
-                  {wipeDone === 1 ? t("Deleted 1 punch.") : t("Deleted {n} punches.", { n: wipeDone })}
+                  {wipeDone === 1
+                    ? t("Deleted 1 punch.")
+                    : t("Deleted {n} punches.", { n: wipeDone })}
                 </p>
               ) : (
                 <div className="space-y-4">
@@ -1546,7 +1882,9 @@ function TimecardsPage() {
                       onChange={(e) => setWipeUnderstood(e.target.checked)}
                     />
                     <span>
-                      {t("I have checked the people and the dates, and I understand these punches cannot be brought back.")}
+                      {t(
+                        "I have checked the people and the dates, and I understand these punches cannot be brought back.",
+                      )}
                     </span>
                   </label>
 
@@ -1598,5 +1936,31 @@ function TimecardsPage() {
         )}
       </div>
     </>
+  );
+}
+
+/** One week's line on the detailed (bi-weekly) card, under its seventh day. */
+function WeekSubtotal({
+  n,
+  week,
+  isManager,
+}: {
+  n: number;
+  week: { workedMs: number; unpaidBreakMs: number; paidBreakMs: number };
+  isManager: boolean;
+}) {
+  const t = useT("timecards");
+  return (
+    <div
+      className={`grid ${isManager ? "grid-cols-[1fr_2fr_1fr_auto]" : "grid-cols-[1fr_2fr_1fr]"} gap-2 border-b border-border bg-muted/30 px-4 py-2 text-sm`}
+    >
+      <div className="font-semibold text-foreground">{t("Week {n} total", { n })}</div>
+      <div className="text-xs text-muted-foreground">
+        {t("Unpaid break:")} {fmtHours(week.unpaidBreakMs)} · {t("Paid break:")}{" "}
+        {fmtHours(week.paidBreakMs)}
+      </div>
+      <div className="text-right font-semibold text-foreground">{fmtHours(week.workedMs)}</div>
+      {isManager && <div className="w-16" />}
+    </div>
   );
 }

@@ -1233,6 +1233,39 @@ export type Database = {
           },
         ]
       }
+      timecard_notes: {
+        Row: {
+          author_name: string
+          company_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          note: string
+          note_date: string
+          user_id: string
+        }
+        Insert: {
+          author_name?: string
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          note: string
+          note_date: string
+          user_id: string
+        }
+        Update: {
+          author_name?: string
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          note?: string
+          note_date?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       time_punch_audit: {
         Row: {
           action: string

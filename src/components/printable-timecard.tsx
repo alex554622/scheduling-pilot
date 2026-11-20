@@ -5,6 +5,7 @@
  * status chips, hairline rules, and a signature block at the foot.
  */
 
+import { fromDayString } from "@/lib/day-string";
 import { localeTag, useT } from "@/lib/i18n";
 
 export interface PrintablePair {
@@ -23,7 +24,32 @@ export interface PrintableDay {
   totalMs: number;
 }
 
+/** A dated note on the card, printed in the detailed format's Notes section. */
+export interface PrintableNote {
+  /** The day it is about, "YYYY-MM-DD". */
+  day: string;
+  note: string;
+  author: string;
+  createdAt: string;
+}
+
+/** One week's subtotal on the detailed (bi-weekly) card. */
+export interface PrintableWeekTotal {
+  workedMs: number;
+  unpaidBreakMs: number;
+  paidBreakMs: number;
+}
+
 export interface PrintableTimecardProps {
+  /**
+   * "simple" is the plain period list. "detailed" is the bi-weekly card: a
+   * subtotal under each week and a Notes section above the signatures.
+   */
+  format?: "simple" | "detailed";
+  /** Detailed only: one subtotal per 7 days, in order. */
+  weekTotals?: PrintableWeekTotal[];
+  /** Detailed only: every note dated inside the period. */
+  notes?: PrintableNote[];
   companyName: string;
   employeeName: string;
   position?: string | null;
@@ -61,6 +87,9 @@ function decimalHours(ms: number): string {
 }
 
 export function PrintableTimecard({
+  format = "simple",
+  weekTotals = [],
+  notes = [],
   companyName,
   employeeName,
   position,
@@ -81,13 +110,19 @@ export function PrintableTimecard({
   // A day someone is still clocked into has no completed hours yet, but they
   // did work it — count any day with a punch.
   const daysWorked = days.filter((d) => d.pairs.length > 0).length;
+  const detailed = format === "detailed";
 
   return (
-    <div data-print-only className="mx-auto max-w-[7.5in] bg-white font-sans text-[11px] leading-snug text-black">
+    <div
+      data-print-only
+      className="mx-auto max-w-[7.5in] bg-white font-sans text-[11px] leading-snug text-black"
+    >
       <header className="flex items-start justify-between border-b-2 border-black pb-2">
         <div>
           <p className="text-[15px] font-bold uppercase tracking-wide">{companyName}</p>
-          <p className="mt-0.5 text-[10px] uppercase tracking-[0.2em] text-neutral-600">{t("Employee timecard")}</p>
+          <p className="mt-0.5 text-[10px] uppercase tracking-[0.2em] text-neutral-600">
+            {detailed ? t("Detailed time card") : t("Employee timecard")}
+          </p>
         </div>
         <div className="text-right text-[10px] text-neutral-700">
           <p>
@@ -119,9 +154,33 @@ export function PrintableTimecard({
           </tr>
         </thead>
         <tbody>
-          {days.map((day) => {
+          {days.map((day, dayIndex) => {
+            // The detailed card closes each week with its own subtotal, so a
+            // week's overtime can be checked against the hours above it.
+            const week =
+              detailed && (dayIndex + 1) % 7 === 0
+                ? weekTotals[Math.floor(dayIndex / 7)]
+                : undefined;
+            const subtotal = week ? (
+              <tr
+                key={`week-${dayIndex}`}
+                className="border-b border-black bg-neutral-50 font-semibold"
+              >
+                <Td className="text-left">
+                  {t("Week {n} total", { n: Math.floor(dayIndex / 7) + 1 })}
+                </Td>
+                <Td />
+                <Td />
+                <Td>{formatHours(week.unpaidBreakMs)}</Td>
+                <Td>{formatHours(week.paidBreakMs)}</Td>
+                <Td className="text-right">{formatHours(week.workedMs)}</Td>
+                <Td className="text-left font-normal">
+                  {decimalHours(week.workedMs)} {t("hrs")}
+                </Td>
+              </tr>
+            ) : null;
             if (day.pairs.length === 0) {
-              return (
+              return [
                 <tr key={day.date.toISOString()} className="border-b border-neutral-300">
                   <Td className="text-left font-medium">{fmtRowDate(day.date)}</Td>
                   <Td>—</Td>
@@ -130,30 +189,38 @@ export function PrintableTimecard({
                   <Td>—</Td>
                   <Td className="text-right">0h 00m</Td>
                   <Td className="text-left text-neutral-500">{t("No punches")}</Td>
-                </tr>
-              );
+                </tr>,
+                subtotal,
+              ];
             }
-            return day.pairs.map((pair, i) => (
-              <tr
-                key={`${day.date.toISOString()}-${i}`}
-                className={i === day.pairs.length - 1 ? "border-b border-neutral-300" : ""}
-              >
-                {/* The date labels the day once; extra shifts hang beneath it. */}
-                <Td className="text-left font-medium">{i === 0 ? fmtRowDate(day.date) : ""}</Td>
-                <Td>{formatTime(pair.inAt)}</Td>
-                <Td>{pair.outAt ? formatTime(pair.outAt) : "—"}</Td>
-                <Td>{pair.unpaidBreakMs > 0 ? formatHours(pair.unpaidBreakMs) : "—"}</Td>
-                <Td>{pair.paidBreakMs > 0 ? formatHours(pair.paidBreakMs) : "—"}</Td>
-                {/* The day's hours sit on the date's own line. On the second
+            return [
+              ...day.pairs.map((pair, i) => (
+                <tr
+                  key={`${day.date.toISOString()}-${i}`}
+                  className={i === day.pairs.length - 1 ? "border-b border-neutral-300" : ""}
+                >
+                  {/* The date labels the day once; extra shifts hang beneath it. */}
+                  <Td className="text-left font-medium">{i === 0 ? fmtRowDate(day.date) : ""}</Td>
+                  <Td>{formatTime(pair.inAt)}</Td>
+                  <Td>{pair.outAt ? formatTime(pair.outAt) : "—"}</Td>
+                  <Td>{pair.unpaidBreakMs > 0 ? formatHours(pair.unpaidBreakMs) : "—"}</Td>
+                  <Td>{pair.paidBreakMs > 0 ? formatHours(pair.paidBreakMs) : "—"}</Td>
+                  {/* The day's hours sit on the date's own line. On the second
                     shift of a split day it would read as that shift's length. */}
-                <Td className="text-right">{i === 0 ? formatHours(day.totalMs) : ""}</Td>
-                <Td className="text-left text-neutral-600">
-                  {[pair.location ?? null, !pair.outAt ? t("Still clocked in") : null, pair.offSite ? t("Off-site punch") : null]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </Td>
-              </tr>
-            ));
+                  <Td className="text-right">{i === 0 ? formatHours(day.totalMs) : ""}</Td>
+                  <Td className="text-left text-neutral-600">
+                    {[
+                      pair.location ?? null,
+                      !pair.outAt ? t("Still clocked in") : null,
+                      pair.offSite ? t("Off-site punch") : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </Td>
+                </tr>
+              )),
+              subtotal,
+            ];
           })}
         </tbody>
         <tfoot>
@@ -164,7 +231,9 @@ export function PrintableTimecard({
             <Td>{formatHours(totals.unpaidBreakMs)}</Td>
             <Td>{formatHours(totals.paidBreakMs)}</Td>
             <Td className="text-right">{formatHours(totals.workedMs)}</Td>
-            <Td className="text-left font-normal">{decimalHours(totals.workedMs)} {t("hrs")}</Td>
+            <Td className="text-left font-normal">
+              {decimalHours(totals.workedMs)} {t("hrs")}
+            </Td>
           </tr>
         </tfoot>
       </table>
@@ -180,12 +249,21 @@ export function PrintableTimecard({
                 last={i === byLocation.length - 1}
               />
             ))}
-            <SummaryRow label={t("Regular hours")} value={`${formatHours(split.regularMs)}  (${decimalHours(split.regularMs)})`} />
+            <SummaryRow
+              label={t("Regular hours")}
+              value={`${formatHours(split.regularMs)}  (${decimalHours(split.regularMs)})`}
+            />
             {split.overtimeMs > 0 && (
-              <SummaryRow label={t("Overtime")} value={`${formatHours(split.overtimeMs)}  (${decimalHours(split.overtimeMs)})`} />
+              <SummaryRow
+                label={t("Overtime")}
+                value={`${formatHours(split.overtimeMs)}  (${decimalHours(split.overtimeMs)})`}
+              />
             )}
             {split.doubleTimeMs > 0 && (
-              <SummaryRow label={t("Double time")} value={`${formatHours(split.doubleTimeMs)}  (${decimalHours(split.doubleTimeMs)})`} />
+              <SummaryRow
+                label={t("Double time")}
+                value={`${formatHours(split.doubleTimeMs)}  (${decimalHours(split.doubleTimeMs)})`}
+              />
             )}
             <SummaryRow
               label={t("Total worked")}
@@ -196,6 +274,46 @@ export function PrintableTimecard({
         </table>
       </section>
 
+      {detailed && (
+        <section className="mt-5" data-print-keep>
+          <p className="border-b border-black pb-1 text-[10px] font-bold uppercase tracking-wider">
+            {t("Notes")}
+          </p>
+          {notes.length === 0 ? (
+            <p className="py-2 text-neutral-500">{t("No notes for this period.")}</p>
+          ) : (
+            <table className="w-full border-collapse text-[11px]">
+              <thead>
+                <tr className="bg-neutral-100">
+                  <Th className="w-[17%] text-left">{t("Date")}</Th>
+                  <Th className="text-left">{t("Note")}</Th>
+                  <Th className="w-[18%] text-left">{t("Created by")}</Th>
+                  <Th className="w-[17%] text-left">{t("Created")}</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {notes.map((n, i) => (
+                  <tr key={i} className="border-b border-neutral-300">
+                    <Td className="text-left font-medium">{fmtRowDate(fromDayString(n.day))}</Td>
+                    <Td className="whitespace-pre-wrap text-left">{n.note}</Td>
+                    <Td className="text-left">{n.author || "—"}</Td>
+                    <Td className="text-left text-neutral-600">
+                      {new Date(n.createdAt).toLocaleString(localeTag(), {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })}
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
+      )}
+
       <section className="mt-8 grid grid-cols-2 gap-10" data-print-keep>
         <SignatureLine role={t("Employee signature")} />
         <SignatureLine role={t("Supervisor signature")} />
@@ -203,14 +321,18 @@ export function PrintableTimecard({
 
       <footer className="mt-6 border-t border-neutral-300 pt-2 text-[9px] text-neutral-500">
         <p>
-          {t("I certify that the hours recorded above are a true and complete record of the time I worked during this pay period.")}
+          {t(
+            "I certify that the hours recorded above are a true and complete record of the time I worked during this pay period.",
+          )}
         </p>
         <p className="mt-1">
           {roundMinutes > 0
             ? t("Punch times and hours rounded to the nearest {n} minutes.", { n: roundMinutes })
             : t("Punch times shown as recorded.")}{" "}
           {t("Unpaid break time is deducted from hours worked; paid break time is not.")}{" "}
-          {t("Generated by Scheduling Pilot on {date}.", { date: new Date().toLocaleString(localeTag()) })}
+          {t("Generated by Scheduling Pilot on {date}.", {
+            date: new Date().toLocaleString(localeTag()),
+          })}
         </p>
         <p className="mt-1">{overtimeNote}</p>
       </footer>
@@ -238,7 +360,9 @@ function Th({ children, className = "" }: { children?: React.ReactNode; classNam
 }
 
 function Td({ children, className = "" }: { children?: React.ReactNode; className?: string }) {
-  return <td className={`px-1.5 py-1 text-center align-top tabular-nums ${className}`}>{children}</td>;
+  return (
+    <td className={`px-1.5 py-1 text-center align-top tabular-nums ${className}`}>{children}</td>
+  );
 }
 
 function SummaryRow({
@@ -254,7 +378,11 @@ function SummaryRow({
   last?: boolean;
 }) {
   return (
-    <tr className={emphasis ? "border-t border-black font-bold" : last ? "border-b border-neutral-300" : ""}>
+    <tr
+      className={
+        emphasis ? "border-t border-black font-bold" : last ? "border-b border-neutral-300" : ""
+      }
+    >
       <td className="py-1 pr-6 text-right">{label}</td>
       <td className="py-1 text-right tabular-nums">{value}</td>
     </tr>
