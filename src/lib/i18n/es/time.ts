@@ -65,8 +65,15 @@ export const time: Record<string, string> = {
   "Worksite": "Lugar de trabajo",
   "You": "Tú",
   "Waiting for GPS location…": "Esperando la ubicación GPS…",
-  "Your GPS is off. You can still clock in, but your admin will be notified.":
-    "Tu GPS está apagado. Puedes marcar la entrada, pero se avisará a tu administrador.",
+  "Your GPS is off. You can still clock in for {n} more day(s), but your admin will be notified. After that you will not be able to clock in until location is turned on.":
+    "Tu GPS está apagado. Puedes marcar la entrada durante {n} día(s) más, pero se avisará a tu administrador. Después no podrás marcar la entrada hasta que actives la ubicación.",
+  "You will not be able to clock in until you authorize the proper location settings on your phone or tablet.":
+    "No podrás marcar la entrada hasta que autorices la configuración de ubicación correcta en tu teléfono o tableta.",
+  "Allow location for this app": "Permitir la ubicación para esta app",
+  "Your browser is blocking location for this site. Tap the lock or settings icon next to the address bar, set Location to Allow, then reload the page.":
+    "Tu navegador está bloqueando la ubicación para este sitio. Toca el candado o el icono de configuración junto a la barra de direcciones, cambia Ubicación a Permitir y vuelve a cargar la página.",
+  "You have {n} day(s) left to turn on location. After that you will not be able to clock in without it.":
+    "Te quedan {n} día(s) para activar la ubicación. Después no podrás marcar la entrada sin ella.",
   "Your GPS is not on": "Tu GPS no está encendido",
   "Your company needs your location to confirm a valid clock-in. Turn on location for this app and try again.":
     "Tu empresa necesita tu ubicación para confirmar una entrada válida. Activa la ubicación para esta app e inténtalo de nuevo.",

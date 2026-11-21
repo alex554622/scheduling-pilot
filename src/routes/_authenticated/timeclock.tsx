@@ -20,6 +20,12 @@ import { LeafletMap } from "@/components/leaflet-map";
 import { PaySettingsCard } from "@/components/pay-settings-card";
 import { readPaySettings, type PaySettings } from "@/lib/pay-settings";
 import { localeTag, translate, useLocaleTag, useT } from "@/lib/i18n";
+import { openLocationSettings } from "@/lib/native/location-settings";
+
+const GPS_GRACE_DAYS = 7;
+const DAY_MS = 86_400_000;
+const GPS_BLOCKED_MSG =
+  "You will not be able to clock in until you authorize the proper location settings on your phone or tablet.";
 import {
   Clock,
   MapPin,
@@ -284,7 +290,17 @@ function TimeclockPage() {
       })()
     : null;
 
-  // Watch position
+  // Watch position. Restarted when they come back to the page (e.g. from the
+  // phone's Settings after turning location on), since a watch that already
+  // failed with "permission denied" does not pick the new permission up.
+  const [geoWatchKey, setGeoWatchKey] = useState(0);
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") setGeoWatchKey((k) => k + 1);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
   useEffect(() => {
     if (!("geolocation" in navigator)) {
       setGeoErr(translate("Geolocation not supported on this device."));
@@ -303,7 +319,7 @@ function TimeclockPage() {
       { enableHighAccuracy: true, maximumAge: 10_000, timeout: 15_000 },
     );
     return () => navigator.geolocation.clearWatch(id);
-  }, []);
+  }, [geoWatchKey]);
 
   const company_loc =
     companyQ.data?.latitude != null && companyQ.data?.longitude != null
@@ -325,6 +341,40 @@ function TimeclockPage() {
   const waitingForGps = !coords && !geoErr;
   // Only worth warning about when the company actually checks location.
   const gpsOffUnderFence = noGps && rules.require_geofence && !!company_loc;
+
+  // Clocking in without GPS is a 7-day grace period, counted from the first
+  // clock-in without it; after that the server refuses Clock IN until location
+  // is on (see 20261121120000_gps_grace_period.sql). Any punch with GPS ends it.
+  const graceQ = useQuery({
+    queryKey: ["my-gps-grace", user?.id],
+    enabled: !!user?.id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("gps_off_grace")
+        .select("since")
+        .eq("user_id", user!.id)
+        .maybeSingle();
+      if (error) throw error;
+      return data?.since ?? null;
+    },
+  });
+  const graceDeadline = graceQ.data ? new Date(graceQ.data).getTime() + GPS_GRACE_DAYS * DAY_MS : null;
+  const graceDaysLeft =
+    graceDeadline == null ? GPS_GRACE_DAYS : Math.max(0, Math.ceil((graceDeadline - Date.now()) / DAY_MS));
+  const graceExpired = gpsOffUnderFence && graceDeadline != null && Date.now() >= graceDeadline;
+  const clockInBlockedNoGps = graceExpired && nextKind === "in";
+
+  const [settingsHelp, setSettingsHelp] = useState(false);
+  const goToLocationSettings = async () => {
+    setSettingsHelp(false);
+    try {
+      const r = await openLocationSettings();
+      if (r === "blocked") setSettingsHelp(true);
+    } catch {
+      setSettingsHelp(true);
+    }
+    setGeoWatchKey((k) => k + 1);
+  };
   const allowedBreaks = ([10, 30, 60] as const).filter(
     (m) =>
       (m === 10 && rules.allow_break_10) ||
@@ -377,8 +427,17 @@ function TimeclockPage() {
       }
       qc.invalidateQueries({ queryKey: ["my-punches-recent"] });
       qc.invalidateQueries({ queryKey: ["timecards"] });
+      qc.invalidateQueries({ queryKey: ["my-gps-grace"] });
     },
-    onError: (e: any) => setFlash({ kind: "err", msg: e.message || t("Failed to punch") }),
+    onError: (e: Error) => {
+      const msg = e?.message ?? "";
+      if (msg.includes("GPS_GRACE_EXPIRED")) {
+        qc.invalidateQueries({ queryKey: ["my-gps-grace"] });
+        setFlash({ kind: "err", msg: t(GPS_BLOCKED_MSG) });
+      } else {
+        setFlash({ kind: "err", msg: msg || t("Failed to punch") });
+      }
+    },
     onSettled: () => setSubmitting(false),
   });
 
@@ -639,10 +698,31 @@ function TimeclockPage() {
             {geoErr && (
               <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
                 {geoErr}
-                {noGps && rules.require_geofence && !locationMissing && (
-                  <p className="mt-1 font-medium">
-                    {t("Your GPS is off. You can still clock in, but your admin will be notified.")}
-                  </p>
+                {gpsOffUnderFence && (
+                  <div className="mt-2 space-y-2">
+                    <p className="font-medium">
+                      {graceExpired
+                        ? t(GPS_BLOCKED_MSG)
+                        : t("Your GPS is off. You can still clock in for {n} more day(s), but your admin will be notified. After that you will not be able to clock in until location is turned on.", {
+                            n: graceDaysLeft,
+                          })}
+                    </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={graceExpired ? "destructive" : "outline"}
+                      className="w-full"
+                      onClick={goToLocationSettings}
+                    >
+                      <MapPin className="mr-1.5 h-3.5 w-3.5" />
+                      {t("Allow location for this app")}
+                    </Button>
+                    {settingsHelp && (
+                      <p className="text-foreground/80">
+                        {t("Your browser is blocking location for this site. Tap the lock or settings icon next to the address bar, set Location to Allow, then reload the page.")}
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
             )}
@@ -715,6 +795,7 @@ function TimeclockPage() {
                 submitting ||
                 punchMut.isPending ||
                 fenceBlocks ||
+                clockInBlockedNoGps ||
                 status === "on_break"
               }
               onClick={() => {
@@ -906,11 +987,24 @@ function TimeclockPage() {
             <AlertDialogTitle>{t("Your GPS is not on")}</AlertDialogTitle>
             <AlertDialogDescription>
               {t("Your company needs your location to confirm a valid clock-in. Turn on location for this app and try again.")}{" "}
-              {t("If you clock in anyway, it will be marked as unverified and your admin will be notified.")}
+              {t("If you clock in anyway, it will be marked as unverified and your admin will be notified.")}{" "}
+              {t("You have {n} day(s) left to turn on location. After that you will not be able to clock in without it.", {
+                n: graceDaysLeft,
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("Cancel")}</AlertDialogCancel>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setConfirmNoGps(false);
+                void goToLocationSettings();
+              }}
+            >
+              {t("Allow location for this app")}
+            </Button>
             <AlertDialogAction
               onClick={() => {
                 setSubmitting(true);

@@ -122,6 +122,24 @@ export type Database = {
         }
         Relationships: []
       }
+      gps_off_grace: {
+        Row: {
+          company_id: string
+          since: string
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          since?: string
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          since?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       kiosk_devices: {
         Row: {
           company_id: string
