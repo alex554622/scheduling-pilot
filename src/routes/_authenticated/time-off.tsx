@@ -18,7 +18,7 @@ export const Route = createFileRoute("/_authenticated/time-off")({
   component: TimeOffPage,
 });
 
-type Kind = "vacation" | "sick" | "personal" | "other";
+type Kind = "vacation" | "sick" | "family_leave" | "personal" | "other";
 
 interface RequestRow {
   id: string;
@@ -50,7 +50,7 @@ function days(a: string, b: string) {
 }
 
 /** Stored kinds and statuses stay English; these are the words shown for them. */
-const KIND_WORD: Record<string, string> = { vacation: "Vacation", sick: "Sick", personal: "Personal", other: "Other" };
+const KIND_WORD: Record<string, string> = { vacation: "Vacation", sick: "Sick", family_leave: "Family leave", personal: "Personal", other: "Other" };
 const STATUS_WORD: Record<string, string> = { pending: "Pending", approved: "Approved", denied: "Denied", cancelled: "Cancelled" };
 
 function TimeOffPage() {
@@ -398,6 +398,7 @@ function NewRequestDialog({ open, onClose, userId, companyId, onSaved }: { open:
             <select id="k" value={kind} onChange={(e) => setKind(e.target.value as Kind)} className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm">
               <option value="vacation">{t("Vacation")}</option>
               <option value="sick">{t("Sick")}</option>
+              <option value="family_leave">{t("Family leave")}</option>
               <option value="personal">{t("Personal")}</option>
               <option value="other">{t("Other")}</option>
             </select>

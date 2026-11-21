@@ -10,6 +10,7 @@ export const schedule: Record<string, string> = {
   "Vacation": "Vacaciones",
   "Sick": "Enfermedad",
   "Personal": "Personal",
+  "Family leave": "Licencia familiar",
   "Day off": "Día libre",
   "Nobody is scheduled this week.": "Nadie está programado esta semana.",
   "Weekly schedule": "Horario semanal",

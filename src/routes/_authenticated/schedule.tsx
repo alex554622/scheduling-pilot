@@ -141,6 +141,7 @@ function timeOffOn(timeOff: TimeOffRow[], memberId: string, day: Date): TimeOffR
 const TIME_OFF_LABEL: Record<string, string> = {
   vacation: "Vacation",
   sick: "Sick",
+  family_leave: "Family leave",
   personal: "Personal",
   other: "Day off",
 };

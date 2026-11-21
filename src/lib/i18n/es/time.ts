@@ -199,6 +199,7 @@ export const time: Record<string, string> = {
   "Vacation": "Vacaciones",
   "Sick": "Enfermedad",
   "Personal": "Personal",
+  "Family leave": "Licencia familiar",
   "Other": "Otro",
   "Pending": "Pendiente",
   "Approved": "Aprobado",
