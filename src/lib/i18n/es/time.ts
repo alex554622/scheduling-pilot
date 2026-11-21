@@ -65,6 +65,8 @@ export const time: Record<string, string> = {
   "Worksite": "Lugar de trabajo",
   "You": "Tú",
   "Waiting for GPS location…": "Esperando la ubicación GPS…",
+  "Your GPS is off. You can still clock in, but your admin will be notified.":
+    "Tu GPS está apagado. Puedes marcar la entrada, pero se avisará a tu administrador.",
   "Clocked in successfully.": "Entrada registrada correctamente.",
   "Clocked out successfully.": "Salida registrada correctamente.",
   "Failed to punch": "No se pudo registrar",

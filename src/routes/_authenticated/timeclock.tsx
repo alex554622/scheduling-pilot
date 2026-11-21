@@ -307,6 +307,11 @@ function TimeclockPage() {
   const radius = companyQ.data?.geofence_radius_m ?? 200;
   const withinFence = distance == null ? null : distance <= radius;
   const fenceBlocks = rules.require_geofence && withinFence === false;
+  // GPS is off, denied or unavailable. They can still punch — the server
+  // records it without a location and tells the admins. Until GPS has either
+  // given a fix or failed, keep waiting so a slow fix doesn't count as "off".
+  const noGps = !coords && !!geoErr;
+  const waitingForGps = !coords && !geoErr;
   const allowedBreaks = ([10, 30, 60] as const).filter(
     (m) =>
       (m === 10 && rules.allow_break_10) ||
@@ -326,11 +331,11 @@ function TimeclockPage() {
 
   const punchMut = useMutation({
     mutationFn: async () => {
-      if (!coords) throw new Error(translate("Waiting for GPS location…"));
+      if (waitingForGps) throw new Error(translate("Waiting for GPS location…"));
       const { data, error } = await supabase.rpc("clock_punch", {
-        _lat: coords.lat,
-        _lng: coords.lng,
-        _accuracy: coords.acc,
+        _lat: coords?.lat ?? null,
+        _lng: coords?.lng ?? null,
+        _accuracy: coords?.acc,
       });
       if (error) throw error;
       // Clocked in at a location they picked: file the shift there, over
@@ -379,13 +384,13 @@ function TimeclockPage() {
 
   const breakMut = useMutation({
     mutationFn: async (minutes: 10 | 30 | 60 | null) => {
-      if (!coords) throw new Error(translate("Waiting for GPS location…"));
+      if (waitingForGps) throw new Error(translate("Waiting for GPS location…"));
       // Ending a break omits _minutes entirely (the SQL default is NULL);
       // break_punch only requires a length when starting one.
       const { data, error } = await supabase.rpc("break_punch", {
-        _lat: coords.lat,
-        _lng: coords.lng,
-        _accuracy: coords.acc,
+        _lat: coords?.lat ?? null,
+        _lng: coords?.lng ?? null,
+        _accuracy: coords?.acc,
         ...(minutes !== null ? { _minutes: minutes } : {}),
       });
       if (error) throw error;
@@ -611,6 +616,11 @@ function TimeclockPage() {
             {geoErr && (
               <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
                 {geoErr}
+                {noGps && rules.require_geofence && !locationMissing && (
+                  <p className="mt-1 font-medium">
+                    {t("Your GPS is off. You can still clock in, but your admin will be notified.")}
+                  </p>
+                )}
               </div>
             )}
 
@@ -677,7 +687,7 @@ function TimeclockPage() {
               size="lg"
               className="w-full"
               disabled={
-                !coords ||
+                waitingForGps ||
                 locationMissing ||
                 submitting ||
                 punchMut.isPending ||
@@ -720,7 +730,7 @@ function TimeclockPage() {
                       key={m}
                       size="sm"
                       variant="outline"
-                      disabled={!coords || locationMissing || breakMut.isPending || fenceBlocks}
+                      disabled={waitingForGps || locationMissing || breakMut.isPending || fenceBlocks}
                       onClick={() => {
                         setFlash(null);
                         breakMut.mutate(m);
@@ -744,7 +754,7 @@ function TimeclockPage() {
                 variant="outline"
                 className="mt-2 w-full"
                 disabled={
-                  !coords || locationMissing || breakMut.isPending || fenceBlocks || breakLocked
+                  waitingForGps || locationMissing || breakMut.isPending || fenceBlocks || breakLocked
                 }
                 onClick={() => {
                   setFlash(null);

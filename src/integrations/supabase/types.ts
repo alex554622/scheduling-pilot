@@ -1465,8 +1465,8 @@ export type Database = {
       break_punch: {
         Args: {
           _accuracy?: number
-          _lat: number
-          _lng: number
+          _lat: number | null
+          _lng: number | null
           _minutes?: number
         }
         Returns: {
@@ -1619,7 +1619,7 @@ export type Database = {
       trial_plan_id: { Args: never; Returns: string }
       default_plan_capabilities: { Args: never; Returns: Json }
       clock_punch: {
-        Args: { _accuracy?: number; _lat: number; _lng: number }
+        Args: { _accuracy?: number; _lat: number | null; _lng: number | null }
         Returns: {
           accuracy_m: number | null
           at: string
