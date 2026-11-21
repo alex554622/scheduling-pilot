@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { useAppRules } from "@/lib/app-rules";
 import { readBreak } from "@/lib/timecard-totals";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -99,6 +100,22 @@ function fmtCountdown(ms: number): string {
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
 }
 
+type Fix = { lat: number; lng: number; acc: number };
+
+/**
+ * The last position this page got, kept across visits. Coming back to the time
+ * clock within a minute starts from it instead of from nothing, while the
+ * watch below fetches a fresh one. Older than that, it isn't trusted for a
+ * punch and the page waits for a new fix as before.
+ */
+const FIX_REUSE_MS = 60_000;
+let lastFix: (Fix & { at: number }) | null = null;
+function recentFix(): Fix | null {
+  return lastFix && Date.now() - lastFix.at < FIX_REUSE_MS
+    ? { lat: lastFix.lat, lng: lastFix.lng, acc: lastFix.acc }
+    : null;
+}
+
 type Company = {
   id: string;
   name: string;
@@ -114,7 +131,7 @@ function TimeclockPage() {
   const rules = useAppRules();
   const capBreaks = rules.cap_break_to_length;
   const qc = useQueryClient();
-  const [coords, setCoords] = useState<{ lat: number; lng: number; acc: number } | null>(null);
+  const [coords, setCoords] = useState<Fix | null>(recentFix);
   const [geoErr, setGeoErr] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [flash, setFlash] = useState<{ kind: "ok" | "warn" | "err"; msg: string } | null>(null);
@@ -174,6 +191,7 @@ function TimeclockPage() {
   // Before clocking in: "" leaves it to the schedule and the map.
   const [pickedLocation, setPickedLocation] = useState("");
 
+  const punchesLoading = recentQ.isPending && recentQ.fetchStatus !== "idle";
   const lastPunch = recentQ.data?.[0];
   // Derived status: off | working | on_break
   const status: "off" | "working" | "on_break" =
@@ -306,19 +324,57 @@ function TimeclockPage() {
       setGeoErr(translate("Geolocation not supported on this device."));
       return;
     }
+    let cancelled = false;
+    let precise = false;
+    // Whether this run has a fix of its own, not just the one kept from last visit.
+    let fresh = false;
+    const take = (pos: GeolocationPosition) => {
+      const { latitude: lat, longitude: lng, accuracy: acc } = pos.coords;
+      const fix = { lat, lng, acc };
+      lastFix = { ...fix, at: Date.now() };
+      fresh = true;
+      setCoords(fix);
+      setGeoErr(null);
+    };
+    // A high-accuracy fix needs the GPS chip, which from cold can take most of
+    // the 15-second timeout, and until something arrives Clock IN stays
+    // disabled. Ask for a quick coarse fix (network/Wi-Fi, or one the OS
+    // already has from the last minute) alongside it, so the page is usable
+    // in a second or two; the precise watch replaces it as soon as it lands.
+    // The accuracy goes up with every punch either way.
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        if (!cancelled && !precise) take(pos);
+      },
+      () => {
+        /* the watch below reports errors */
+      },
+      { enableHighAccuracy: false, maximumAge: FIX_REUSE_MS, timeout: 5_000 },
+    );
     const id = navigator.geolocation.watchPosition(
       (pos) => {
-        setCoords({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-          acc: pos.coords.accuracy,
-        });
-        setGeoErr(null);
+        if (cancelled) return;
+        precise = true;
+        take(pos);
       },
-      (err) => setGeoErr(err.message || translate("Unable to read location")),
+      (err) => {
+        if (cancelled) return;
+        // A slow GPS timing out while a coarse fix is in hand isn't "GPS off".
+        if (err.code === err.TIMEOUT && fresh) return;
+        // Nothing new this visit: the position kept from last time may be from
+        // before location was switched off, so it must not stand in for GPS.
+        if (!fresh) {
+          lastFix = null;
+          setCoords(null);
+        }
+        setGeoErr(err.message || translate("Unable to read location"));
+      },
       { enableHighAccuracy: true, maximumAge: 10_000, timeout: 15_000 },
     );
-    return () => navigator.geolocation.clearWatch(id);
+    return () => {
+      cancelled = true;
+      navigator.geolocation.clearWatch(id);
+    };
   }, [geoWatchKey]);
 
   const company_loc =
@@ -581,11 +637,15 @@ function TimeclockPage() {
             </div>
             <div className="mb-4 flex items-center justify-between text-sm">
               <span className="text-muted-foreground">{t("Last punch")}</span>
-              <span className="font-medium text-foreground">
-                {lastPunch
-                  ? `${t(PUNCH_LABEL[lastPunch.kind])} · ${new Date(lastPunch.at).toLocaleTimeString(tag, { hour: "numeric", minute: "2-digit" })}`
-                  : "—"}
-              </span>
+              {punchesLoading ? (
+                <Skeleton className="h-4 w-28" />
+              ) : (
+                <span className="font-medium text-foreground">
+                  {lastPunch
+                    ? `${t(PUNCH_LABEL[lastPunch.kind])} · ${new Date(lastPunch.at).toLocaleTimeString(tag, { hour: "numeric", minute: "2-digit" })}`
+                    : "—"}
+                </span>
+              )}
             </div>
 
             {status !== "off" && shift.startedAt != null && (
@@ -790,6 +850,7 @@ function TimeclockPage() {
               size="lg"
               className="w-full"
               disabled={
+                punchesLoading ||
                 waitingForGps ||
                 locationMissing ||
                 submitting ||
@@ -813,6 +874,19 @@ function TimeclockPage() {
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   {t("Recording…")}
+                </>
+              ) : punchesLoading ? (
+                // Until the punches arrive we don't know whether this is IN or OUT.
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {t("Loading…")}
+                </>
+              ) : waitingForGps && !locationMissing ? (
+                // Was a plain disabled button for as long as GPS took — the
+                // part of this page that looked frozen.
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {t("Waiting for GPS location…")}
                 </>
               ) : nextKind === "in" ? (
                 <>
@@ -925,7 +999,13 @@ function TimeclockPage() {
               <MapPin className="h-4 w-4 text-primary" /> {t("Recent punches")}
             </div>
             <ul className="divide-y divide-border text-sm">
-              {(recentQ.data ?? []).length === 0 && (
+              {punchesLoading &&
+                [0, 1, 2].map((i) => (
+                  <li key={i} className="py-2.5">
+                    <Skeleton className="h-4 w-2/3" />
+                  </li>
+                ))}
+              {!punchesLoading && (recentQ.data ?? []).length === 0 && (
                 <li className="py-3 text-muted-foreground">{t("No punches yet.")}</li>
               )}
               {[
