@@ -666,6 +666,7 @@ function AccountsPage() {
       <DeleteAccountDialog
         account={deleting}
         pending={remove.isPending}
+        error={err}
         onCancel={() => setDeleting(null)}
         onConfirm={() => deleting && remove.mutate(deleting.user_id)}
       />
@@ -681,11 +682,14 @@ function AccountsPage() {
 function DeleteAccountDialog({
   account,
   pending,
+  error,
   onCancel,
   onConfirm,
 }: {
   account: AccountRow | null;
   pending: boolean;
+  /** The page's error line sits behind this dialog, so a failed delete says so here too. */
+  error: string | null;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -729,6 +733,11 @@ function DeleteAccountDialog({
             onChange={(e) => setTyped(e.target.value)}
           />
         </div>
+        {error && (
+          <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {error}
+          </p>
+        )}
         <DialogFooter>
           <Button variant="outline" onClick={onCancel} disabled={pending}>
             {t("Cancel")}
