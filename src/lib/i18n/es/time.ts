@@ -67,6 +67,16 @@ export const time: Record<string, string> = {
   "Waiting for GPS location…": "Esperando la ubicación GPS…",
   "Your GPS is off. You can still clock in, but your admin will be notified.":
     "Tu GPS está apagado. Puedes marcar la entrada, pero se avisará a tu administrador.",
+  "Your GPS is not on": "Tu GPS no está encendido",
+  "Your company needs your location to confirm a valid clock-in. Turn on location for this app and try again.":
+    "Tu empresa necesita tu ubicación para confirmar una entrada válida. Activa la ubicación para esta app e inténtalo de nuevo.",
+  "If you clock in anyway, it will be marked as unverified and your admin will be notified.":
+    "Si marcas la entrada de todos modos, quedará como no verificada y se avisará a tu administrador.",
+  "Clock in anyway": "Marcar entrada de todos modos",
+  "Clocked in without GPS. Your admin was notified and will review this clock-in. Turn on your location so your punches count as valid.":
+    "Entrada registrada sin GPS. Se avisó a tu administrador y revisará esta entrada. Activa tu ubicación para que tus marcas sean válidas.",
+  "Clocked out without GPS. Your admin was notified and will review this punch. Turn on your location so your punches count as valid.":
+    "Salida registrada sin GPS. Se avisó a tu administrador y revisará esta marca. Activa tu ubicación para que tus marcas sean válidas.",
   "Clocked in successfully.": "Entrada registrada correctamente.",
   "Clocked out successfully.": "Salida registrada correctamente.",
   "Failed to punch": "No se pudo registrar",

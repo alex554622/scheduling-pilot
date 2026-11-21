@@ -6,6 +6,16 @@ import { useAuth } from "@/lib/auth";
 import { useAppRules } from "@/lib/app-rules";
 import { readBreak } from "@/lib/timecard-totals";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { LeafletMap } from "@/components/leaflet-map";
 import { PaySettingsCard } from "@/components/pay-settings-card";
 import { readPaySettings, type PaySettings } from "@/lib/pay-settings";
@@ -101,7 +111,8 @@ function TimeclockPage() {
   const [coords, setCoords] = useState<{ lat: number; lng: number; acc: number } | null>(null);
   const [geoErr, setGeoErr] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [flash, setFlash] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
+  const [flash, setFlash] = useState<{ kind: "ok" | "warn" | "err"; msg: string } | null>(null);
+  const [confirmNoGps, setConfirmNoGps] = useState(false);
 
   const companyQ = useQuery<Company | null>({
     queryKey: ["timeclock-company", company?.id],
@@ -312,6 +323,8 @@ function TimeclockPage() {
   // given a fix or failed, keep waiting so a slow fix doesn't count as "off".
   const noGps = !coords && !!geoErr;
   const waitingForGps = !coords && !geoErr;
+  // Only worth warning about when the company actually checks location.
+  const gpsOffUnderFence = noGps && rules.require_geofence && !!company_loc;
   const allowedBreaks = ([10, 30, 60] as const).filter(
     (m) =>
       (m === 10 && rules.allow_break_10) ||
@@ -351,7 +364,17 @@ function TimeclockPage() {
     },
     onSuccess: () => {
       setPickedLocation("");
-      setFlash({ kind: "ok", msg: nextKind === "in" ? t("Clocked in successfully.") : t("Clocked out successfully.") });
+      if (gpsOffUnderFence) {
+        setFlash({
+          kind: "warn",
+          msg:
+            nextKind === "in"
+              ? t("Clocked in without GPS. Your admin was notified and will review this clock-in. Turn on your location so your punches count as valid.")
+              : t("Clocked out without GPS. Your admin was notified and will review this punch. Turn on your location so your punches count as valid."),
+        });
+      } else {
+        setFlash({ kind: "ok", msg: nextKind === "in" ? t("Clocked in successfully.") : t("Clocked out successfully.") });
+      }
       qc.invalidateQueries({ queryKey: ["my-punches-recent"] });
       qc.invalidateQueries({ queryKey: ["timecards"] });
     },
@@ -695,8 +718,12 @@ function TimeclockPage() {
                 status === "on_break"
               }
               onClick={() => {
-                setSubmitting(true);
                 setFlash(null);
+                if (gpsOffUnderFence && nextKind === "in") {
+                  setConfirmNoGps(true);
+                  return;
+                }
+                setSubmitting(true);
                 punchMut.mutate();
               }}
               variant={nextKind === "in" ? "default" : "secondary"}
@@ -797,7 +824,13 @@ function TimeclockPage() {
             )}
             {flash && (
               <p
-                className={`mt-3 text-center text-xs ${flash.kind === "ok" ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}
+                className={`mt-3 text-center text-xs ${
+                  flash.kind === "ok"
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : flash.kind === "warn"
+                      ? "rounded-md border border-amber-300 bg-amber-50 p-3 font-medium text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200"
+                      : "text-destructive"
+                }`}
               >
                 {flash.msg}
               </p>
@@ -866,6 +899,29 @@ function TimeclockPage() {
           </div>
         </div>
       </div>
+
+      <AlertDialog open={confirmNoGps} onOpenChange={setConfirmNoGps}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("Your GPS is not on")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("Your company needs your location to confirm a valid clock-in. Turn on location for this app and try again.")}{" "}
+              {t("If you clock in anyway, it will be marked as unverified and your admin will be notified.")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("Cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setSubmitting(true);
+                punchMut.mutate();
+              }}
+            >
+              {t("Clock in anyway")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
