@@ -16,13 +16,19 @@ interface Notification {
   title: string;
   body: string | null;
   link: string | null;
+  /** The company it is about; null for account-wide ones (join requests…). */
+  company_id?: string | null;
   read_at: string | null;
   created_at: string;
 }
 
 export function NotificationsBell() {
-  const { user } = useAuth();
+  const { user, company } = useAuth();
   const t = useT("shell");
+  // A notification from another of this person's companies is counted on the
+  // company switcher, never popped up over the one they are working in.
+  const companyRef = useRef<string | null>(company?.id ?? null);
+  companyRef.current = company?.id ?? null;
   const localeTag = useLocaleTag();
   const { wants, prefs } = useNotificationPrefs();
   const navigate = useNavigate();
@@ -49,7 +55,7 @@ export function NotificationsBell() {
   const openRef = useRef<(n: Notification) => void>(() => {});
 
   const notifsQ = useQuery({
-    queryKey: ["notifications", user?.id],
+    queryKey: ["notifications", user?.id, company?.id ?? null],
     enabled: !!user,
     queryFn: async () => {
       const cutoff = readCutoff();
@@ -65,7 +71,7 @@ export function NotificationsBell() {
         .lt("read_at", cutoff);
       const { data, error } = await supabase
         .from("notifications")
-        .select("id, type, title, body, link, read_at, created_at")
+        .select("id, type, title, body, link, company_id, read_at, created_at")
         .or(`read_at.is.null,read_at.gte.${cutoff}`)
         .order("created_at", { ascending: false })
         .limit(20);
@@ -89,6 +95,7 @@ export function NotificationsBell() {
           void qc.invalidateQueries({ queryKey: ["notifications", user.id] });
           if (payload.eventType !== "INSERT") return;
           const row = payload.new as Notification;
+          if (row.company_id && row.company_id !== companyRef.current) return;
           const { wants: allowed, popup, sound, desktop } = prefsRef.current;
           if (!allowed(row.type)) return;
           if (sound) playChime();
@@ -136,7 +143,13 @@ export function NotificationsBell() {
   // The triggers already skip the kinds someone has switched off, but only the
   // ones that were taught to ask. Filtering here as well means the switch holds
   // for every kind, including rows written before it was thrown.
-  const items = useMemo(() => (notifsQ.data ?? []).filter((n) => wants(n.type)), [notifsQ.data, wants]);
+  const items = useMemo(
+    () =>
+      (notifsQ.data ?? []).filter(
+        (n) => wants(n.type) && (!n.company_id || n.company_id === company?.id),
+      ),
+    [notifsQ.data, wants, company?.id],
+  );
   const unread = useMemo(() => items.filter((n) => !n.read_at).length, [items]);
 
   const markRead = useMutation({

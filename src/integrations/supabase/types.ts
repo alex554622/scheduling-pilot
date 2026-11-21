@@ -14,6 +14,93 @@ export type Database = {
   }
   public: {
     Tables: {
+      company_memberships: {
+        Row: {
+          company_id: string
+          department_id: string | null
+          employee_code: string | null
+          id: string
+          is_active: boolean
+          joined_at: string
+          max_weekly_hours: number
+          position: string | null
+          position_id: string | null
+          status: string
+          status_changed_at: string
+          status_changed_by: string | null
+          status_reason: string | null
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          department_id?: string | null
+          employee_code?: string | null
+          id?: string
+          is_active?: boolean
+          joined_at?: string
+          max_weekly_hours?: number
+          position?: string | null
+          position_id?: string | null
+          status?: string
+          status_changed_at?: string
+          status_changed_by?: string | null
+          status_reason?: string | null
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          department_id?: string | null
+          employee_code?: string | null
+          id?: string
+          is_active?: boolean
+          joined_at?: string
+          max_weekly_hours?: number
+          position?: string | null
+          position_id?: string | null
+          status?: string
+          status_changed_at?: string
+          status_changed_by?: string | null
+          status_reason?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      company_join_requests: {
+        Row: {
+          company_id: string
+          created_at: string
+          decided_at: string | null
+          decided_by: string | null
+          decision_note: string | null
+          id: string
+          message: string | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          decision_note?: string | null
+          id?: string
+          message?: string | null
+          status?: string
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          decision_note?: string | null
+          id?: string
+          message?: string | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       app_settings: {
         Row: {
           key: string
@@ -161,6 +248,75 @@ export type Database = {
         }
         Relationships: []
       }
+      kiosk_settings: {
+        Row: {
+          company_id: string
+          display_mode: string
+          idle_seconds: number
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          company_id: string
+          display_mode?: string
+          idle_seconds?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          company_id?: string
+          display_mode?: string
+          idle_seconds?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
+      kiosk_slides: {
+        Row: {
+          body: string | null
+          company_id: string
+          created_at: string
+          created_by: string | null
+          duration_seconds: number
+          enabled: boolean
+          id: string
+          image_path: string | null
+          kind: string
+          position: number
+          title: string | null
+          updated_at: string
+        }
+        Insert: {
+          body?: string | null
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          duration_seconds?: number
+          enabled?: boolean
+          id?: string
+          image_path?: string | null
+          kind: string
+          position?: number
+          title?: string | null
+          updated_at?: string
+        }
+        Update: {
+          body?: string | null
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          duration_seconds?: number
+          enabled?: boolean
+          id?: string
+          image_path?: string | null
+          kind?: string
+          position?: number
+          title?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       employee_clock_codes: {
         Row: {
           code: string
@@ -191,8 +347,10 @@ export type Database = {
           geofence_radius_m: number
           id: string
           join_code: string | null
+          join_code_enabled: boolean
           latitude: number | null
           longitude: number | null
+          members_can_leave: boolean
           name: string
           plan: string
           review_note: string | null
@@ -210,8 +368,10 @@ export type Database = {
           geofence_radius_m?: number
           id?: string
           join_code?: string | null
+          join_code_enabled?: boolean
           latitude?: number | null
           longitude?: number | null
+          members_can_leave?: boolean
           name: string
           plan?: string
           review_note?: string | null
@@ -229,8 +389,10 @@ export type Database = {
           geofence_radius_m?: number
           id?: string
           join_code?: string | null
+          join_code_enabled?: boolean
           latitude?: number | null
           longitude?: number | null
+          members_can_leave?: boolean
           name?: string
           plan?: string
           review_note?: string | null
@@ -687,6 +849,7 @@ export type Database = {
       notifications: {
         Row: {
           body: string | null
+          company_id: string | null
           created_at: string
           id: string
           link: string | null
@@ -697,6 +860,7 @@ export type Database = {
         }
         Insert: {
           body?: string | null
+          company_id?: string | null
           created_at?: string
           id?: string
           link?: string | null
@@ -707,6 +871,7 @@ export type Database = {
         }
         Update: {
           body?: string | null
+          company_id?: string | null
           created_at?: string
           id?: string
           link?: string | null
@@ -1455,9 +1620,92 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      company_members: {
+        Row: {
+          company_id: string
+          created_at: string
+          department_id: string | null
+          employee_code: string | null
+          full_name: string
+          id: string
+          is_active: boolean
+          joined_at: string
+          max_weekly_hours: number
+          phone: string | null
+          position: string | null
+          position_id: string | null
+          status: string
+        }
+        Insert: {
+          [_ in never]: never
+        }
+        Update: {
+          department_id?: string | null
+          employee_code?: string | null
+          full_name?: string
+          is_active?: boolean
+          max_weekly_hours?: number
+          phone?: string | null
+          position?: string | null
+          position_id?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
+      my_companies: {
+        Args: never
+        Returns: {
+          company_id: string
+          company_status: string
+          is_selected: boolean
+          membership_status: string
+          name: string
+          roles: string[]
+          unread: number
+        }[]
+      }
+      switch_company: { Args: { _company: string }; Returns: undefined }
+      my_join_requests: {
+        Args: never
+        Returns: {
+          company_id: string
+          company_name: string
+          created_at: string
+          decided_at: string | null
+          decision_note: string | null
+          id: string
+          message: string | null
+          status: string
+        }[]
+      }
+      lookup_company_code: { Args: { _code: string }; Returns: Json }
+      request_to_join: { Args: { _code: string; _message?: string }; Returns: Json }
+      cancel_join_request: { Args: { _request: string }; Returns: undefined }
+      decide_join_request: {
+        Args: {
+          _request: string
+          _approve: boolean
+          _role?: Database["public"]["Enums"]["app_role"]
+          _department?: string
+          _position_id?: string
+          _position?: string
+          _note?: string
+        }
+        Returns: undefined
+      }
+      set_member_role: {
+        Args: { _user: string; _role: Database["public"]["Enums"]["app_role"] }
+        Returns: undefined
+      }
+      suspend_membership: { Args: { _user: string; _reason?: string }; Returns: undefined }
+      reinstate_membership: { Args: { _user: string }; Returns: undefined }
+      leave_company: { Args: { _company: string }; Returns: undefined }
+      regenerate_join_code: { Args: never; Returns: string }
+      set_membership_policy: {
+        Args: { _join_code_enabled?: boolean; _members_can_leave?: boolean }
+        Returns: undefined
+      }
       accept_invitation: { Args: { _token: string }; Returns: string }
       is_platform_admin: { Args: never; Returns: boolean }
       manager_delete_punch_range: {
@@ -1488,6 +1736,8 @@ export type Database = {
       set_employee_clock_code: { Args: { _user: string }; Returns: string }
       clear_employee_clock_code: { Args: { _user: string }; Returns: undefined }
       kiosk_device_info: { Args: { _token: string }; Returns: Json }
+      kiosk_display: { Args: { _token: string }; Returns: Json }
+      reorder_kiosk_slides: { Args: { _ids: string[] }; Returns: undefined }
       kiosk_state: { Args: { _token: string; _code: string }; Returns: Json }
       kiosk_punch: {
         Args: { _token: string; _code: string; _action: string; _minutes?: number | null }
@@ -1510,8 +1760,8 @@ export type Database = {
       break_punch: {
         Args: {
           _accuracy?: number
-          _lat: number
-          _lng: number
+          _lat: number | null
+          _lng: number | null
           _minutes?: number
         }
         Returns: {
@@ -1664,7 +1914,7 @@ export type Database = {
       trial_plan_id: { Args: never; Returns: string }
       default_plan_capabilities: { Args: never; Returns: Json }
       clock_punch: {
-        Args: { _accuracy?: number; _lat: number; _lng: number }
+        Args: { _accuracy?: number; _lat: number | null; _lng: number | null }
         Returns: {
           accuracy_m: number | null
           at: string

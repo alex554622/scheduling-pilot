@@ -95,7 +95,7 @@ function DashboardPage() {
     enabled: !!company?.id,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("profiles")
+        .from("company_members")
         .select("id, full_name, position")
         .eq("company_id", company!.id);
       if (error) throw error;

@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { z } from "zod";
 import { AppRulesPanel } from "@/components/app-rules-panel";
 import { OrganizationPanel } from "@/components/organization-panel";
+import { MyCompaniesPanel } from "@/components/my-companies-panel";
 import { useCapabilities } from "@/lib/capabilities";
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
@@ -54,9 +55,9 @@ import {
   unsubscribeFromPush,
 } from "@/lib/push-subscription";
 
-/** `?tab=organization` or `?tab=rules` opens one of the admin tabs. */
+/** `?tab=companies` opens My companies; `organization` and `rules` are admin tabs. */
 const searchSchema = z.object({
-  tab: z.enum(["account", "organization", "rules"]).optional(),
+  tab: z.enum(["account", "companies", "organization", "rules"]).optional(),
 });
 
 export const Route = createFileRoute("/_authenticated/settings")({
@@ -78,21 +79,28 @@ function SettingsPage() {
   // Organization is a plan feature, as it was when it had its own menu item.
   const { capabilities } = useCapabilities();
   const hasOrg = capabilities.org_structure;
-  const current = !isAdmin || !tab || (tab === "organization" && !hasOrg) ? "account" : tab;
+  const current =
+    !tab ||
+    (!isAdmin && tab !== "companies") ||
+    (tab === "organization" && !hasOrg)
+      ? "account"
+      : tab;
 
   if (loading) return <div className="text-sm text-muted-foreground">{t("Loading…")}</div>;
 
   return (
     <div className="space-y-6">
-      {isAdmin && (
-        <div className="inline-flex rounded-md border border-border bg-card p-0.5">
+      {(
+        <div className="flex max-w-full flex-wrap gap-0.5 rounded-md border border-border bg-card p-0.5 sm:inline-flex">
           {(
             [
               ["account", t("My account")],
+              ["companies", t("My companies")],
               ["organization", t("Organization")],
               ["rules", t("App rules")],
             ] as const
           )
+            .filter(([key]) => isAdmin || key === "account" || key === "companies")
             .filter(([key]) => key !== "organization" || hasOrg)
             .map(([key, label]) => {
             const active = key === current;
@@ -116,7 +124,9 @@ function SettingsPage() {
           })}
         </div>
       )}
-      {current === "rules" ? (
+      {current === "companies" ? (
+        <MyCompaniesPanel />
+      ) : current === "rules" ? (
         <AppRulesPanel />
       ) : current === "organization" ? (
         <OrganizationPanel />
@@ -146,9 +156,18 @@ function AccountSettings() {
     mutationFn: async () => {
       const { error } = await supabase
         .from("profiles")
-        .update({ full_name: fullName.trim(), position: position.trim() || null })
+        .update({ full_name: fullName.trim() })
         .eq("id", user!.id);
       if (error) throw error;
+      // The job title belongs to this company only.
+      if (company) {
+        const { error: posErr } = await supabase
+          .from("company_members")
+          .update({ position: position.trim() || null })
+          .eq("id", user!.id)
+          .eq("company_id", company.id);
+        if (posErr) throw posErr;
+      }
       await refresh();
     },
     onSuccess: () => {

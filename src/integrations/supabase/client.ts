@@ -4,6 +4,21 @@ import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 import { isNativeApp } from '@/lib/native/platform';
 import { nativeAuthStorage } from '@/lib/native/auth-storage';
+import { getActiveCompanyId } from '@/lib/active-company';
+
+/**
+ * Tells the database which of the signed-in person's companies this request is
+ * for (see current_company_id() in 20261122120000_multi_company_memberships).
+ * Only API calls carry it; sign-in and storage requests are left alone.
+ */
+const companyFetch: typeof fetch = (input, init) => {
+  const companyId = getActiveCompanyId();
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+  if (!companyId || !url.includes('/rest/v1/')) return fetch(input, init);
+  const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+  headers.set('x-company-id', companyId);
+  return fetch(input, { ...init, headers });
+};
 
 function createSupabaseClient() {
   // Use import.meta.env for client-side (Vite build-time replacement)
@@ -30,6 +45,7 @@ function createSupabaseClient() {
   }
 
   return createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+    global: { fetch: companyFetch },
     auth: {
       // The Android/iOS apps keep the session in native storage — see
       // lib/native/auth-storage.ts. The website is unchanged.

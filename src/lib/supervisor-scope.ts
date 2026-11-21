@@ -40,7 +40,10 @@ export function useManagedScope() {
       const { data, error } = await supabase
         .from("supervisor_assignments")
         .select("department_id")
-        .eq("supervisor_id", user!.id);
+        .eq("supervisor_id", user!.id)
+        // Someone can supervise in more than one company; only the selected
+        // one counts here.
+        .eq("company_id", company!.id);
       if (error) throw error;
       return new Set((data ?? []).map((r) => r.department_id));
     },

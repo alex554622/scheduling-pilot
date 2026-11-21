@@ -310,8 +310,8 @@ function DepartmentsTab({ companyId }: { companyId: string }) {
     queryKey: ["company-members-departments", companyId],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("profiles").select("id, full_name, department_id")
-        .eq("company_id", companyId);
+        .from("company_members").select("id, full_name, department_id")
+        .eq("company_id", companyId).eq("status", "active");
       if (error) throw error;
       return data ?? [];
     },

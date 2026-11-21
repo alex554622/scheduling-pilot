@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { captureAuthLinkError, takeAuthLinkError } from "@/lib/auth-link-error";
@@ -15,6 +16,7 @@ import { keepStorageOnDevice } from "@/lib/installed-app";
 import { releaseNativePush } from "@/lib/native/push";
 import { translate } from "@/lib/i18n";
 import { clearSignupIntent, readSignupIntent, saveSignupIntentError } from "@/lib/signup-intent";
+import { readRememberedCompany, rememberCompany, setActiveCompanyId } from "@/lib/active-company";
 
 export type AppRole = "super_admin" | "company_admin" | "supervisor" | "employee";
 
@@ -34,6 +36,40 @@ export interface CompanyLite {
   join_code: string | null;
 }
 
+/** One of the companies this account belongs to (see my_companies()). */
+export interface Membership {
+  companyId: string;
+  name: string;
+  /** The company's own status: active, pending, suspended… */
+  companyStatus: string;
+  /** This person's membership there. */
+  status: "active" | "suspended";
+  /** Raw role values in that company, as stored. */
+  roles: string[];
+  /** Unread notifications from that company. */
+  unread: number;
+}
+
+interface MyCompanyRow {
+  company_id: string;
+  name: string;
+  company_status: string;
+  membership_status: string;
+  roles: string[] | null;
+  unread: number | null;
+}
+
+function toMembership(row: MyCompanyRow): Membership {
+  return {
+    companyId: row.company_id,
+    name: row.name,
+    companyStatus: row.company_status,
+    status: row.membership_status === "suspended" ? "suspended" : "active",
+    roles: row.roles ?? [],
+    unread: row.unread ?? 0,
+  };
+}
+
 /**
  * A super admin standing in as a company's admin (see the ghost mode
  * migration). While set, `profile.company_id`, `company` and `roles` all
@@ -51,6 +87,14 @@ interface AuthCtx {
   user: User | null;
   profile: Profile | null;
   company: CompanyLite | null;
+  /** Every company this account belongs to, the selected one included. */
+  memberships: Membership[];
+  /**
+   * Work in another of this person's companies. Clears every cached query, so
+   * nothing read for one company is ever shown in another.
+   */
+  switchCompany: (companyId: string) => Promise<void>;
+  /** Roles in the selected company (plus super admin, which is platform-wide). */
   roles: AppRole[];
   /** Highest-priority role for routing/UX — super_admin > company_admin > supervisor > employee. */
   primaryRole: AppRole | null;
@@ -137,6 +181,7 @@ const RETRY_DELAYS_MS = [500, 1500, 3000];
 interface LoadedContext {
   profile: Profile | null;
   company: CompanyLite | null;
+  memberships: Membership[];
   roles: AppRole[];
   ghost: GhostSession | null;
   isSuperAdmin: boolean;
@@ -150,31 +195,51 @@ const COMPANY_COLS = "id, name, plan, status, join_code";
  * the caller can tell "no company" apart from "couldn't ask".
  */
 async function fetchContext(uid: string, email: string | null | undefined): Promise<LoadedContext> {
-  const readProfileAndRoles = async () => {
-    const [p, r] = await Promise.all([
+  const readAccount = async () => {
+    const [p, r, m] = await Promise.all([
       supabase.from("profiles").select(PROFILE_COLS).eq("id", uid).maybeSingle(),
-      supabase.from("user_roles").select("role").eq("user_id", uid),
+      supabase.from("user_roles").select("role, company_id").eq("user_id", uid),
+      supabase.rpc("my_companies"),
     ]);
     if (p.error) throw p.error;
     if (r.error) throw r.error;
-    return { prof: p.data as Profile | null, roleRows: (r.data ?? []) as { role: string }[] };
+    const prof = p.data as Profile | null;
+    const roleRows = (r.data ?? []) as { role: string; company_id: string | null }[];
+    let memberships: Membership[];
+    if (m.error) {
+      // A database without the memberships migration yet: the profile's company
+      // is the only one, exactly as before.
+      if (m.error.code !== "PGRST202" && m.error.code !== "42883") throw m.error;
+      memberships = prof?.company_id
+        ? [
+            {
+              companyId: prof.company_id,
+              name: "",
+              companyStatus: "active",
+              status: "active",
+              roles: roleRows.filter((x) => x.company_id === prof.company_id).map((x) => x.role),
+              unread: 0,
+            },
+          ]
+        : [];
+    } else {
+      memberships = ((m.data ?? []) as MyCompanyRow[]).map(toMembership);
+    }
+    return { prof, roleRows, memberships };
   };
 
-  let { prof, roleRows } = await readProfileAndRoles();
+  let { prof, roleRows, memberships } = await readAccount();
 
   // A signup that couldn't reach the company RPCs (email confirmation was on,
   // so there was no session yet) left its request behind. Replay it now, while
   // `loading` is still true, so the UI never flashes the "no company" gate for
   // someone whose company is about to appear.
-  if (prof && !prof.company_id && !prof.pending_company_id) {
+  if (prof && memberships.length === 0 && !prof.pending_company_id) {
     const applied = await applySignupIntent(email);
-    if (applied) ({ prof, roleRows } = await readProfileAndRoles());
+    if (applied) ({ prof, roleRows, memberships } = await readAccount());
   }
 
-  const roles = roleRows
-    .map((r) => normalizeRole(r.role))
-    .filter((r): r is AppRole => r !== null);
-  const isSuperAdmin = roles.includes("super_admin");
+  const isSuperAdmin = roleRows.some((r) => r.role === "super_admin");
 
   // Ghost mode: present the super admin as that company's admin. The database
   // grants the same thing on its side (current_company_id / has_role), so the
@@ -188,6 +253,7 @@ async function fetchContext(uid: string, email: string | null | undefined): Prom
       .is("ended_at", null)
       .maybeSingle();
     if (g) {
+      setActiveCompanyId(g.company_id);
       const { data: co, error } = await supabase
         .from("companies")
         .select(COMPANY_COLS)
@@ -198,6 +264,7 @@ async function fetchContext(uid: string, email: string | null | undefined): Prom
         return {
           profile: prof ? { ...prof, company_id: co.id, pending_company_id: null } : null,
           company: co,
+          memberships,
           roles: ["company_admin"],
           ghost: { companyId: co.id, companyName: co.name, startedAt: g.started_at },
           isSuperAdmin,
@@ -206,17 +273,45 @@ async function fetchContext(uid: string, email: string | null | undefined): Prom
     }
   }
 
+  // The selected company: this device's last pick, else the account's, else
+  // the first one — but only ever a company this person is active in.
+  const active = memberships.filter((m) => m.status === "active");
+  const remembered = readRememberedCompany(uid);
+  const selected =
+    active.find((m) => m.companyId === remembered) ??
+    active.find((m) => m.companyId === prof?.company_id) ??
+    active[0] ??
+    null;
+  setActiveCompanyId(selected?.companyId ?? null);
+  if (selected && selected.companyId !== prof?.company_id) {
+    // Keep the account's default in step, for realtime and new devices.
+    void supabase.rpc("switch_company", { _company: selected.companyId });
+  }
+
   let company: CompanyLite | null = null;
-  if (prof?.company_id) {
+  if (selected) {
     const { data: co, error } = await supabase
       .from("companies")
       .select(COMPANY_COLS)
-      .eq("id", prof.company_id)
+      .eq("id", selected.companyId)
       .maybeSingle();
     if (error) throw error;
     company = co ?? null;
   }
-  return { profile: prof, company, roles, ghost: null, isSuperAdmin };
+
+  const roles = roleRows
+    .filter((r) => r.role === "super_admin" || (selected && r.company_id === selected.companyId))
+    .map((r) => normalizeRole(r.role))
+    .filter((r): r is AppRole => r !== null);
+
+  return {
+    profile: prof ? { ...prof, company_id: company?.id ?? null } : null,
+    company,
+    memberships,
+    roles: [...new Set(roles)],
+    ghost: null,
+    isSuperAdmin,
+  };
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -224,6 +319,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [company, setCompany] = useState<CompanyLite | null>(null);
+  const [memberships, setMemberships] = useState<Membership[]>([]);
   const [roles, setRoles] = useState<AppRole[]>([]);
   const [ghost, setGhost] = useState<GhostSession | null>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
@@ -240,6 +336,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    */
   const contextFor = useRef<string | null>(null);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   // Pull profile, role memberships, and the company row that the user belongs to.
   // Keep this resilient — a brand-new signup may not have a company yet.
@@ -254,8 +351,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const seq = ++loadSeq.current;
     const uid = authUser?.id ?? null;
     if (!uid) {
+      setActiveCompanyId(null);
       setProfile(null);
       setCompany(null);
+      setMemberships([]);
       setRoles([]);
       setGhost(null);
       setIsSuperAdmin(false);
@@ -292,6 +391,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(ctx.profile);
     setRoles(ctx.roles);
     setCompany(ctx.company);
+    setMemberships(ctx.memberships);
     contextFor.current = uid;
   }, []);
 
@@ -337,7 +437,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Live-update the gating state when a super admin suspends/reactivates the
   // current user's company. The UI re-renders instantly with the new status.
   useEffect(() => {
-    const cid = profile?.company_id;
+    const cid = company?.id;
     if (!cid) return;
     const channel = supabase
       .channel(`company-status-${cid}`)
@@ -353,9 +453,68 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [profile?.company_id]);
+  }, [company?.id]);
 
   const refresh = useCallback(() => loadContext(user ?? null), [loadContext, user]);
+
+  /**
+   * Everything cached belongs to the company it was read for. Stop what is in
+   * flight and drop it all, so the next screen can only show the new company.
+   */
+  const dropCompanyCache = useCallback(async () => {
+    await queryClient.cancelQueries();
+    queryClient.clear();
+  }, [queryClient]);
+
+  const switchCompany = useCallback(
+    async (companyId: string) => {
+      const uid = user?.id;
+      if (!uid || companyId === company?.id) return;
+      const { error } = await supabase.rpc("switch_company", { _company: companyId });
+      if (error) throw error;
+      rememberCompany(uid, companyId);
+      // From here on every request is for the new company.
+      setActiveCompanyId(companyId);
+      await dropCompanyCache();
+      await loadContext(user ?? null);
+      void navigate({ to: "/dashboard" });
+    },
+    [user, company?.id, dropCompanyCache, loadContext, navigate],
+  );
+
+  // A membership can be suspended or removed from somewhere else. The database
+  // already refuses everything the moment that happens; this brings the screen
+  // into line — on returning to the app, and once a minute while it is open.
+  useEffect(() => {
+    const cid = company?.id;
+    if (!user || !cid || ghost) return;
+    let busy = false;
+    const check = async () => {
+      if (busy || document.visibilityState === "hidden") return;
+      busy = true;
+      try {
+        const { data, error } = await supabase.rpc("my_companies");
+        if (error) return;
+        const rows = (data ?? []) as MyCompanyRow[];
+        if (!rows.some((m) => m.company_id === cid && m.membership_status === "active")) {
+          await dropCompanyCache();
+          await loadContext(user);
+          void navigate({ to: "/dashboard" });
+        } else {
+          setMemberships(rows.map(toMembership));
+        }
+      } finally {
+        busy = false;
+      }
+    };
+    const timer = window.setInterval(() => void check(), 60_000);
+    const onFocus = () => void check();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [user, company?.id, ghost, dropCompanyCache, loadContext, navigate]);
 
   const startGhost = useCallback(
     async (companyId: string) => {
@@ -382,10 +541,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut({ scope: "local" });
     // A load still in flight for the account just signed out of must not land.
     loadSeq.current++;
+    setActiveCompanyId(null);
+    queryClient.clear();
     setSession(null);
     setUser(null);
     setProfile(null);
     setCompany(null);
+    setMemberships([]);
     setRoles([]);
     setGhost(null);
     setIsSuperAdmin(false);
@@ -393,7 +555,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Nobody's context is loaded now, so signing back in — even as the same
     // person — waits for a fresh read instead of rendering against these nulls.
     contextFor.current = null;
-  }, []);
+  }, [queryClient]);
 
   const primaryRole = ROLE_PRIORITY.find((r) => roles.includes(r)) ?? null;
 
@@ -404,6 +566,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         profile,
         company,
+        memberships,
+        switchCompany,
         roles,
         primaryRole,
         ghost,

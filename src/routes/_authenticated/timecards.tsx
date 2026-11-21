@@ -285,7 +285,7 @@ function TimecardsPage() {
     queryKey: ["timecard-roster", isSuperAdmin ? "all" : company?.id],
     enabled: isManager && (isSuperAdmin || !!company?.id),
     queryFn: async () => {
-      let q = supabase.from("profiles").select("id, full_name, position, company_id");
+      let q = supabase.from("company_members").select("id, full_name, position, company_id");
       q = isSuperAdmin ? q.not("company_id", "is", null) : q.eq("company_id", company!.id);
       const { data, error } = await q.order("full_name");
       if (error) throw error;

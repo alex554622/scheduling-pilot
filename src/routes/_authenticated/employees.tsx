@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { useT, translate, useLocaleTag } from "@/lib/i18n";
-import { Users, ShieldCheck, Search, Copy, Check, Loader2, UserCog, Trash2, Pencil, Mail, Send, X, Link2, RefreshCw, CalendarClock, Inbox, History, RotateCcw, UserCheck } from "lucide-react";
+import { Users, ShieldCheck, Search, Copy, Check, Loader2, UserCog, Trash2, Pencil, Mail, Send, X, Link2, RefreshCw, CalendarClock, Inbox, History, RotateCcw, UserCheck, PauseCircle, PlayCircle } from "lucide-react";
 import { shareableOrigin } from "@/lib/native/platform";
 import type { VisibilityMode } from "@/lib/staff-visibility";
 
@@ -117,7 +117,7 @@ function Roster({
     queryKey: ["company-members", companyId],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("profiles")
+        .from("company_members")
         .select("id, full_name, position")
         .eq("company_id", companyId)
         .order("full_name");
@@ -195,26 +195,9 @@ function Roster({
 
   const setRoleMut = useMutation({
     mutationFn: async ({ userId, role }: { userId: string; role: AssignableRole }) => {
-      // Add the new role first, then drop the others. The other way round, a
-      // refused insert (an admin changing their own row loses the rights to
-      // write the new one) left the person with no role at all.
-      const { error: insErr } = await supabase
-        .from("user_roles")
-        .upsert(
-          { user_id: userId, company_id: companyId, role },
-          { onConflict: "user_id,company_id,role", ignoreDuplicates: true },
-        );
-      if (insErr) throw insErr;
-      const { error: delErr } = await supabase
-        .from("user_roles")
-        .delete()
-        .eq("user_id", userId)
-        .eq("company_id", companyId)
-        .in(
-          "role",
-          ASSIGNABLE_ROLES.filter((r) => r !== role),
-        );
-      if (delErr) throw delErr;
+      // One role per company; the server keeps at least one admin and logs it.
+      const { error } = await supabase.rpc("set_member_role", { _user: userId, _role: role });
+      if (error) throw error;
       // No longer a supervisor: their departments go with the role, so making
       // them one again later starts from nothing rather than old reach.
       if (role !== "supervisor") {
@@ -288,6 +271,55 @@ function Roster({
     },
   });
 
+  const suspendedQ = useQuery({
+    queryKey: ["company-suspended", companyId],
+    queryFn: async () => {
+      const { data: rows, error } = await supabase
+        .from("company_memberships")
+        .select("user_id, status_reason, status_changed_at")
+        .eq("company_id", companyId)
+        .eq("status", "suspended")
+        .order("status_changed_at", { ascending: false });
+      if (error) throw error;
+      const ids = (rows ?? []).map((q) => q.user_id);
+      if (ids.length === 0) return [] as SuspendedRow[];
+      const { data: people, error: pErr } = await supabase
+        .from("profiles")
+        .select("id, full_name")
+        .in("id", ids);
+      if (pErr) throw pErr;
+      const names = new Map((people ?? []).map((p) => [p.id, p.full_name]));
+      return (rows ?? []).map((q) => ({
+        id: q.user_id,
+        full_name: names.get(q.user_id) ?? "",
+        reason: q.status_reason,
+        since: q.status_changed_at,
+      }));
+    },
+  });
+
+  const suspendMut = useMutation({
+    mutationFn: async (userId: string) => {
+      const { error } = await supabase.rpc("suspend_membership", { _user: userId });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["company-members", companyId] });
+      qc.invalidateQueries({ queryKey: ["company-suspended", companyId] });
+    },
+  });
+
+  const reinstateMut = useMutation({
+    mutationFn: async (userId: string) => {
+      const { error } = await supabase.rpc("reinstate_membership", { _user: userId });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["company-members", companyId] });
+      qc.invalidateQueries({ queryKey: ["company-suspended", companyId] });
+    },
+  });
+
   const rehireMut = useMutation({
     mutationFn: async (userId: string) => {
       const { error } = await supabase.rpc("rehire_company_member", { _user: userId });
@@ -316,13 +348,26 @@ function Roster({
   const joinRequestsQ = useQuery({
     queryKey: ["company-join-requests", companyId],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("id, full_name, position")
-        .eq("pending_company_id", companyId)
-        .order("full_name");
+      const { data: reqs, error } = await supabase
+        .from("company_join_requests")
+        .select("user_id, message")
+        .eq("company_id", companyId)
+        .eq("status", "pending")
+        .order("created_at");
       if (error) throw error;
-      return (data ?? []) as MemberRow[];
+      const ids = (reqs ?? []).map((q) => q.user_id);
+      if (ids.length === 0) return [] as MemberRow[];
+      const { data: people, error: pErr } = await supabase
+        .from("profiles")
+        .select("id, full_name")
+        .in("id", ids);
+      if (pErr) throw pErr;
+      const names = new Map((people ?? []).map((p) => [p.id, p.full_name]));
+      return (reqs ?? []).map((q) => ({
+        id: q.user_id,
+        full_name: names.get(q.user_id) ?? "",
+        position: q.message,
+      })) as MemberRow[];
     },
   });
 
@@ -554,7 +599,8 @@ function Roster({
                 m.full_name.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase() || "?";
               const busy =
                 (setRoleMut.isPending && setRoleMut.variables?.userId === m.id) ||
-                (removeMut.isPending && removeMut.variables?.userId === m.id);
+                (removeMut.isPending && removeMut.variables?.userId === m.id) ||
+                (suspendMut.isPending && suspendMut.variables === m.id);
               return (
                 <div key={m.id} className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
                   <div className="flex min-w-0 items-center gap-3">
@@ -612,6 +658,28 @@ function Roster({
                     <Button variant="outline" size="sm" onClick={() => setEditing(m)} disabled={busy}>
                       <Pencil className="mr-1.5 h-3.5 w-3.5" /> {t("Edit")}
                     </Button>
+                    {m.id !== user?.id && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={busy}
+                        title={t("Suspend access to this company")}
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              t("Suspend {name}? They lose access to {companyName} right away. Their other companies are not affected.", {
+                                name: m.full_name || t("this member"),
+                                companyName,
+                              }),
+                            )
+                          )
+                            suspendMut.mutate(m.id);
+                        }}
+                      >
+                        <PauseCircle className="h-3.5 w-3.5" />
+                        <span className="sr-only sm:not-sr-only sm:ml-1.5">{t("Suspend")}</span>
+                      </Button>
+                    )}
                     <Button
                       variant="ghost"
                       size="sm"
@@ -629,13 +697,21 @@ function Roster({
         )}
       </div>
 
-      {(setRoleMut.error || removeMut.error || rehireMut.error) && (
+      {(setRoleMut.error || removeMut.error || rehireMut.error || suspendMut.error || reinstateMut.error) && (
         <p className="text-sm text-destructive">
           {(setRoleMut.error as Error)?.message ||
             (removeMut.error as Error)?.message ||
-            (rehireMut.error as Error)?.message}
+            (rehireMut.error as Error)?.message ||
+            (suspendMut.error as Error)?.message ||
+            (reinstateMut.error as Error)?.message}
         </p>
       )}
+
+      <SuspendedMembersCard
+        rows={suspendedQ.data ?? []}
+        onReinstate={(userId) => reinstateMut.mutate(userId)}
+        pendingId={reinstateMut.isPending ? (reinstateMut.variables as string) : null}
+      />
 
       <FormerEmployeesCard
         rows={separationsQ.data ?? []}
@@ -1254,9 +1330,12 @@ function SupervisorScopeDialog({
     enabled: open,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("profiles")
+        // A person's department is per company, so read it from their
+        // membership here, not from their profile.
+        .from("company_members")
         .select("id, full_name, department_id")
         .eq("company_id", companyId)
+        .eq("status", "active")
         .order("full_name");
       if (error) throw error;
       return data ?? [];
@@ -1536,6 +1615,7 @@ function EditMemberDialog({
         .from("member_visibility")
         .select("mode")
         .eq("user_id", member!.id)
+        .eq("company_id", companyId)
         .maybeSingle();
       if (error) throw error;
       return (data?.mode ?? "") as VisibilityMode | "";
@@ -1551,7 +1631,10 @@ function EditMemberDialog({
     enabled: !!member,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("employee_locations").select("location_id").eq("employee_id", member!.id);
+        .from("employee_locations")
+        .select("location_id")
+        .eq("employee_id", member!.id)
+        .eq("company_id", companyId);
       if (error) throw error;
       return (data ?? []).map((r) => r.location_id);
     },
@@ -1562,9 +1645,10 @@ function EditMemberDialog({
     enabled: !!member,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("profiles")
+        .from("company_members")
         .select("max_weekly_hours, is_active, department_id")
         .eq("id", member!.id)
+        .eq("company_id", companyId)
         .maybeSingle();
       if (error) throw error;
       return data;
@@ -1605,7 +1689,7 @@ function EditMemberDialog({
     setErr(null);
 
     const { error } = await supabase
-      .from("profiles")
+      .from("company_members")
       .update({
         full_name: fullName.trim(),
         position: position.trim() || null,
@@ -1613,7 +1697,8 @@ function EditMemberDialog({
         max_weekly_hours: maxHours,
         is_active: isActive,
       })
-      .eq("id", member.id);
+      .eq("id", member.id)
+      .eq("company_id", companyId);
     if (error) { setSaving(false); setErr(error.message); return; }
 
     // Reconcile locations against what was loaded, so we only write deltas.
@@ -1629,6 +1714,7 @@ function EditMemberDialog({
     if (locRemove.length) {
       const { error: rmErr } = await supabase
         .from("employee_locations").delete()
+        .eq("company_id", companyId)
         .eq("employee_id", member.id).in("location_id", locRemove);
       if (rmErr) { setSaving(false); setErr(rmErr.message); return; }
     }
@@ -1642,7 +1728,11 @@ function EditMemberDialog({
             mode: visibility,
             updated_at: new Date().toISOString(),
           })
-        : await supabase.from("member_visibility").delete().eq("user_id", member.id);
+        : await supabase
+            .from("member_visibility")
+            .delete()
+            .eq("user_id", member.id)
+            .eq("company_id", companyId);
       if (visErr) { setSaving(false); setErr(visErr.message); return; }
       void qc.invalidateQueries({ queryKey: ["member-visibility"] });
       void qc.invalidateQueries({ queryKey: ["member-visibility-one", member.id] });
@@ -1892,7 +1982,11 @@ function BulkEditDialog({
       if (hours != null) patch.max_weekly_hours = hours;
       if (status !== KEEP) patch.is_active = status === "active";
       if (Object.keys(patch).length > 0) {
-        const { error } = await supabase.from("profiles").update(patch).in("id", ids);
+        const { error } = await supabase
+          .from("company_members")
+          .update(patch)
+          .in("id", ids)
+          .eq("company_id", companyId);
         if (error) throw error;
       }
 
@@ -1906,13 +2000,17 @@ function BulkEditDialog({
                 updated_at: new Date().toISOString(),
               })),
             )
-          : await supabase.from("member_visibility").delete().in("user_id", ids);
+          : await supabase
+              .from("member_visibility")
+              .delete()
+              .in("user_id", ids)
+              .eq("company_id", companyId);
         if (error) throw error;
       }
 
       if (replaceLocations) {
         const { error: rmErr } = await supabase
-          .from("employee_locations").delete().in("employee_id", ids);
+          .from("employee_locations").delete().in("employee_id", ids).eq("company_id", companyId);
         if (rmErr) throw rmErr;
         const rows = ids.flatMap((employee_id) =>
           [...worksAt].map((location_id) => ({ company_id: companyId, employee_id, location_id })),
@@ -2085,6 +2183,54 @@ function BulkEditDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+interface SuspendedRow {
+  id: string;
+  full_name: string;
+  reason: string | null;
+  since: string;
+}
+
+function SuspendedMembersCard({
+  rows,
+  onReinstate,
+  pendingId,
+}: {
+  rows: SuspendedRow[];
+  onReinstate: (userId: string) => void;
+  pendingId: string | null;
+}) {
+  const t = useT("people");
+  if (rows.length === 0) return null;
+  return (
+    <div className="rounded-xl border border-border bg-card">
+      <div className="flex items-center gap-2 border-b border-border p-4">
+        <PauseCircle className="h-4 w-4 text-muted-foreground" />
+        <h3 className="text-sm font-semibold text-foreground">{t("Suspended")}</h3>
+        <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+          {rows.length}
+        </span>
+      </div>
+      <div className="divide-y divide-border">
+        {rows.map((r) => (
+          <div key={r.id} className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="truncate font-medium text-foreground">{r.full_name || t("Unnamed")}</p>
+              <p className="truncate text-xs text-muted-foreground">
+                {t("No access since {date}", { date: new Date(r.since).toLocaleDateString() })}
+                {r.reason ? ` · ${r.reason}` : ""}
+              </p>
+            </div>
+            <Button size="sm" variant="outline" disabled={pendingId === r.id} onClick={() => onReinstate(r.id)}>
+              {pendingId === r.id ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <PlayCircle className="mr-1.5 h-3.5 w-3.5" />}
+              {t("Reinstate")}
+            </Button>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
