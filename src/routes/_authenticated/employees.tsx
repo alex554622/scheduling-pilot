@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { useT, translate, useLocaleTag } from "@/lib/i18n";
-import { Users, ShieldCheck, Search, Copy, Check, Loader2, UserCog, Trash2, Pencil, Mail, Send, X, Link2, RefreshCw, CalendarClock, Inbox, History, RotateCcw } from "lucide-react";
+import { Users, ShieldCheck, Search, Copy, Check, Loader2, UserCog, Trash2, Pencil, Mail, Send, X, Link2, RefreshCw, CalendarClock, Inbox, History, RotateCcw, UserCheck } from "lucide-react";
 import { shareableOrigin } from "@/lib/native/platform";
 import type { VisibilityMode } from "@/lib/staff-visibility";
 
@@ -17,7 +17,13 @@ export const Route = createFileRoute("/_authenticated/employees")({
 });
 
 type AssignableRole = Exclude<AppRole, "super_admin">;
-const ASSIGNABLE_ROLES: AssignableRole[] = ["company_admin", "employee"];
+const ASSIGNABLE_ROLES: AssignableRole[] = ["company_admin", "supervisor", "employee"];
+/**
+ * An invitation can't carry "supervisor": accept_invitation still turns that
+ * old value into company_admin. Invite them as an employee, then make them a
+ * supervisor from the roster once they are in.
+ */
+const INVITE_ROLES: AssignableRole[] = ["company_admin", "employee"];
 
 interface MemberRow {
   id: string;
@@ -104,6 +110,8 @@ function Roster({
   const [bulkOpen, setBulkOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [removing, setRemoving] = useState<MemberRow | null>(null);
+  // The supervisor whose departments are being chosen.
+  const [scoping, setScoping] = useState<MemberRow | null>(null);
 
   const membersQ = useQuery({
     queryKey: ["company-members", companyId],
@@ -187,21 +195,76 @@ function Roster({
 
   const setRoleMut = useMutation({
     mutationFn: async ({ userId, role }: { userId: string; role: AssignableRole }) => {
-      // Replace any existing assignable roles for this user in this company with the chosen one.
+      // Add the new role first, then drop the others. The other way round, a
+      // refused insert (an admin changing their own row loses the rights to
+      // write the new one) left the person with no role at all.
+      const { error: insErr } = await supabase
+        .from("user_roles")
+        .upsert(
+          { user_id: userId, company_id: companyId, role },
+          { onConflict: "user_id,company_id,role", ignoreDuplicates: true },
+        );
+      if (insErr) throw insErr;
       const { error: delErr } = await supabase
         .from("user_roles")
         .delete()
         .eq("user_id", userId)
         .eq("company_id", companyId)
-        .in("role", ASSIGNABLE_ROLES);
+        .in(
+          "role",
+          ASSIGNABLE_ROLES.filter((r) => r !== role),
+        );
       if (delErr) throw delErr;
-      const { error: insErr } = await supabase
-        .from("user_roles")
-        .insert({ user_id: userId, company_id: companyId, role });
-      if (insErr) throw insErr;
+      // No longer a supervisor: their departments go with the role, so making
+      // them one again later starts from nothing rather than old reach.
+      if (role !== "supervisor") {
+        const { error: scopeErr } = await supabase
+          .from("supervisor_assignments")
+          .delete()
+          .eq("supervisor_id", userId)
+          .eq("company_id", companyId);
+        if (scopeErr) throw scopeErr;
+      }
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["company-roles", companyId] }),
+    onSuccess: (_d, v) => {
+      qc.invalidateQueries({ queryKey: ["company-roles", companyId] });
+      qc.invalidateQueries({ queryKey: ["supervisor-assignments", companyId] });
+      // A new supervisor has no departments yet; take the admin straight there.
+      if (v.role === "supervisor") {
+        const m = (membersQ.data ?? []).find((x) => x.id === v.userId);
+        if (m) setScoping(m);
+      }
+    },
   });
+
+  // Every supervisor's departments, for the line under their name.
+  const assignmentsQ = useQuery({
+    queryKey: ["supervisor-assignments", companyId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("supervisor_assignments")
+        .select("supervisor_id, department_id, employee_id, departments(name)")
+        .eq("company_id", companyId);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  const scopeSummary = useMemo(() => {
+    const map = new Map<string, Map<string, { name: string; narrowed: boolean }>>();
+    for (const a of assignmentsQ.data ?? []) {
+      const byDept = map.get(a.supervisor_id) ?? new Map();
+      const prev = byDept.get(a.department_id);
+      const name = (a.departments as { name: string } | null)?.name ?? "?";
+      // A whole-department row wins over named people in the same department.
+      byDept.set(a.department_id, {
+        name,
+        narrowed: a.employee_id !== null && (prev ? prev.narrowed : true),
+      });
+      map.set(a.supervisor_id, byDept);
+    }
+    return map;
+  }, [assignmentsQ.data]);
 
   const removeMut = useMutation({
     mutationFn: async ({ userId, reason, note }: RemoveArgs) => {
@@ -364,10 +427,11 @@ function Roster({
   };
 
   const counts = useMemo(() => {
-    const c = { company_admin: 0, employee: 0, none: 0 };
+    const c = { company_admin: 0, supervisor: 0, employee: 0, none: 0 };
     (membersQ.data ?? []).forEach((m) => {
       const rs = rolesByUser.get(m.id) ?? [];
       if (rs.includes("company_admin")) c.company_admin++;
+      else if (rs.includes("supervisor")) c.supervisor++;
       else if (rs.includes("employee")) c.employee++;
       else c.none++;
     });
@@ -433,9 +497,10 @@ function Roster({
 
 
 
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
         <StatCard label={t("Total members")} value={(membersQ.data ?? []).length} icon={Users} />
         <StatCard label={t("Admins")} value={counts.company_admin} icon={ShieldCheck} />
+        <StatCard label={t("Supervisors")} value={counts.supervisor} icon={UserCheck} />
         <StatCard label={t("Employees")} value={counts.employee} icon={Users} />
       </div>
 
@@ -506,12 +571,28 @@ function Roster({
                     <div className="min-w-0">
                       <p className="truncate font-medium text-foreground">{m.full_name || t("Unnamed")}</p>
                       <p className="truncate text-xs text-muted-foreground">{m.position || t("No position set")}</p>
+                      {current === "supervisor" && (
+                        <p className="truncate text-xs text-primary">
+                          {(() => {
+                            const depts = [...(scopeSummary.get(m.id)?.values() ?? [])];
+                            if (depts.length === 0) return t("Supervises: no departments yet");
+                            return t("Supervises: {list}", {
+                              list: depts
+                                .map((d) => (d.narrowed ? t("{name} (some people)", { name: d.name }) : d.name))
+                                .join(", "),
+                            });
+                          })()}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <select
                       value={current}
-                      disabled={busy}
+                      // Nobody changes their own role: an admin who picks
+                      // anything else locks themselves out of this page.
+                      disabled={busy || m.id === user?.id}
+                      title={m.id === user?.id ? t("You can't change your own role.") : undefined}
                       onChange={(e) =>
                         setRoleMut.mutate({ userId: m.id, role: e.target.value as AssignableRole })
                       }
@@ -523,6 +604,11 @@ function Roster({
                         </option>
                       ))}
                     </select>
+                    {current === "supervisor" && (
+                      <Button variant="outline" size="sm" onClick={() => setScoping(m)} disabled={busy}>
+                        <UserCheck className="mr-1.5 h-3.5 w-3.5" /> {t("Departments")}
+                      </Button>
+                    )}
                     <Button variant="outline" size="sm" onClick={() => setEditing(m)} disabled={busy}>
                       <Pencil className="mr-1.5 h-3.5 w-3.5" /> {t("Edit")}
                     </Button>
@@ -571,6 +657,16 @@ function Roster({
           setRemoving(null);
         }}
         onConfirm={(reason, note) => removeMut.mutate({ userId: removing!.id, reason, note })}
+      />
+
+      <SupervisorScopeDialog
+        supervisor={scoping}
+        companyId={companyId}
+        onClose={() => setScoping(null)}
+        onSaved={() => {
+          setScoping(null);
+          qc.invalidateQueries({ queryKey: ["supervisor-assignments", companyId] });
+        }}
       />
 
       <EditMemberDialog
@@ -1086,12 +1182,15 @@ function InviteDialog({
                 onChange={(e) => setRole(e.target.value as AssignableRole)}
                 className="mt-1 h-10 w-full rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               >
-                {ASSIGNABLE_ROLES.map((r) => (
+                {INVITE_ROLES.map((r) => (
                   <option key={r} value={r}>
                     {t(ROLE_LABEL[r])}
                   </option>
                 ))}
               </select>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {t("To make someone a supervisor, invite them as an employee, then change their role on the roster.")}
+              </p>
             </div>
             {err && <p className="text-sm text-destructive">{err}</p>}
             <DialogFooter>
@@ -1105,6 +1204,260 @@ function InviteDialog({
             </DialogFooter>
           </form>
         )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * Which departments a supervisor runs, and optionally which people in each.
+ *
+ * Saved as `supervisor_assignments` rows: one with no employee for a whole
+ * department, or one per person when only some of it is theirs. The database
+ * reads these rows on every request (`supervises()`), so what is saved here is
+ * exactly what the supervisor can reach.
+ */
+function SupervisorScopeDialog({
+  supervisor,
+  companyId,
+  onClose,
+  onSaved,
+}: {
+  supervisor: MemberRow | null;
+  companyId: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const t = useT("people");
+  // department id → "all" for the whole department, or the people picked in it
+  const [scope, setScope] = useState<Map<string, "all" | Set<string>>>(new Map());
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const open = !!supervisor;
+
+  const departmentsQ = useQuery({
+    queryKey: ["departments", companyId, "with-description"],
+    enabled: open,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("departments")
+        .select("id, name, description")
+        .eq("company_id", companyId)
+        .order("name");
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  const peopleQ = useQuery({
+    queryKey: ["company-members-departments", companyId],
+    enabled: open,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, full_name, department_id")
+        .eq("company_id", companyId)
+        .order("full_name");
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  const currentQ = useQuery({
+    queryKey: ["supervisor-assignments-one", supervisor?.id],
+    enabled: open,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("supervisor_assignments")
+        .select("department_id, employee_id")
+        .eq("supervisor_id", supervisor!.id)
+        .eq("company_id", companyId);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  useEffect(() => {
+    if (!currentQ.data) return;
+    const next = new Map<string, "all" | Set<string>>();
+    for (const a of currentQ.data) {
+      const prev = next.get(a.department_id);
+      if (a.employee_id === null || prev === "all") next.set(a.department_id, "all");
+      else next.set(a.department_id, new Set([...(prev ?? []), a.employee_id]));
+    }
+    setScope(next);
+    setErr(null);
+  }, [currentQ.data]);
+
+  function toggleDepartment(id: string) {
+    setScope((prev) => {
+      const next = new Map(prev);
+      if (next.has(id)) next.delete(id);
+      else next.set(id, "all");
+      return next;
+    });
+  }
+
+  function setMode(id: string, mode: "all" | "some") {
+    setScope((prev) => new Map(prev).set(id, mode === "all" ? "all" : new Set()));
+  }
+
+  function togglePerson(deptId: string, personId: string) {
+    setScope((prev) => {
+      const cur = prev.get(deptId);
+      const picked = new Set(cur instanceof Set ? cur : []);
+      if (picked.has(personId)) picked.delete(personId);
+      else picked.add(personId);
+      return new Map(prev).set(deptId, picked);
+    });
+  }
+
+  // A "some people" department with nobody ticked would quietly give no reach.
+  const emptyPick = [...scope.values()].some((v) => v instanceof Set && v.size === 0);
+
+  async function save() {
+    if (!supervisor) return;
+    setSaving(true);
+    setErr(null);
+    const rows: { company_id: string; supervisor_id: string; department_id: string; employee_id: string | null }[] = [];
+    for (const [deptId, v] of scope) {
+      if (v === "all") {
+        rows.push({ company_id: companyId, supervisor_id: supervisor.id, department_id: deptId, employee_id: null });
+      } else {
+        for (const pid of v) {
+          rows.push({ company_id: companyId, supervisor_id: supervisor.id, department_id: deptId, employee_id: pid });
+        }
+      }
+    }
+    const { error: delErr } = await supabase
+      .from("supervisor_assignments")
+      .delete()
+      .eq("supervisor_id", supervisor.id)
+      .eq("company_id", companyId);
+    if (delErr) {
+      setSaving(false);
+      setErr(delErr.message);
+      return;
+    }
+    if (rows.length) {
+      const { error: insErr } = await supabase.from("supervisor_assignments").insert(rows);
+      if (insErr) {
+        setSaving(false);
+        setErr(insErr.message);
+        return;
+      }
+    }
+    setSaving(false);
+    onSaved();
+  }
+
+  const departments = departmentsQ.data ?? [];
+  const people = (peopleQ.data ?? []).filter((p) => p.id !== supervisor?.id);
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && !saving && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {t("{name}'s departments", { name: supervisor?.full_name || t("Supervisor") })}
+          </DialogTitle>
+          <DialogDescription>
+            {t("A supervisor sees and manages only the people in these departments: their schedules, timecards, time off and reports. Company settings stay with admins.")}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="max-h-[60vh] space-y-2 overflow-y-auto pr-1">
+          {departmentsQ.isLoading || currentQ.isLoading ? (
+            <p className="text-sm text-muted-foreground">{t("Loading…")}</p>
+          ) : departments.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {t("No departments yet — add them on Settings → Organization → Departments.")}
+            </p>
+          ) : (
+            departments.map((d) => {
+              const v = scope.get(d.id);
+              const inDept = people.filter((p) => p.department_id === d.id);
+              return (
+                <div key={d.id} className="rounded-lg border border-border p-3">
+                  <label className="flex cursor-pointer items-start gap-2">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 h-4 w-4"
+                      checked={!!v}
+                      onChange={() => toggleDepartment(d.id)}
+                      disabled={saving}
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-medium text-foreground">{d.name}</span>
+                      <span className="block text-xs text-muted-foreground">
+                        {inDept.length === 1
+                          ? t("1 person")
+                          : t("{n} people", { n: inDept.length })}
+                        {d.description ? ` · ${d.description}` : ""}
+                      </span>
+                    </span>
+                  </label>
+                  {v && (
+                    <div className="mt-2 space-y-2 pl-6">
+                      <div className="flex flex-wrap gap-3 text-sm">
+                        <label className="flex items-center gap-1.5">
+                          <input
+                            type="radio"
+                            name={`mode-${d.id}`}
+                            checked={v === "all"}
+                            onChange={() => setMode(d.id, "all")}
+                            disabled={saving}
+                          />
+                          {t("Everyone in it")}
+                        </label>
+                        <label className="flex items-center gap-1.5">
+                          <input
+                            type="radio"
+                            name={`mode-${d.id}`}
+                            checked={v !== "all"}
+                            onChange={() => setMode(d.id, "some")}
+                            disabled={saving}
+                          />
+                          {t("Only some people")}
+                        </label>
+                      </div>
+                      {v !== "all" &&
+                        (inDept.length === 0 ? (
+                          <p className="text-xs text-muted-foreground">{t("Nobody is in this department yet.")}</p>
+                        ) : (
+                          <div className="grid gap-1 sm:grid-cols-2">
+                            {inDept.map((p) => (
+                              <label key={p.id} className="flex items-center gap-2 text-sm">
+                                <input
+                                  type="checkbox"
+                                  className="h-4 w-4"
+                                  checked={v.has(p.id)}
+                                  onChange={() => togglePerson(d.id, p.id)}
+                                  disabled={saving}
+                                />
+                                <span className="truncate">{p.full_name || t("Unnamed")}</span>
+                              </label>
+                            ))}
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+          {err && <p className="text-sm text-destructive">{err}</p>}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving}>
+            {t("Cancel")}
+          </Button>
+          <Button onClick={save} disabled={saving || emptyPick || currentQ.isLoading}>
+            {saving && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+            {t("Save")}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

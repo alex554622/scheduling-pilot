@@ -45,6 +45,10 @@ export type AppRules = {
    * hands them nothing but their own row. Admins always see everyone.
    */
   staff_see_coworkers: boolean;
+  /** Supervisors may approve or deny their people's time off and record absences. */
+  supervisors_approve_time_off: boolean;
+  /** Supervisors may fix their people's punches and write notes on their cards. */
+  supervisors_edit_timecards: boolean;
 };
 
 export const DEFAULT_APP_RULES: AppRules = {
@@ -68,6 +72,8 @@ export const DEFAULT_APP_RULES: AppRules = {
   schedule_menu: "builder",
   hide_admins_from_staff: true,
   staff_see_coworkers: true,
+  supervisors_approve_time_off: true,
+  supervisors_edit_timecards: true,
 };
 
 export function useAppRules() {

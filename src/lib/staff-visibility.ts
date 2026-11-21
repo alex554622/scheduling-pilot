@@ -32,12 +32,11 @@ import { useAuth } from "@/lib/auth";
  */
 
 /**
- * Roles that count as an admin here. "supervisor" was folded into company_admin
- * (see `normalizeRole` in `@/lib/auth`), but rows written before the merge still
- * carry it, and someone the database still calls a supervisor is management as
- * far as this rule is concerned.
+ * Roles that count as an admin here. Supervisors are not: they are scheduled
+ * and paid like the people they run, so "Hide admins from the rosters" leaves
+ * them on (see `company_presence()`, which agrees).
  */
-const ADMIN_ROLES = ["super_admin", "company_admin", "supervisor"] as const;
+const ADMIN_ROLES = ["super_admin", "company_admin"] as const;
 
 /** A person's own setting; no setting means the company default. */
 export type VisibilityMode = "everywhere" | "schedule_only" | "timecards_only" | "ghost";

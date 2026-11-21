@@ -7,6 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useAppRules } from "@/lib/app-rules";
 import { useStaffVisibility } from "@/lib/staff-visibility";
+import { useManagedScope } from "@/lib/supervisor-scope";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -169,7 +170,10 @@ function TimecardsPage() {
   const rules = useAppRules();
   const staff = useStaffVisibility();
   const isSuperAdmin = primaryRole === "super_admin";
-  const isManager = primaryRole === "company_admin" || isSuperAdmin;
+  // A supervisor reviews the cards of the people in their departments (and
+  // their own); whether they may change them is a company rule, below.
+  const scope = useManagedScope();
+  const isManager = primaryRole === "company_admin" || isSuperAdmin || scope.isSupervisor;
   const [period, setPeriod] = useState<Period>("week");
   const [format, setFormat] = useState<CardFormat>("simple");
   // The card someone last picked opens again next time, until they pick
@@ -297,8 +301,11 @@ function TimecardsPage() {
    * not hidden, it is just harder to find.
    */
   const roster = useMemo(
-    () => staff.visible(rosterQ.data ?? [], (m) => m.id, "timecards"),
-    [rosterQ.data, staff],
+    () =>
+      staff
+        .visible(rosterQ.data ?? [], (m) => m.id, "timecards")
+        .filter((m) => !scope.isSupervisor || m.id === user?.id || scope.manages(m.id)),
+    [rosterQ.data, staff, scope, user?.id],
   );
 
   // Company names for the roster and the printed header. A company admin only
@@ -369,6 +376,18 @@ function TimecardsPage() {
       : selectedUser === "me"
         ? roster[0]?.id
         : selectedUser;
+
+  /**
+   * Whether the edit controls show. An admin edits any card. A supervisor
+   * edits only their own people's — never their own card — and only while the
+   * company lets supervisors edit timecards. The punch RPCs and the notes
+   * policy refuse anything else regardless.
+   */
+  const canEditCard =
+    isManager &&
+    (!scope.isSupervisor ||
+      (scope.canEditTimecards &&
+        (viewingAll || (!!targetUserId && targetUserId !== user?.id && scope.manages(targetUserId)))));
 
   const punchesQ = useQuery<Punch[]>({
     queryKey: ["timecards", targetUserId, rangeStart.toISOString(), rangeEnd.toISOString()],
@@ -1085,7 +1104,7 @@ function TimecardsPage() {
                 {t("Print")}
               </Button>
             )}
-            {isManager && (
+            {canEditCard && (
               <Button
                 variant="outline"
                 size="sm"
@@ -1471,12 +1490,12 @@ function TimecardsPage() {
           <>
             <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
               <div
-                className={`grid ${isManager ? "grid-cols-[1fr_2fr_1fr_auto]" : "grid-cols-[1fr_2fr_1fr]"} border-b border-border bg-muted/30 px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground`}
+                className={`grid ${canEditCard ? "grid-cols-[1fr_2fr_1fr_auto]" : "grid-cols-[1fr_2fr_1fr]"} border-b border-border bg-muted/30 px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground`}
               >
                 <div>{t("Date")}</div>
                 <div>{t("Punches")}</div>
                 <div className="text-right">{t("Hours")}</div>
-                {isManager && <div className="w-16 text-right">{t("Edit")}</div>}
+                {canEditCard && <div className="w-16 text-right">{t("Edit")}</div>}
               </div>
               {!punchesQ.isLoading && !punchesQ.error && (punchesQ.data ?? []).length === 0 && (
                 <div className="border-b border-border px-4 py-6 text-center text-sm text-muted-foreground">
@@ -1486,13 +1505,13 @@ function TimecardsPage() {
                     from: fmtDate(rangeStart),
                     to: fmtDate(addDays(rangeEnd, -1)),
                   })}
-                  {isManager && " " + t("Use Edit on a day to add one.")}
+                  {canEditCard && " " + t("Use Edit on a day to add one.")}
                 </div>
               )}
               {grouped.rows.map((r, dayIndex) => (
                 <Fragment key={r.date.toISOString()}>
                   <div
-                    className={`grid ${isManager ? "grid-cols-[1fr_2fr_1fr_auto]" : "grid-cols-[1fr_2fr_1fr]"} items-start gap-2 border-b border-border px-4 py-3 text-sm last:border-0`}
+                    className={`grid ${canEditCard ? "grid-cols-[1fr_2fr_1fr_auto]" : "grid-cols-[1fr_2fr_1fr]"} items-start gap-2 border-b border-border px-4 py-3 text-sm last:border-0`}
                   >
                     <div className="font-medium text-foreground">{fmtDate(r.date)}</div>
                     <div className="space-y-1">
@@ -1515,7 +1534,7 @@ function TimecardsPage() {
                             <span className="text-xs text-destructive">{t("⚠ off-site")}</span>
                           )}
                           {hasLocations &&
-                            (isManager ? (
+                            (canEditCard ? (
                               <select
                                 className="max-w-[10rem] truncate rounded border border-border bg-background px-1 py-0.5 text-xs text-muted-foreground"
                                 value={p.in.location_id ?? ""}
@@ -1550,7 +1569,7 @@ function TimecardsPage() {
                               </span>
                             ))}
                           {hasLocations &&
-                            isManager &&
+                            canEditCard &&
                             (grouped.splits.get(p.in.at)?.length ?? 0) > 1 && (
                               <span className="text-xs text-muted-foreground">
                                 {byLocationText(grouped.splits.get(p.in.at)!)}
@@ -1594,7 +1613,7 @@ function TimecardsPage() {
                         </div>
                       )}
                     </div>
-                    {isManager && (
+                    {canEditCard && (
                       <div className="w-16 text-right">
                         <Button
                           variant="ghost"
@@ -1614,7 +1633,7 @@ function TimecardsPage() {
                       <WeekSubtotal
                         n={Math.floor(dayIndex / 7) + 1}
                         week={grouped.weeks[Math.floor(dayIndex / 7)]}
-                        isManager={isManager}
+                        isManager={canEditCard}
                       />
                     )}
                 </Fragment>
@@ -1709,7 +1728,7 @@ function TimecardsPage() {
                 ) : notes.length === 0 ? (
                   <p className="px-4 py-4 text-sm text-muted-foreground">
                     {t("No notes for this period.")}
-                    {isManager && " " + t("Add one below — it prints on the detailed time card.")}
+                    {canEditCard && " " + t("Add one below — it prints on the detailed time card.")}
                   </p>
                 ) : (
                   <ul className="divide-y divide-border">
@@ -1732,7 +1751,7 @@ function TimecardsPage() {
                             })}
                           </p>
                         </div>
-                        {isManager && (
+                        {canEditCard && (
                           <Button
                             variant="ghost"
                             size="sm"
@@ -1748,7 +1767,7 @@ function TimecardsPage() {
                     ))}
                   </ul>
                 )}
-                {isManager && !notesQ.error && (
+                {canEditCard && !notesQ.error && (
                   <form
                     className="space-y-2 border-t border-border bg-muted/20 px-4 py-3"
                     onSubmit={(e) => {
@@ -1805,7 +1824,7 @@ function TimecardsPage() {
 
             {/* Where each punch was made. Managers only: an employee's own timecard
           is about their hours, not a map of their movements. */}
-            {isManager && (
+            {canEditCard && (
               <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
                 <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
                   <MapPin className="h-4 w-4 text-muted-foreground" />
@@ -2001,7 +2020,7 @@ function TimecardsPage() {
           </Dialog>
         )}
 
-        {isManager && editingDay && targetUserId && (
+        {canEditCard && editingDay && targetUserId && (
           <TimecardDayEditor
             open
             onOpenChange={(next) => !next && setEditingDay(null)}

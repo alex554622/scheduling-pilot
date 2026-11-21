@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { useManagedScope } from "@/lib/supervisor-scope";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,7 +29,10 @@ type Slot = {
 function AvailabilityPage() {
   const t = useT("time");
   const { company, user, primaryRole, loading } = useAuth();
-  const isManager = primaryRole === "company_admin" || primaryRole === "super_admin";
+  // A supervisor can set availability for their own people (and themselves).
+  const scope = useManagedScope();
+  const isManager =
+    primaryRole === "company_admin" || primaryRole === "super_admin" || scope.isSupervisor;
   const [target, setTarget] = useState<string | null>(null);
 
   const membersQ = useQuery({
@@ -47,7 +51,9 @@ function AvailabilityPage() {
   if (!company) return <div className="text-sm text-muted-foreground">{t("Join a company first.")}</div>;
 
   const employeeId = (isManager && target) || user!.id;
-  const members = membersQ.data ?? [];
+  const members = (membersQ.data ?? []).filter(
+    (m) => !scope.isSupervisor || m.id === user?.id || scope.manages(m.id),
+  );
   const viewingName = members.find((m) => m.id === employeeId)?.full_name;
 
   return (

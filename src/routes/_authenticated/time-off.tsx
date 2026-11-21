@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { useManagedScope } from "@/lib/supervisor-scope";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import type { DateRange } from "react-day-picker";
@@ -59,7 +60,14 @@ function TimeOffPage() {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const companyId = profile?.company_id ?? null;
-  const canManage = primaryRole === "company_admin" || primaryRole === "super_admin";
+  // A supervisor reviews their own people's requests. Whether they may answer
+  // them is a company rule; decide_time_off checks the same thing.
+  const scope = useManagedScope();
+  const canManage =
+    primaryRole === "company_admin" || primaryRole === "super_admin" || scope.isSupervisor;
+  const canDecide = (employeeId: string) =>
+    !scope.isSupervisor ||
+    (scope.canApproveTimeOff && employeeId !== user?.id && scope.manages(employeeId));
 
   const reqQ = useQuery({
     queryKey: ["time-off", companyId],
@@ -168,9 +176,11 @@ function TimeOffPage() {
   if (loading) return <div className="text-sm text-muted-foreground">{t("Loading…")}</div>;
   if (!companyId) return <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">{t("Join a company to use time off.")}</div>;
 
-  const all = reqQ.data ?? [];
+  const all = (reqQ.data ?? []).filter(
+    (r) => !scope.isSupervisor || r.employee_id === user?.id || scope.manages(r.employee_id),
+  );
   const mine = all.filter((r) => r.employee_id === user?.id);
-  const pending = all.filter((r) => r.status === "pending");
+  const pending = all.filter((r) => r.status === "pending" && canDecide(r.employee_id));
   const visible = canManage ? all : mine;
 
   return (
@@ -220,7 +230,7 @@ function TimeOffPage() {
                     {fmtDate(r.start_date)} – {fmtDate(r.end_date)} · {days(r.start_date, r.end_date) === 1 ? t("1 day") : t("{n} days", { n: days(r.start_date, r.end_date) })}
                   </p>
                   {r.note && <p className="mt-1 text-xs text-muted-foreground italic">"{r.note}"</p>}
-                  {canManage && r.status === "pending" && shiftsCovered(r).length > 0 && (
+                  {canManage && canDecide(r.employee_id) && r.status === "pending" && shiftsCovered(r).length > 0 && (
                     <p className="mt-1 text-xs text-warning-foreground">
                       {t(
                         shiftsCovered(r).length === 1
@@ -235,7 +245,7 @@ function TimeOffPage() {
                   )}
                 </div>
                 <StatusBadge status={r.status} />
-                {canManage && r.status === "pending" && (
+                {canManage && canDecide(r.employee_id) && r.status === "pending" && (
                   <div className="flex gap-1">
                     <Button size="sm" variant="outline" onClick={() => decideMut.mutate({ id: r.id, approve: true })} disabled={busy}>
                       <Check className="h-4 w-4" /> {t("Approve")}

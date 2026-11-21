@@ -304,6 +304,41 @@ function DepartmentsTab({ companyId }: { companyId: string }) {
     onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
   });
 
+  // Who is in each department, and who supervises it. Supervisors are given
+  // their departments on the Employees page, from the supervisor's row.
+  const peopleQ = useQuery({
+    queryKey: ["company-members-departments", companyId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("profiles").select("id, full_name, department_id")
+        .eq("company_id", companyId);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+  const assignQ = useQuery({
+    queryKey: ["supervisor-assignments", companyId, "by-department"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("supervisor_assignments").select("supervisor_id, department_id")
+        .eq("company_id", companyId);
+      // Before the supervisor migration is run the table is missing; the list
+      // still works, just without supervisors.
+      if (error) return [];
+      return data ?? [];
+    },
+  });
+  const nameById = new Map((peopleQ.data ?? []).map((p) => [p.id, p.full_name || t("Unnamed")]));
+  const headcount = (deptId: string) =>
+    (peopleQ.data ?? []).filter((p) => p.department_id === deptId).length;
+  const supervisorsOf = (deptId: string) => [
+    ...new Set(
+      (assignQ.data ?? [])
+        .filter((a) => a.department_id === deptId)
+        .map((a) => nameById.get(a.supervisor_id) ?? t("Unnamed")),
+    ),
+  ];
+
   const rows = q.data ?? [];
 
   return (
@@ -321,6 +356,13 @@ function DepartmentsTab({ companyId }: { companyId: string }) {
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-foreground">{d.name}</p>
                   {d.description && <p className="truncate text-xs text-muted-foreground">{d.description}</p>}
+                  <p className="truncate text-xs text-muted-foreground">
+                    {headcount(d.id) === 1 ? t("1 person") : t("{n} people", { n: headcount(d.id) })}
+                    {" · "}
+                    {supervisorsOf(d.id).length === 0
+                      ? t("No supervisor")
+                      : t("Supervised by {names}", { names: supervisorsOf(d.id).join(", ") })}
+                  </p>
                 </div>
                 <div className="flex shrink-0 gap-1">
                   <Button variant="ghost" size="sm" onClick={() => { setErr(null); setEditing(d); }} aria-label={t("Edit {name}", { name: d.name })}>
