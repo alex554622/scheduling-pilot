@@ -248,6 +248,75 @@ export type Database = {
         }
         Relationships: []
       }
+      kiosk_settings: {
+        Row: {
+          company_id: string
+          display_mode: string
+          idle_seconds: number
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          company_id: string
+          display_mode?: string
+          idle_seconds?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          company_id?: string
+          display_mode?: string
+          idle_seconds?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
+      kiosk_slides: {
+        Row: {
+          body: string | null
+          company_id: string
+          created_at: string
+          created_by: string | null
+          duration_seconds: number
+          enabled: boolean
+          id: string
+          image_path: string | null
+          kind: string
+          position: number
+          title: string | null
+          updated_at: string
+        }
+        Insert: {
+          body?: string | null
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          duration_seconds?: number
+          enabled?: boolean
+          id?: string
+          image_path?: string | null
+          kind: string
+          position?: number
+          title?: string | null
+          updated_at?: string
+        }
+        Update: {
+          body?: string | null
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          duration_seconds?: number
+          enabled?: boolean
+          id?: string
+          image_path?: string | null
+          kind?: string
+          position?: number
+          title?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       employee_clock_codes: {
         Row: {
           code: string
@@ -1622,6 +1691,8 @@ export type Database = {
       set_employee_clock_code: { Args: { _user: string }; Returns: string }
       clear_employee_clock_code: { Args: { _user: string }; Returns: undefined }
       kiosk_device_info: { Args: { _token: string }; Returns: Json }
+      kiosk_display: { Args: { _token: string }; Returns: Json }
+      reorder_kiosk_slides: { Args: { _ids: string[] }; Returns: undefined }
       kiosk_state: { Args: { _token: string; _code: string }; Returns: Json }
       kiosk_punch: {
         Args: { _token: string; _code: string; _action: string; _minutes?: number | null }

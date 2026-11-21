@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useLocaleTag, useT } from "@/lib/i18n";
 import { shareableOrigin } from "@/lib/native/platform";
+import { KioskDisplaySettings } from "@/components/kiosk-display-settings";
 
 /**
  * Set-up screen for the shared clock-in device: the link a tablet is opened
@@ -219,6 +220,8 @@ function SharedClockInAdminPage() {
           })}
         </div>
       </section>
+
+      {company?.id && <KioskDisplaySettings companyId={company.id} />}
 
       <section className="rounded-2xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
         <h2 className="text-lg font-semibold text-foreground">{t("Employee codes")}</h2>

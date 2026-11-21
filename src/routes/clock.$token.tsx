@@ -1,8 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Coffee, Delete, LogIn, LogOut, Loader2, CheckCircle2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { BrandLogo } from "@/components/brand";
+import {
+  KioskSlideshow,
+  playableSlides,
+  usePreloadedSlideImages,
+  type KioskSlide,
+} from "@/components/kiosk-slideshow";
 import { noindexSeo } from "@/lib/seo";
 import { translate, useLocaleTag, useT } from "@/lib/i18n";
 
@@ -48,6 +54,56 @@ type KioskReply = {
 /** How long a confirmation stays up before the screen is ready for the next person. */
 const CONFIRM_MS = 4000;
 const BREAK_LENGTHS = [10, 30, 60] as const;
+/** How often the device picks up slideshow changes an admin made. */
+const DISPLAY_REFRESH_MS = 5 * 60_000;
+/** How long the slideshow takes to fade out; it swallows taps until then. */
+const WAKE_FADE_MS = 350;
+const NO_SLIDES: KioskSlide[] = [];
+
+type DisplayConfig = { mode: "simple" | "slideshow"; idleSeconds: number; slides: KioskSlide[] };
+
+/**
+ * The admin's display settings (kiosk_display). Loaded beside the keypad, never
+ * in front of it: until it answers, or if it fails, the device is the plain
+ * keypad, so a slow or broken slideshow can't keep anyone from clocking in.
+ */
+function useKioskDisplay(token: string): DisplayConfig | null {
+  const [display, setDisplay] = useState<DisplayConfig | null>(null);
+  useEffect(() => {
+    let stopped = false;
+    const load = () =>
+      supabase.rpc("kiosk_display", { _token: token }).then(({ data, error }) => {
+        if (stopped) return;
+        if (error) {
+          // Keep whatever was showing; the next refresh tries again.
+          console.warn("[shared clock-in] display settings", error);
+          return;
+        }
+        const r = data as unknown as {
+          ok?: boolean;
+          mode?: string;
+          idle_seconds?: number;
+          slides?: KioskSlide[];
+        } | null;
+        if (!r?.ok) {
+          setDisplay(null);
+          return;
+        }
+        setDisplay({
+          mode: r.mode === "slideshow" ? "slideshow" : "simple",
+          idleSeconds: Math.max(5, r.idle_seconds ?? 30),
+          slides: Array.isArray(r.slides) ? r.slides : [],
+        });
+      });
+    void load();
+    const id = setInterval(() => void load(), DISPLAY_REFRESH_MS);
+    return () => {
+      stopped = true;
+      clearInterval(id);
+    };
+  }, [token]);
+  return display;
+}
 
 function callKiosk(
   fn: "kiosk_device_info" | "kiosk_state" | "kiosk_punch",
@@ -93,6 +149,42 @@ function SharedClockInPage() {
   }, [breakEndsAt]);
   const breakLeftMs = breakEndsAt != null ? breakEndsAt - now : 0;
 
+  // Slideshow mode: slides play while nobody is at the device.
+  const display = useKioskDisplay(token);
+  const readyImages = usePreloadedSlideImages(display?.slides ?? NO_SLIDES);
+  const playable = useMemo(
+    () => (display?.mode === "slideshow" ? playableSlides(display.slides, readyImages) : NO_SLIDES),
+    [display, readyImages],
+  );
+  const slideshowOn = playable.length > 0;
+  const idleMs = (display?.idleSeconds ?? 30) * 1000;
+  const [idle, setIdle] = useState(true);
+  const [fading, setFading] = useState(false);
+  const lastActivity = useRef(Date.now());
+
+  useEffect(() => {
+    const mark = () => {
+      lastActivity.current = Date.now();
+    };
+    const events = ["pointerdown", "pointermove", "keydown", "wheel", "touchstart"] as const;
+    for (const e of events) window.addEventListener(e, mark, { capture: true, passive: true });
+    return () => {
+      for (const e of events) window.removeEventListener(e, mark, { capture: true });
+    };
+  }, []);
+
+  const wake = useCallback(() => {
+    lastActivity.current = Date.now();
+    setIdle(false);
+    setFading(true);
+  }, []);
+
+  useEffect(() => {
+    if (!fading) return;
+    const timer = setTimeout(() => setFading(false), WAKE_FADE_MS);
+    return () => clearTimeout(timer);
+  }, [fading]);
+
   useEffect(() => {
     void callKiosk("kiosk_device_info", { _token: token }).then((reply) => {
       if (reply.ok) setDevice({ company: reply.company ?? null, label: reply.label ?? null });
@@ -137,6 +229,19 @@ function SharedClockInPage() {
       });
     });
   }, [code, person, busy, token, t]);
+
+  // Back to the slideshow after a quiet spell. Never while a request is in
+  // flight, so a punch someone just made always gets its answer on screen.
+  useEffect(() => {
+    if (!slideshowOn || idle || busy || deviceError) return;
+    const id = setInterval(() => {
+      if (Date.now() - lastActivity.current < idleMs) return;
+      setConfirmation(null);
+      reset();
+      setIdle(true);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [slideshowOn, idle, busy, deviceError, idleMs, reset]);
 
   async function punch(action: "clock" | "break", minutes?: number) {
     setBusy(true);
@@ -184,6 +289,9 @@ function SharedClockInPage() {
 
   return (
     <Screen>
+      {slideshowOn && (idle || fading) && (
+        <KioskSlideshow slides={playable} onWake={wake} fading={!idle} />
+      )}
       <div className="text-center">
         <BrandLogo className="mx-auto h-14" />
         <h1 className="mt-4 text-2xl font-semibold text-foreground">
