@@ -20,6 +20,10 @@ export interface PrintablePair {
 
 export interface PrintableDay {
   date: Date;
+  /** A day off on it — "Sick", "Vacation"… — or null. */
+  absence?: string | null;
+  /** A supervisor's comments on the day, ready to print. */
+  comments?: string[];
   pairs: PrintablePair[];
   totalMs: number;
 }
@@ -28,6 +32,10 @@ export interface PrintableDay {
 export interface PrintableNote {
   /** The day it is about, "YYYY-MM-DD". */
   day: string;
+  /** "Note" or "OT slip", as printed. */
+  type?: string;
+  /** An OT slip's hours, e.g. "2.50 hrs"; empty otherwise. */
+  hours?: string;
   note: string;
   author: string;
   createdAt: string;
@@ -55,6 +63,8 @@ export interface PrintableTimecardProps {
    * exists only on paper (hidden until the browser prints).
    */
   onScreen?: boolean;
+  /** Days off in the period by kind, e.g. { label: "Sick", days: "1 day" }. */
+  absences?: { label: string; days: string }[];
   companyName: string;
   employeeName: string;
   position?: string | null;
@@ -96,6 +106,7 @@ export function PrintableTimecard({
   weekTotals = [],
   notes = [],
   onScreen = false,
+  absences = [],
   companyName,
   employeeName,
   position,
@@ -194,7 +205,9 @@ export function PrintableTimecard({
                   <Td>—</Td>
                   <Td>—</Td>
                   <Td className="text-right">0h 00m</Td>
-                  <Td className="text-left text-neutral-500">{t("No punches")}</Td>
+                  <Td className="text-left text-neutral-500">
+                    {[day.absence ?? t("No punches"), ...(day.comments ?? [])].join(" · ")}
+                  </Td>
                 </tr>,
                 subtotal,
               ];
@@ -216,6 +229,8 @@ export function PrintableTimecard({
                   <Td className="text-right">{i === 0 ? formatHours(day.totalMs) : ""}</Td>
                   <Td className="text-left text-neutral-600">
                     {[
+                      i === 0 ? (day.absence ?? null) : null,
+                      ...(i === 0 ? (day.comments ?? []) : []),
                       pair.location ?? null,
                       !pair.outAt ? t("Still clocked in") : null,
                       pair.offSite ? t("Off-site punch") : null,
@@ -280,6 +295,13 @@ export function PrintableTimecard({
         </table>
       </section>
 
+      {absences.length > 0 && (
+        <p className="mt-2 text-right text-[11px]">
+          <span className="font-semibold">{t("Days off")}:</span>{" "}
+          {absences.map((a) => `${a.label} ${a.days}`).join("  ·  ")}
+        </p>
+      )}
+
       {detailed && (
         <section className="mt-5" data-print-keep>
           <p className="border-b border-black pb-1 text-[10px] font-bold uppercase tracking-wider">
@@ -291,8 +313,10 @@ export function PrintableTimecard({
             <table className="w-full border-collapse text-[11px]">
               <thead>
                 <tr className="bg-neutral-100">
-                  <Th className="w-[17%] text-left">{t("Date")}</Th>
+                  <Th className="w-[15%] text-left">{t("Date")}</Th>
+                  <Th className="w-[11%] text-left">{t("Type")}</Th>
                   <Th className="text-left">{t("Note")}</Th>
+                  <Th className="w-[10%] text-right">{t("Hours")}</Th>
                   <Th className="w-[18%] text-left">{t("Created by")}</Th>
                   <Th className="w-[17%] text-left">{t("Created")}</Th>
                 </tr>
@@ -301,7 +325,9 @@ export function PrintableTimecard({
                 {notes.map((n, i) => (
                   <tr key={i} className="border-b border-neutral-300">
                     <Td className="text-left font-medium">{fmtRowDate(fromDayString(n.day))}</Td>
+                    <Td className="text-left">{n.type ?? ""}</Td>
                     <Td className="whitespace-pre-wrap text-left">{n.note}</Td>
+                    <Td className="text-right">{n.hours ?? ""}</Td>
                     <Td className="text-left">{n.author || "—"}</Td>
                     <Td className="text-left text-neutral-600">
                       {new Date(n.createdAt).toLocaleString(localeTag(), {

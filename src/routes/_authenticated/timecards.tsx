@@ -16,12 +16,14 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  CalendarOff,
   Clock,
   Download,
   ExternalLink,
   Eye,
   Loader2,
   MapPin,
+  MessageSquarePlus,
   NotebookPen,
   Pencil,
   Printer,
@@ -102,6 +104,29 @@ type Period = "week" | "biweek";
  */
 type CardFormat = "simple" | "detailed";
 
+/**
+ * An approved day off on the card: sick, family leave, vacation… These are
+ * time_off_requests rows, the same ones the Time off page shows.
+ */
+type Absence = {
+  id: string;
+  kind: string;
+  start_date: string;
+  end_date: string;
+  note: string | null;
+};
+
+/** The kinds an admin can mark from the time card, in the order offered. */
+const ABSENCE_KINDS = ["sick", "family_leave", "vacation", "personal", "other"] as const;
+/** Stored kinds stay English; these are the words shown for them. */
+const ABSENCE_LABEL: Record<string, string> = {
+  sick: "Sick",
+  family_leave: "Family leave",
+  vacation: "Vacation",
+  personal: "Personal",
+  other: "Day off",
+};
+
 /** Where the last-picked card format and pay period are remembered. */
 const CARD_FORMAT_KEY = "timecards.format";
 const CARD_PERIOD_KEY = "timecards.period";
@@ -112,7 +137,15 @@ type TimecardNote = {
   note: string;
   author_name: string;
   created_at: string;
+  /** "day" a comment on that day's line; "note" / "ot_slip" the Notes section. */
+  kind: string;
+  /** An OT slip's hours; empty for the rest. */
+  hours: number | null;
 };
+
+/** What goes in the Notes section at the foot of the card (not a day comment). */
+type PeriodNoteKind = "note" | "ot_slip";
+const NOTE_KIND_LABEL: Record<string, string> = { note: "Note", ot_slip: "OT slip" };
 
 function startOfWeek(d: Date, weekStartDay = 1) {
   const x = new Date(d);
@@ -206,6 +239,10 @@ function TimecardsPage() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [noteDay, setNoteDay] = useState("");
   const [noteText, setNoteText] = useState("");
+  const [noteKind, setNoteKind] = useState<PeriodNoteKind>("note");
+  const [noteHours, setNoteHours] = useState("");
+  // The day-comment window keeps its own text, apart from the Notes form.
+  const [commentText, setCommentText] = useState("");
   const [noteErr, setNoteErr] = useState<string | null>(null);
   const [anchor, setAnchor] = useState<Date>(() => startOfWeek(new Date(), rules.week_start_day));
   const [selectedUser, setSelectedUser] = useState<string | "me">("me");
@@ -419,12 +456,12 @@ function TimecardsPage() {
   const periodLastDay = toDayString(addDays(rangeEnd, -1));
   const notesQ = useQuery<TimecardNote[]>({
     queryKey: ["timecard-notes", targetUserId, periodFirstDay, periodLastDay],
-    enabled: detailed && !!targetUserId,
+    enabled: !!targetUserId,
     retry: false,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("timecard_notes")
-        .select("id, note_date, note, author_name, created_at")
+        .select("id, note_date, note, author_name, created_at, kind, hours")
         .eq("user_id", targetUserId!)
         .gte("note_date", periodFirstDay)
         .lte("note_date", periodLastDay)
@@ -434,10 +471,127 @@ function TimecardsPage() {
       return data ?? [];
     },
   });
-  const notes = detailed ? (notesQ.data ?? []) : [];
+  const allNotes = notesQ.data;
+  /** The Notes section at the foot of the card: period notes and OT slips. */
+  const notes = useMemo(() => (allNotes ?? []).filter((n) => n.kind !== "day"), [allNotes]);
+  /**
+   * A supervisor's comments on each day, by "YYYY-MM-DD". They print on their
+   * own day's line, on either card, and never in the Notes section.
+   */
+  const commentsByDay = useMemo(() => {
+    const m = new Map<string, TimecardNote[]>();
+    for (const n of allNotes ?? [])
+      if (n.kind === "day") m.set(n.note_date, [...(m.get(n.note_date) ?? []), n]);
+    return m;
+  }, [allNotes]);
+  const noteKindLabel = (n: TimecardNote) => t(NOTE_KIND_LABEL[n.kind] ?? "Note");
+  /** "8.00 hrs" for an OT slip; empty otherwise. */
+  const noteHoursText = (n: TimecardNote) =>
+    n.hours != null ? `${Number(n.hours).toFixed(2)} ${t("hrs")}` : "";
+  /** Comment text as it reads on the card's Notes column. */
+  const quoted = (n: TimecardNote) => `“${n.note}”`;
+  // The day whose comments window is open.
+  const [commentDay, setCommentDay] = useState<string | null>(null);
+  function openComments(day: Date) {
+    const key = toDayString(day);
+    setCommentDay(key);
+    setCommentText("");
+    setNoteErr(null);
+  }
+
+  // Approved days off in the period, whichever way they were entered: asked
+  // for on the Time off page and approved, or marked here by an admin.
+  const absencesQ = useQuery<Absence[]>({
+    queryKey: ["timecard-absences", targetUserId, periodFirstDay, periodLastDay],
+    enabled: !!targetUserId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("time_off_requests")
+        .select("id, kind, start_date, end_date, note")
+        .eq("employee_id", targetUserId!)
+        .eq("status", "approved")
+        .lte("start_date", periodLastDay)
+        .gte("end_date", periodFirstDay)
+        .order("start_date", { ascending: true });
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+  /** Each day of the period that falls in an absence, by its "YYYY-MM-DD". */
+  const absenceByDay = useMemo(() => {
+    const m = new Map<string, Absence>();
+    for (const a of absencesQ.data ?? []) {
+      for (let d = fromDayString(a.start_date); toDayString(d) <= a.end_date; d = addDays(d, 1)) {
+        const key = toDayString(d);
+        if (key >= periodFirstDay && key <= periodLastDay && !m.has(key)) m.set(key, a);
+      }
+    }
+    return m;
+  }, [absencesQ.data, periodFirstDay, periodLastDay]);
+  const absenceLabel = (a: Absence) => t(ABSENCE_LABEL[a.kind] ?? "Day off");
+  /** "Sick 1 day · Vacation 2 days" — the period's days off, by kind. */
+  const absenceSummary = useMemo(() => {
+    const count = new Map<string, number>();
+    for (const a of absenceByDay.values()) count.set(a.kind, (count.get(a.kind) ?? 0) + 1);
+    // The usual kinds in their usual order, then anything else on file.
+    const order: string[] = [...ABSENCE_KINDS, ...count.keys()];
+    return [...new Set(order)]
+      .filter((k) => count.has(k))
+      .map((k) => ({ label: t(ABSENCE_LABEL[k] ?? "Day off"), days: count.get(k)! }));
+  }, [absenceByDay, t]);
+  const daysText = (n: number) => (n === 1 ? t("1 day") : t("{n} days", { n }));
+
+  // The "Mark absence" window, opened from a day's row.
+  const [absenceDay, setAbsenceDay] = useState<string | null>(null);
+  const [absenceKind, setAbsenceKind] = useState<string>("sick");
+  const [absenceEnd, setAbsenceEnd] = useState("");
+  const [absenceNote, setAbsenceNote] = useState("");
+  const [absenceErr, setAbsenceErr] = useState<string | null>(null);
+  function openAbsence(day: Date) {
+    const key = toDayString(day);
+    setAbsenceDay(key);
+    setAbsenceKind("sick");
+    setAbsenceEnd(key);
+    setAbsenceNote("");
+    setAbsenceErr(null);
+  }
+  const recordAbsence = useMutation({
+    mutationFn: async () => {
+      if (!targetUserId || !absenceDay) throw new Error(t("Pick an employee first."));
+      const { error } = await supabase.rpc("manager_record_absence", {
+        _employee: targetUserId,
+        _kind: absenceKind,
+        _start: absenceDay,
+        _end: absenceEnd && absenceEnd >= absenceDay ? absenceEnd : absenceDay,
+        _note: absenceNote.trim() || null,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setAbsenceDay(null);
+      void qc.invalidateQueries({ queryKey: ["timecard-absences"] });
+    },
+    onError: (e: Error) => setAbsenceErr(e.message),
+  });
+  const removeAbsence = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.rpc("manager_remove_absence", { _request: id });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setAbsenceDay(null);
+      void qc.invalidateQueries({ queryKey: ["timecard-absences"] });
+    },
+    onError: (e: Error) => setAbsenceErr(e.message),
+  });
 
   const addNote = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (v: {
+      kind: "day" | PeriodNoteKind;
+      day: string;
+      text: string;
+      hours?: string;
+    }) => {
       const noteCompany =
         roster.find((m) => m.id === targetUserId)?.company_id ?? company?.id ?? null;
       if (!targetUserId || !noteCompany) throw new Error(t("Pick an employee first."));
@@ -445,16 +599,20 @@ function TimecardsPage() {
         company_id: noteCompany,
         user_id: targetUserId,
         note_date:
-          noteDay && noteDay >= periodFirstDay && noteDay <= periodLastDay
-            ? noteDay
-            : periodFirstDay,
-        note: noteText.trim(),
+          v.day && v.day >= periodFirstDay && v.day <= periodLastDay ? v.day : periodFirstDay,
+        note: v.text.trim(),
+        kind: v.kind,
+        hours: v.kind === "ot_slip" && v.hours ? Number(v.hours) : null,
         author_name: profile?.full_name || user?.email || "",
       });
       if (error) throw error;
     },
-    onSuccess: () => {
-      setNoteText("");
+    onSuccess: (_, v) => {
+      if (v.kind === "day") setCommentText("");
+      else {
+        setNoteText("");
+        setNoteHours("");
+      }
       setNoteErr(null);
       void qc.invalidateQueries({ queryKey: ["timecard-notes"] });
     },
@@ -835,10 +993,16 @@ function TimecardsPage() {
             unpaid: "—",
             paid: "—",
             hours: "0h 00m",
-            notes: t("No punches"),
+            notes: [
+              absenceByDay.has(toDayString(r.date))
+                ? absenceLabel(absenceByDay.get(toDayString(r.date))!)
+                : t("No punches"),
+              ...(commentsByDay.get(toDayString(r.date)) ?? []).map(quoted),
+            ].join(" · "),
           },
         ];
       }
+      const off = absenceByDay.get(toDayString(r.date));
       return r.pairs.map((p, i) => ({
         date: i === 0 ? fmtDate(r.date) : "",
         clockIn: fmtTime(p.in.at, rules.punch_round_minutes),
@@ -847,6 +1011,8 @@ function TimecardsPage() {
         paid: p.paidBreakMs > 0 ? fmtHours(p.paidBreakMs) : "—",
         hours: i === 0 ? fmtHours(r.totalMs) : "",
         notes: [
+          i === 0 && off ? absenceLabel(off) : null,
+          ...(i === 0 ? (commentsByDay.get(toDayString(r.date)) ?? []).map(quoted) : []),
           hasLocations ? shiftPlaces(grouped.splits.get(p.in.at), p.in.location_id) : null,
           !p.out ? t("Still clocked in") : null,
           // Where someone punched from is a manager's business; an employee's
@@ -877,6 +1043,8 @@ function TimecardsPage() {
       notes: detailed
         ? notes.map((n) => ({
             date: fmtDate(fromDayString(n.note_date)),
+            type: noteKindLabel(n),
+            hours: noteHoursText(n),
             note: n.note,
             author: n.author_name || "—",
             created: new Date(n.created_at).toLocaleString(localeTag(), {
@@ -911,6 +1079,7 @@ function TimecardsPage() {
           }))
         : [],
       overtimeNote: overtimeNote(rules, period === "week"),
+      absences: absenceSummary.map((a) => ({ label: a.label, days: daysText(a.days) })),
       roundNote: `${rules.punch_round_minutes > 0 ? t("Punch times and hours rounded to the nearest {n} minutes.", { n: rules.punch_round_minutes }) : t("Punch times shown as recorded.")} ${t("Unpaid break time is deducted from hours worked; paid break time is not.")}`,
       filename: `${detailed ? "detailed-timecard" : "timecard"}-${employeeName.replace(/[^\w.-]+/g, "-").replace(/^-|-$/g, "")}-${rangeStart.toISOString().slice(0, 10)}.pdf`,
     };
@@ -958,6 +1127,8 @@ function TimecardsPage() {
     weekTotals: showWeekTotals ? grouped.weeks : [],
     notes: notes.map((n) => ({
       day: n.note_date,
+      type: noteKindLabel(n),
+      hours: noteHoursText(n),
       note: n.note,
       author: n.author_name,
       createdAt: n.created_at,
@@ -968,9 +1139,14 @@ function TimecardsPage() {
     periodLabel: period === "week" ? t("Weekly") : t("Bi-weekly"),
     rangeStart,
     rangeEnd,
+    absences: absenceSummary.map((a) => ({ label: a.label, days: daysText(a.days) })),
     days: grouped.rows.map((r) => ({
       date: r.date,
       totalMs: r.totalMs,
+      absence: absenceByDay.has(toDayString(r.date))
+        ? absenceLabel(absenceByDay.get(toDayString(r.date))!)
+        : null,
+      comments: (commentsByDay.get(toDayString(r.date)) ?? []).map(quoted),
       pairs: r.pairs.map((p) => ({
         inAt: p.in.at,
         outAt: p.out?.at ?? null,
@@ -1005,6 +1181,195 @@ function TimecardsPage() {
 
       {/* The same page the printer gets, on screen. Hidden from print itself so
           printing with it open still yields one copy. */}
+      <Dialog open={!!commentDay} onOpenChange={(o) => !o && setCommentDay(null)}>
+        <DialogContent data-print-hide className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t("Comments")}</DialogTitle>
+            <DialogDescription>
+              {employeeName}
+              {commentDay ? ` · ${fmtDate(fromDayString(commentDay))}` : ""}
+            </DialogDescription>
+          </DialogHeader>
+          {commentDay && (commentsByDay.get(commentDay) ?? []).length > 0 && (
+            <ul className="divide-y divide-border rounded-md border border-border text-sm">
+              {(commentsByDay.get(commentDay) ?? []).map((n) => (
+                <li key={n.id} className="flex items-start gap-2 px-3 py-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="whitespace-pre-wrap break-words text-foreground">{n.note}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {n.author_name || "—"} ·{" "}
+                      {new Date(n.created_at).toLocaleString(localeTag(), {
+                        month: "short",
+                        day: "numeric",
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })}
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-muted-foreground hover:text-destructive"
+                    disabled={deleteNote.isPending}
+                    onClick={() => deleteNote.mutate(n.id)}
+                    aria-label={t("Delete note")}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <form
+            className="space-y-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (commentText.trim() && commentDay)
+                addNote.mutate({ kind: "day", day: commentDay, text: commentText });
+            }}
+          >
+            <Label htmlFor="day-comment" className="text-xs">
+              {t("Add a comment")}
+            </Label>
+            <Textarea
+              id="day-comment"
+              rows={3}
+              maxLength={1000}
+              placeholder={t("e.g. Covered the downtown route; left early with approval")}
+              value={commentText}
+              onChange={(e) => setCommentText(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Comments show on this day of the time card, on screen and printed. The employee can read them.",
+              )}
+            </p>
+            {noteErr && <p className="text-xs text-destructive">{noteErr}</p>}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setCommentDay(null)}>
+                {t("Close")}
+              </Button>
+              <Button type="submit" disabled={!commentText.trim() || addNote.isPending}>
+                {addNote.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {t("Add comment")}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!absenceDay} onOpenChange={(o) => !o && setAbsenceDay(null)}>
+        <DialogContent data-print-hide className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t("Mark an absence")}</DialogTitle>
+            <DialogDescription>
+              {employeeName}
+              {absenceDay ? ` · ${fmtDate(fromDayString(absenceDay))}` : ""}
+            </DialogDescription>
+          </DialogHeader>
+          {absenceDay && absenceByDay.has(absenceDay) ? (
+            (() => {
+              const a = absenceByDay.get(absenceDay)!;
+              return (
+                <div className="space-y-3 text-sm">
+                  <p>
+                    <span className="font-medium">{absenceLabel(a)}</span>{" "}
+                    <span className="text-muted-foreground">
+                      {a.start_date === a.end_date
+                        ? fmtDate(fromDayString(a.start_date))
+                        : `${fmtDate(fromDayString(a.start_date))} – ${fmtDate(fromDayString(a.end_date))}`}
+                    </span>
+                  </p>
+                  {a.note && <p className="text-muted-foreground">{a.note}</p>}
+                  <p className="text-xs text-muted-foreground">
+                    {t(
+                      "Removing it takes every day of it off the time card. Shifts it opened stay open.",
+                    )}
+                  </p>
+                  {absenceErr && <p className="text-xs text-destructive">{absenceErr}</p>}
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setAbsenceDay(null)}>
+                      {t("Close")}
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      disabled={removeAbsence.isPending}
+                      onClick={() => removeAbsence.mutate(a.id)}
+                    >
+                      {removeAbsence.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      {t("Remove absence")}
+                    </Button>
+                  </DialogFooter>
+                </div>
+              );
+            })()
+          ) : (
+            <form
+              className="space-y-3"
+              onSubmit={(e) => {
+                e.preventDefault();
+                recordAbsence.mutate();
+              }}
+            >
+              <div className="space-y-1">
+                <Label htmlFor="absence-kind">{t("Type")}</Label>
+                <select
+                  id="absence-kind"
+                  className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+                  value={absenceKind}
+                  onChange={(e) => setAbsenceKind(e.target.value)}
+                >
+                  {ABSENCE_KINDS.map((k) => (
+                    <option key={k} value={k}>
+                      {t(ABSENCE_LABEL[k])}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="absence-end">{t("Through")}</Label>
+                <Input
+                  id="absence-end"
+                  type="date"
+                  min={absenceDay ?? undefined}
+                  value={absenceEnd}
+                  onChange={(e) => setAbsenceEnd(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t("Leave it on the same day for a single day off.")}
+                </p>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="absence-note">{t("Note (optional)")}</Label>
+                <Textarea
+                  id="absence-note"
+                  rows={2}
+                  maxLength={500}
+                  placeholder={t("e.g. Called in sick at 7am")}
+                  value={absenceNote}
+                  onChange={(e) => setAbsenceNote(e.target.value)}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "It is approved right away and shows on the Time off page too. Any upcoming shifts on these days become open shifts.",
+                )}
+              </p>
+              {absenceErr && <p className="text-xs text-destructive">{absenceErr}</p>}
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setAbsenceDay(null)}>
+                  {t("Cancel")}
+                </Button>
+                <Button type="submit" disabled={recordAbsence.isPending}>
+                  {recordAbsence.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {t("Save")}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
         {/* The header stays put and only the page scrolls, so the window's
             close button (drawn over the header) never scrolls away. */}
@@ -1476,7 +1841,7 @@ function TimecardsPage() {
                 <div>{t("Date")}</div>
                 <div>{t("Punches")}</div>
                 <div className="text-right">{t("Hours")}</div>
-                {isManager && <div className="w-16 text-right">{t("Edit")}</div>}
+                {isManager && <div className="w-28 text-right">{t("Edit")}</div>}
               </div>
               {!punchesQ.isLoading && !punchesQ.error && (punchesQ.data ?? []).length === 0 && (
                 <div className="border-b border-border px-4 py-6 text-center text-sm text-muted-foreground">
@@ -1496,7 +1861,15 @@ function TimecardsPage() {
                   >
                     <div className="font-medium text-foreground">{fmtDate(r.date)}</div>
                     <div className="space-y-1">
-                      {r.pairs.length === 0 && <span className="text-muted-foreground">—</span>}
+                      {absenceByDay.has(toDayString(r.date)) && (
+                        <AbsenceBadge
+                          absence={absenceByDay.get(toDayString(r.date))!}
+                          label={absenceLabel(absenceByDay.get(toDayString(r.date))!)}
+                        />
+                      )}
+                      {r.pairs.length === 0 && !absenceByDay.has(toDayString(r.date)) && (
+                        <span className="text-muted-foreground">—</span>
+                      )}
                       {r.pairs.map((p, i) => (
                         <div key={i} className="flex items-center gap-2">
                           <span className="rounded bg-emerald-100 dark:bg-emerald-500/15 px-1.5 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">
@@ -1558,6 +1931,18 @@ function TimecardsPage() {
                             )}
                         </div>
                       ))}
+                      {(commentsByDay.get(toDayString(r.date)) ?? []).map((n) => (
+                        <p
+                          key={n.id}
+                          className="flex items-start gap-1.5 text-xs text-muted-foreground"
+                        >
+                          <MessageSquarePlus className="mt-0.5 h-3 w-3 shrink-0" />
+                          <span className="min-w-0 whitespace-pre-wrap break-words">
+                            <span className="text-foreground">{n.note}</span>
+                            {n.author_name && <> · {n.author_name}</>}
+                          </span>
+                        </p>
+                      ))}
                     </div>
                     <div className="text-right font-medium text-foreground">
                       {fmtHours(r.totalMs)}
@@ -1595,7 +1980,27 @@ function TimecardsPage() {
                       )}
                     </div>
                     {isManager && (
-                      <div className="w-16 text-right">
+                      <div className="flex w-28 justify-end">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2"
+                          onClick={() => openComments(r.date)}
+                          title={t("Comment on this day")}
+                          aria-label={t("Comment on {date}", { date: fmtDate(r.date) })}
+                        >
+                          <MessageSquarePlus className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2"
+                          onClick={() => openAbsence(r.date)}
+                          title={t("Mark sick, family leave or vacation")}
+                          aria-label={t("Mark an absence on {date}", { date: fmtDate(r.date) })}
+                        >
+                          <CalendarOff className="h-3.5 w-3.5" />
+                        </Button>
                         <Button
                           variant="ghost"
                           size="sm"
@@ -1653,6 +2058,19 @@ function TimecardsPage() {
               })()}
               {/* The total again, split by where it was worked. The lines add
                   up to it: a shift still on the clock is in neither. */}
+              {absenceSummary.length > 0 && (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border px-4 py-3 text-sm">
+                  <span className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    <CalendarOff className="h-3.5 w-3.5" />
+                    {t("Days off")}
+                  </span>
+                  {absenceSummary.map((a) => (
+                    <span key={a.label} className="text-foreground">
+                      {a.label} <span className="text-muted-foreground">{daysText(a.days)}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
               {hasLocations && grouped.byLocation.length > 0 && (
                 <div className="border-t border-border px-4 py-3 text-sm">
                   <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -1709,7 +2127,11 @@ function TimecardsPage() {
                 ) : notes.length === 0 ? (
                   <p className="px-4 py-4 text-sm text-muted-foreground">
                     {t("No notes for this period.")}
-                    {isManager && " " + t("Add one below — it prints on the detailed time card.")}
+                    {isManager &&
+                      " " +
+                        t(
+                          "Add a note or an OT slip below — it prints at the foot of the detailed time card. Comments on a single day go on that day's line instead.",
+                        )}
                   </p>
                 ) : (
                   <ul className="divide-y divide-border">
@@ -1720,6 +2142,12 @@ function TimecardsPage() {
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="whitespace-pre-wrap break-words text-foreground">
+                            <span
+                              className={`mr-2 inline-block rounded px-1.5 py-0.5 text-[11px] font-medium ${n.kind === "ot_slip" ? "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200" : "bg-muted text-muted-foreground"}`}
+                            >
+                              {noteKindLabel(n)}
+                              {n.hours != null && ` · ${noteHoursText(n)}`}
+                            </span>
                             {n.note}
                           </p>
                           <p className="mt-0.5 text-xs text-muted-foreground">
@@ -1753,10 +2181,30 @@ function TimecardsPage() {
                     className="space-y-2 border-t border-border bg-muted/20 px-4 py-3"
                     onSubmit={(e) => {
                       e.preventDefault();
-                      if (noteText.trim()) addNote.mutate();
+                      if (noteText.trim())
+                        addNote.mutate({
+                          kind: noteKind,
+                          day: noteDay,
+                          text: noteText,
+                          hours: noteHours,
+                        });
                     }}
                   >
                     <div className="flex flex-wrap items-end gap-2">
+                      <div className="space-y-1">
+                        <Label htmlFor="timecard-note-kind" className="text-xs">
+                          {t("Type")}
+                        </Label>
+                        <select
+                          id="timecard-note-kind"
+                          className="h-9 rounded-md border border-border bg-background px-2 text-sm"
+                          value={noteKind}
+                          onChange={(e) => setNoteKind(e.target.value as PeriodNoteKind)}
+                        >
+                          <option value="note">{t("Note")}</option>
+                          <option value="ot_slip">{t("OT slip")}</option>
+                        </select>
+                      </div>
                       <div className="space-y-1">
                         <Label htmlFor="timecard-note-day" className="text-xs">
                           {t("Date")}
@@ -1775,6 +2223,25 @@ function TimecardsPage() {
                           onChange={(e) => setNoteDay(e.target.value)}
                         />
                       </div>
+                      {noteKind === "ot_slip" && (
+                        <div className="space-y-1">
+                          <Label htmlFor="timecard-note-hours" className="text-xs">
+                            {t("OT hours")}
+                          </Label>
+                          <Input
+                            id="timecard-note-hours"
+                            type="number"
+                            inputMode="decimal"
+                            min="0.25"
+                            max="24"
+                            step="0.25"
+                            className="h-9 w-24"
+                            placeholder="2.5"
+                            value={noteHours}
+                            onChange={(e) => setNoteHours(e.target.value)}
+                          />
+                        </div>
+                      )}
                       <div className="min-w-[14rem] flex-1 space-y-1">
                         <Label htmlFor="timecard-note-text" className="text-xs">
                           {t("Note")}
@@ -1783,7 +2250,11 @@ function TimecardsPage() {
                           id="timecard-note-text"
                           rows={2}
                           maxLength={1000}
-                          placeholder={t("e.g. Training: annual conference, Nov 2–5")}
+                          placeholder={
+                            noteKind === "ot_slip"
+                              ? t("e.g. Approved by Sgt. Lopez — special event coverage")
+                              : t("e.g. Training: annual conference, Nov 2–5")
+                          }
                           value={noteText}
                           onChange={(e) => setNoteText(e.target.value)}
                         />
@@ -1794,7 +2265,7 @@ function TimecardsPage() {
                         disabled={!noteText.trim() || addNote.isPending}
                       >
                         {addNote.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        {t("Add note")}
+                        {noteKind === "ot_slip" ? t("Add OT slip") : t("Add note")}
                       </Button>
                     </div>
                     {noteErr && <p className="text-xs text-destructive">{noteErr}</p>}
@@ -2040,7 +2511,28 @@ function WeekSubtotal({
         {fmtHours(week.paidBreakMs)}
       </div>
       <div className="text-right font-semibold text-foreground">{fmtHours(week.workedMs)}</div>
-      {isManager && <div className="w-16" />}
+      {isManager && <div className="w-28" />}
     </div>
+  );
+}
+
+/** A day off on the card's day row, coloured by kind so a fortnight reads at a glance. */
+function AbsenceBadge({ absence, label }: { absence: Absence; label: string }) {
+  const tone =
+    absence.kind === "sick"
+      ? "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300"
+      : absence.kind === "vacation"
+        ? "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300"
+        : absence.kind === "family_leave"
+          ? "bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300"
+          : "bg-muted text-muted-foreground";
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium ${tone}`}
+      title={absence.note ?? undefined}
+    >
+      <CalendarOff className="h-3 w-3" />
+      {label}
+    </span>
   );
 }

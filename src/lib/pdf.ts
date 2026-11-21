@@ -323,6 +323,10 @@ export interface TimecardPdfRow {
 /** A dated note in the detailed card's Notes section. */
 export interface TimecardPdfNote {
   date: string;
+  /** "Note" or "OT slip". */
+  type?: string;
+  /** An OT slip's hours, e.g. "2.50 hrs"; empty otherwise. */
+  hours?: string;
   note: string;
   author: string;
   created: string;
@@ -351,6 +355,8 @@ export interface TimecardPdfData {
   byLocation: { name: string; hours: string; decimal: string }[];
   /** Plain-English summary of the rules in force, printed in the footer. */
   overtimeNote: string;
+  /** Days off in the period by kind, e.g. { label: "Sick", days: "1 day" }. */
+  absences?: { label: string; days: string }[];
   roundNote: string;
   filename: string;
 }
@@ -571,6 +577,19 @@ export async function downloadTimecardPdf(data: TimecardPdfData): Promise<void> 
         margin: [0, 14, 0, 0],
       },
 
+      ...(data.absences && data.absences.length > 0
+        ? [
+            {
+              text: [
+                { text: `${translate("Days off")}: `, bold: true },
+                data.absences.map((a) => `${a.label} ${a.days}`).join("  ·  "),
+              ],
+              fontSize: 8.5,
+              margin: [0, 10, 0, 0] as [number, number, number, number],
+            },
+          ]
+        : []),
+
       ...(data.notes
         ? [
             {
@@ -585,17 +604,21 @@ export async function downloadTimecardPdf(data: TimecardPdfData): Promise<void> 
               : {
                   table: {
                     headerRows: 1,
-                    widths: [78, "*", 95, 95],
+                    widths: [68, 50, "*", 44, 80, 80],
                     body: [
                       [
                         head(translate("Date"), "left"),
+                        head(translate("Type"), "left"),
                         head(translate("Note"), "left"),
+                        head(translate("Hours"), "right"),
                         head(translate("Created by"), "left"),
                         head(translate("Created"), "left"),
                       ],
                       ...data.notes.map((n) => [
                         { ...cell(n.date, "left"), bold: true },
+                        cell(n.type ?? "", "left"),
                         cell(n.note, "left"),
+                        cell(n.hours ?? "", "right"),
                         cell(n.author, "left"),
                         { ...cell(n.created, "left"), color: MUTED },
                       ]),

@@ -209,6 +209,24 @@ export type Database = {
         }
         Relationships: []
       }
+      gps_off_grace: {
+        Row: {
+          company_id: string
+          since: string
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          since?: string
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          since?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       kiosk_devices: {
         Row: {
           company_id: string
@@ -1404,7 +1422,9 @@ export type Database = {
           company_id: string
           created_at: string
           created_by: string | null
+          hours: number | null
           id: string
+          kind: string
           note: string
           note_date: string
           user_id: string
@@ -1414,7 +1434,9 @@ export type Database = {
           company_id: string
           created_at?: string
           created_by?: string | null
+          hours?: number | null
           id?: string
+          kind?: string
           note: string
           note_date: string
           user_id: string
@@ -1424,7 +1446,9 @@ export type Database = {
           company_id?: string
           created_at?: string
           created_by?: string | null
+          hours?: number | null
           id?: string
+          kind?: string
           note?: string
           note_date?: string
           user_id?: string
@@ -1766,6 +1790,11 @@ export type Database = {
       approve_trade: { Args: { _trade: string; _approve: boolean }; Returns: Json }
       respond_to_trade: { Args: { _trade: string; _accept: boolean }; Returns: Json }
       decide_time_off: { Args: { _request: string; _approve: boolean }; Returns: number }
+      manager_record_absence: {
+        Args: { _employee: string; _kind: string; _start: string; _end: string; _note?: string | null }
+        Returns: string
+      }
+      manager_remove_absence: { Args: { _request: string }; Returns: undefined }
       cancel_time_off: { Args: { _request: string }; Returns: undefined }
       claim_super_admin: { Args: never; Returns: boolean }
       dismiss_break_reminder: { Args: { _user: string; _kind: string; _stretch_start: string }; Returns: undefined }

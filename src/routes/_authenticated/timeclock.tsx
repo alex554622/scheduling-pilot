@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { useAppRules } from "@/lib/app-rules";
 import { readBreak } from "@/lib/timecard-totals";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,6 +21,12 @@ import { LeafletMap } from "@/components/leaflet-map";
 import { PaySettingsCard } from "@/components/pay-settings-card";
 import { readPaySettings, type PaySettings } from "@/lib/pay-settings";
 import { localeTag, translate, useLocaleTag, useT } from "@/lib/i18n";
+import { openLocationSettings } from "@/lib/native/location-settings";
+
+const GPS_GRACE_DAYS = 7;
+const DAY_MS = 86_400_000;
+const GPS_BLOCKED_MSG =
+  "You will not be able to clock in until you authorize the proper location settings on your phone or tablet.";
 import {
   Clock,
   MapPin,
@@ -93,6 +100,22 @@ function fmtCountdown(ms: number): string {
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
 }
 
+type Fix = { lat: number; lng: number; acc: number };
+
+/**
+ * The last position this page got, kept across visits. Coming back to the time
+ * clock within a minute starts from it instead of from nothing, while the
+ * watch below fetches a fresh one. Older than that, it isn't trusted for a
+ * punch and the page waits for a new fix as before.
+ */
+const FIX_REUSE_MS = 60_000;
+let lastFix: (Fix & { at: number }) | null = null;
+function recentFix(): Fix | null {
+  return lastFix && Date.now() - lastFix.at < FIX_REUSE_MS
+    ? { lat: lastFix.lat, lng: lastFix.lng, acc: lastFix.acc }
+    : null;
+}
+
 type Company = {
   id: string;
   name: string;
@@ -108,7 +131,7 @@ function TimeclockPage() {
   const rules = useAppRules();
   const capBreaks = rules.cap_break_to_length;
   const qc = useQueryClient();
-  const [coords, setCoords] = useState<{ lat: number; lng: number; acc: number } | null>(null);
+  const [coords, setCoords] = useState<Fix | null>(recentFix);
   const [geoErr, setGeoErr] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [flash, setFlash] = useState<{ kind: "ok" | "warn" | "err"; msg: string } | null>(null);
@@ -168,6 +191,7 @@ function TimeclockPage() {
   // Before clocking in: "" leaves it to the schedule and the map.
   const [pickedLocation, setPickedLocation] = useState("");
 
+  const punchesLoading = recentQ.isPending && recentQ.fetchStatus !== "idle";
   const lastPunch = recentQ.data?.[0];
   // Derived status: off | working | on_break
   const status: "off" | "working" | "on_break" =
@@ -284,26 +308,74 @@ function TimeclockPage() {
       })()
     : null;
 
-  // Watch position
+  // Watch position. Restarted when they come back to the page (e.g. from the
+  // phone's Settings after turning location on), since a watch that already
+  // failed with "permission denied" does not pick the new permission up.
+  const [geoWatchKey, setGeoWatchKey] = useState(0);
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") setGeoWatchKey((k) => k + 1);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
   useEffect(() => {
     if (!("geolocation" in navigator)) {
       setGeoErr(translate("Geolocation not supported on this device."));
       return;
     }
+    let cancelled = false;
+    let precise = false;
+    // Whether this run has a fix of its own, not just the one kept from last visit.
+    let fresh = false;
+    const take = (pos: GeolocationPosition) => {
+      const { latitude: lat, longitude: lng, accuracy: acc } = pos.coords;
+      const fix = { lat, lng, acc };
+      lastFix = { ...fix, at: Date.now() };
+      fresh = true;
+      setCoords(fix);
+      setGeoErr(null);
+    };
+    // A high-accuracy fix needs the GPS chip, which from cold can take most of
+    // the 15-second timeout, and until something arrives Clock IN stays
+    // disabled. Ask for a quick coarse fix (network/Wi-Fi, or one the OS
+    // already has from the last minute) alongside it, so the page is usable
+    // in a second or two; the precise watch replaces it as soon as it lands.
+    // The accuracy goes up with every punch either way.
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        if (!cancelled && !precise) take(pos);
+      },
+      () => {
+        /* the watch below reports errors */
+      },
+      { enableHighAccuracy: false, maximumAge: FIX_REUSE_MS, timeout: 5_000 },
+    );
     const id = navigator.geolocation.watchPosition(
       (pos) => {
-        setCoords({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-          acc: pos.coords.accuracy,
-        });
-        setGeoErr(null);
+        if (cancelled) return;
+        precise = true;
+        take(pos);
       },
-      (err) => setGeoErr(err.message || translate("Unable to read location")),
+      (err) => {
+        if (cancelled) return;
+        // A slow GPS timing out while a coarse fix is in hand isn't "GPS off".
+        if (err.code === err.TIMEOUT && fresh) return;
+        // Nothing new this visit: the position kept from last time may be from
+        // before location was switched off, so it must not stand in for GPS.
+        if (!fresh) {
+          lastFix = null;
+          setCoords(null);
+        }
+        setGeoErr(err.message || translate("Unable to read location"));
+      },
       { enableHighAccuracy: true, maximumAge: 10_000, timeout: 15_000 },
     );
-    return () => navigator.geolocation.clearWatch(id);
-  }, []);
+    return () => {
+      cancelled = true;
+      navigator.geolocation.clearWatch(id);
+    };
+  }, [geoWatchKey]);
 
   const company_loc =
     companyQ.data?.latitude != null && companyQ.data?.longitude != null
@@ -325,6 +397,40 @@ function TimeclockPage() {
   const waitingForGps = !coords && !geoErr;
   // Only worth warning about when the company actually checks location.
   const gpsOffUnderFence = noGps && rules.require_geofence && !!company_loc;
+
+  // Clocking in without GPS is a 7-day grace period, counted from the first
+  // clock-in without it; after that the server refuses Clock IN until location
+  // is on (see 20261121120000_gps_grace_period.sql). Any punch with GPS ends it.
+  const graceQ = useQuery({
+    queryKey: ["my-gps-grace", user?.id],
+    enabled: !!user?.id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("gps_off_grace")
+        .select("since")
+        .eq("user_id", user!.id)
+        .maybeSingle();
+      if (error) throw error;
+      return data?.since ?? null;
+    },
+  });
+  const graceDeadline = graceQ.data ? new Date(graceQ.data).getTime() + GPS_GRACE_DAYS * DAY_MS : null;
+  const graceDaysLeft =
+    graceDeadline == null ? GPS_GRACE_DAYS : Math.max(0, Math.ceil((graceDeadline - Date.now()) / DAY_MS));
+  const graceExpired = gpsOffUnderFence && graceDeadline != null && Date.now() >= graceDeadline;
+  const clockInBlockedNoGps = graceExpired && nextKind === "in";
+
+  const [settingsHelp, setSettingsHelp] = useState(false);
+  const goToLocationSettings = async () => {
+    setSettingsHelp(false);
+    try {
+      const r = await openLocationSettings();
+      if (r === "blocked") setSettingsHelp(true);
+    } catch {
+      setSettingsHelp(true);
+    }
+    setGeoWatchKey((k) => k + 1);
+  };
   const allowedBreaks = ([10, 30, 60] as const).filter(
     (m) =>
       (m === 10 && rules.allow_break_10) ||
@@ -377,8 +483,17 @@ function TimeclockPage() {
       }
       qc.invalidateQueries({ queryKey: ["my-punches-recent"] });
       qc.invalidateQueries({ queryKey: ["timecards"] });
+      qc.invalidateQueries({ queryKey: ["my-gps-grace"] });
     },
-    onError: (e: any) => setFlash({ kind: "err", msg: e.message || t("Failed to punch") }),
+    onError: (e: Error) => {
+      const msg = e?.message ?? "";
+      if (msg.includes("GPS_GRACE_EXPIRED")) {
+        qc.invalidateQueries({ queryKey: ["my-gps-grace"] });
+        setFlash({ kind: "err", msg: t(GPS_BLOCKED_MSG) });
+      } else {
+        setFlash({ kind: "err", msg: msg || t("Failed to punch") });
+      }
+    },
     onSettled: () => setSubmitting(false),
   });
 
@@ -522,11 +637,15 @@ function TimeclockPage() {
             </div>
             <div className="mb-4 flex items-center justify-between text-sm">
               <span className="text-muted-foreground">{t("Last punch")}</span>
-              <span className="font-medium text-foreground">
-                {lastPunch
-                  ? `${t(PUNCH_LABEL[lastPunch.kind])} · ${new Date(lastPunch.at).toLocaleTimeString(tag, { hour: "numeric", minute: "2-digit" })}`
-                  : "—"}
-              </span>
+              {punchesLoading ? (
+                <Skeleton className="h-4 w-28" />
+              ) : (
+                <span className="font-medium text-foreground">
+                  {lastPunch
+                    ? `${t(PUNCH_LABEL[lastPunch.kind])} · ${new Date(lastPunch.at).toLocaleTimeString(tag, { hour: "numeric", minute: "2-digit" })}`
+                    : "—"}
+                </span>
+              )}
             </div>
 
             {status !== "off" && shift.startedAt != null && (
@@ -639,10 +758,31 @@ function TimeclockPage() {
             {geoErr && (
               <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
                 {geoErr}
-                {noGps && rules.require_geofence && !locationMissing && (
-                  <p className="mt-1 font-medium">
-                    {t("Your GPS is off. You can still clock in, but your admin will be notified.")}
-                  </p>
+                {gpsOffUnderFence && (
+                  <div className="mt-2 space-y-2">
+                    <p className="font-medium">
+                      {graceExpired
+                        ? t(GPS_BLOCKED_MSG)
+                        : t("Your GPS is off. You can still clock in for {n} more day(s), but your admin will be notified. After that you will not be able to clock in until location is turned on.", {
+                            n: graceDaysLeft,
+                          })}
+                    </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={graceExpired ? "destructive" : "outline"}
+                      className="w-full"
+                      onClick={goToLocationSettings}
+                    >
+                      <MapPin className="mr-1.5 h-3.5 w-3.5" />
+                      {t("Allow location for this app")}
+                    </Button>
+                    {settingsHelp && (
+                      <p className="text-foreground/80">
+                        {t("Your browser is blocking location for this site. Tap the lock or settings icon next to the address bar, set Location to Allow, then reload the page.")}
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
             )}
@@ -710,11 +850,13 @@ function TimeclockPage() {
               size="lg"
               className="w-full"
               disabled={
+                punchesLoading ||
                 waitingForGps ||
                 locationMissing ||
                 submitting ||
                 punchMut.isPending ||
                 fenceBlocks ||
+                clockInBlockedNoGps ||
                 status === "on_break"
               }
               onClick={() => {
@@ -732,6 +874,19 @@ function TimeclockPage() {
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   {t("Recording…")}
+                </>
+              ) : punchesLoading ? (
+                // Until the punches arrive we don't know whether this is IN or OUT.
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {t("Loading…")}
+                </>
+              ) : waitingForGps && !locationMissing ? (
+                // Was a plain disabled button for as long as GPS took — the
+                // part of this page that looked frozen.
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {t("Waiting for GPS location…")}
                 </>
               ) : nextKind === "in" ? (
                 <>
@@ -844,7 +999,13 @@ function TimeclockPage() {
               <MapPin className="h-4 w-4 text-primary" /> {t("Recent punches")}
             </div>
             <ul className="divide-y divide-border text-sm">
-              {(recentQ.data ?? []).length === 0 && (
+              {punchesLoading &&
+                [0, 1, 2].map((i) => (
+                  <li key={i} className="py-2.5">
+                    <Skeleton className="h-4 w-2/3" />
+                  </li>
+                ))}
+              {!punchesLoading && (recentQ.data ?? []).length === 0 && (
                 <li className="py-3 text-muted-foreground">{t("No punches yet.")}</li>
               )}
               {[
@@ -906,11 +1067,24 @@ function TimeclockPage() {
             <AlertDialogTitle>{t("Your GPS is not on")}</AlertDialogTitle>
             <AlertDialogDescription>
               {t("Your company needs your location to confirm a valid clock-in. Turn on location for this app and try again.")}{" "}
-              {t("If you clock in anyway, it will be marked as unverified and your admin will be notified.")}
+              {t("If you clock in anyway, it will be marked as unverified and your admin will be notified.")}{" "}
+              {t("You have {n} day(s) left to turn on location. After that you will not be able to clock in without it.", {
+                n: graceDaysLeft,
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("Cancel")}</AlertDialogCancel>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setConfirmNoGps(false);
+                void goToLocationSettings();
+              }}
+            >
+              {t("Allow location for this app")}
+            </Button>
             <AlertDialogAction
               onClick={() => {
                 setSubmitting(true);

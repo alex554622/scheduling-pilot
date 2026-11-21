@@ -1,4 +1,11 @@
-import { createFileRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Link,
+  Outlet,
+  useNavigate,
+  useRouter,
+  useRouterState,
+} from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -307,6 +314,34 @@ function AuthLayout() {
     },
   });
   const pendingCompanies = pendingCompaniesQ.data ?? 0;
+  // Fetch the code for every page in this person's menu once the shell is up
+  // and the device is idle, one at a time, so a tap on the menu renders at
+  // once instead of waiting on a download (each page is its own chunk).
+  const router = useRouter();
+  useEffect(() => {
+    if (!user || !primaryRole) return;
+    const paths = NAV.filter((n) => n.roles.includes(primaryRole)).map((n) => n.to);
+    let cancelled = false;
+    const idle = (cb: () => void) =>
+      // Older iOS WebViews have no requestIdleCallback.
+      typeof window.requestIdleCallback === "function"
+        ? window.requestIdleCallback(cb, { timeout: 2000 })
+        : globalThis.setTimeout(cb, 200);
+    const warm = (i: number) => {
+      if (cancelled || i >= paths.length) return;
+      idle(() => {
+        if (cancelled) return;
+        const route = router.routesByPath[paths[i] as keyof typeof router.routesByPath];
+        void Promise.resolve(route ? router.loadRouteChunk(route) : undefined)
+          .catch(() => {})
+          .finally(() => warm(i + 1));
+      });
+    };
+    warm(0);
+    return () => {
+      cancelled = true;
+    };
+  }, [router, user, primaryRole]);
   // Browsers only play sound after someone has touched the page; the first
   // click or key press anywhere in the app is what lets the chime be heard.
   useEffect(() => unlockSound(), []);

@@ -288,4 +288,44 @@ export const timecards: Record<string, string> = {
   "Add note": "Agregar nota",
   "Pick an employee first.": "Elige primero a un empleado.",
   "e.g. Training: annual conference, Nov 2–5": "p. ej. Capacitación: conferencia anual, 2–5 de nov.",
+
+  // Notes section: notes and OT slips
+  "OT slip": "Boleta de tiempo extra",
+  "Add OT slip": "Agregar boleta de tiempo extra",
+  "e.g. Approved by Sgt. Lopez — special event coverage":
+    "p. ej. Aprobado por el Sgto. López — cobertura de evento especial",
+  "Add a note or an OT slip below — it prints at the foot of the detailed time card. Comments on a single day go on that day's line instead.":
+    "Agrega una nota o una boleta de tiempo extra abajo; se imprime al pie de la tarjeta detallada. Los comentarios de un solo día van en la línea de ese día.",
+
+  // Day comments
+  Comments: "Comentarios",
+  "Comment on this day": "Comentar este día",
+  "Comment on {date}": "Comentar el {date}",
+  "Add a comment": "Agregar un comentario",
+  "Add comment": "Agregar comentario",
+  "e.g. Covered the downtown route; left early with approval":
+    "p. ej. Cubrió la ruta del centro; salió temprano con permiso",
+  "Comments show on this day of the time card, on screen and printed. The employee can read them.":
+    "Los comentarios aparecen en este día de la tarjeta de tiempo, en pantalla e impresa. El empleado puede leerlos.",
+
+  // Absences on the time card
+  Sick: "Enfermedad",
+  "Family leave": "Licencia familiar",
+  Vacation: "Vacaciones",
+  Personal: "Personal",
+  "Day off": "Día libre",
+  "Days off": "Días libres",
+  "1 day": "1 día",
+  "Mark sick, family leave or vacation": "Marcar enfermedad, licencia familiar o vacaciones",
+  "Mark an absence on {date}": "Marcar una ausencia el {date}",
+  "Mark an absence": "Marcar una ausencia",
+  "Removing it takes every day of it off the time card. Shifts it opened stay open.":
+    "Al quitarla se borran todos sus días de la tarjeta de tiempo. Los turnos que liberó siguen abiertos.",
+  "Remove absence": "Quitar ausencia",
+  Type: "Tipo",
+  Through: "Hasta",
+  "Leave it on the same day for a single day off.": "Déjalo en el mismo día para un solo día libre.",
+  "e.g. Called in sick at 7am": "p. ej. Avisó que estaba enfermo a las 7am",
+  "It is approved right away and shows on the Time off page too. Any upcoming shifts on these days become open shifts.":
+    "Se aprueba de inmediato y también aparece en la página de Tiempo libre. Los próximos turnos en esos días quedan abiertos.",
 };

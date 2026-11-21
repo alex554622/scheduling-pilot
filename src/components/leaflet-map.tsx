@@ -124,19 +124,31 @@ export function LeafletMap({
   // at 400 and its controls as high as 1000, which without a stacking context
   // of their own are measured against the page and draw straight over the
   // sidebar drawer and its backdrop.
+  //
+  // Leaflet (~150 kB) is fetched on first use, so until it's ready the box
+  // shows a pulse rather than sitting empty. The placeholder is a sibling, not
+  // a child: Leaflet owns everything inside `ref`.
   return (
-    <div
-      ref={ref}
-      className={className}
-      style={{
-        height,
-        width: "100%",
-        borderRadius: 12,
-        overflow: "hidden",
-        isolation: "isolate",
-        position: "relative",
-        zIndex: 0,
-      }}
-    />
+    <div style={{ position: "relative", width: "100%", height }}>
+      <div
+        ref={ref}
+        className={className}
+        style={{
+          height,
+          width: "100%",
+          borderRadius: 12,
+          overflow: "hidden",
+          isolation: "isolate",
+          position: "relative",
+          zIndex: 0,
+        }}
+      />
+      {!ready && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 animate-pulse rounded-xl bg-muted"
+        />
+      )}
+    </div>
   );
 }

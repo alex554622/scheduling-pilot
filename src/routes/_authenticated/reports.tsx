@@ -304,7 +304,7 @@ function ReportsPage() {
                 <div className="space-y-1.5">
                   {Object.entries(timeOffSummary.byKind).sort((a, b) => b[1] - a[1]).map(([k, v]) => (
                     <div key={k} className="flex items-center justify-between text-sm">
-                      <span className="capitalize text-foreground">{k}</span>
+                      <span className="capitalize text-foreground">{k.replace(/_/g, " ")}</span>
                       <span className="text-muted-foreground">{v === 1 ? t("1 day") : t("{n} days", { n: v })}</span>
                     </div>
                   ))}
