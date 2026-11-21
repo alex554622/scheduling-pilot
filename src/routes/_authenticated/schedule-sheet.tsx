@@ -167,7 +167,7 @@ function ScheduleSheetPage() {
     enabled: !!company?.id,
     queryFn: async () => {
       const { data, error: e } = await supabase
-        .from("profiles")
+        .from("company_members")
         .select("id, full_name")
         .eq("company_id", company!.id)
         .order("full_name");

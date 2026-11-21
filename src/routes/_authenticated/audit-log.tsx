@@ -80,7 +80,7 @@ function AuditLogPage() {
     enabled: !!company?.id && isManager,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("profiles").select("id, full_name").eq("company_id", company!.id);
+        .from("profiles").select("id, full_name"); // everyone this admin may see: current and former members
       if (error) throw error;
       return Object.fromEntries((data ?? []).map((p) => [p.id, p.full_name])) as Record<string, string>;
     },

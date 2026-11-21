@@ -59,7 +59,7 @@ function SharedClockInAdminPage() {
       const [{ data: people, error: peopleError }, { data: codes, error: codesError }] =
         await Promise.all([
           supabase
-            .from("profiles")
+            .from("company_members")
             .select("id, full_name")
             .eq("company_id", company!.id)
             .order("full_name"),

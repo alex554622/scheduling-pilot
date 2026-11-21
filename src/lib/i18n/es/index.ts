@@ -1,4 +1,5 @@
 import { admin } from "./admin";
+import { companies } from "./companies";
 import { people } from "./people";
 import { schedule } from "./schedule";
 import { shell } from "./shell";
@@ -24,4 +25,5 @@ export const ES: Record<string, string> = {
   ...admin,
   ...people,
   ...time,
+  ...companies,
 };

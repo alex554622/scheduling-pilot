@@ -69,7 +69,7 @@ function BillingPage() {
     enabled: !!company?.id,
     queryFn: async () => {
       const { count, error } = await supabase
-        .from("profiles").select("id", { count: "exact", head: true })
+        .from("company_members").select("id", { count: "exact", head: true })
         .eq("company_id", company!.id);
       if (error) throw error;
       return count ?? 0;

@@ -264,7 +264,7 @@ function GenerateDialog({
     enabled: open,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("profiles").select("id, full_name")
+        .from("company_members").select("id, full_name")
         .eq("company_id", companyId).eq("is_active", true).order("full_name");
       if (error) throw error;
       return (data ?? []) as { id: string; full_name: string }[];

@@ -89,7 +89,7 @@ function MessagesPage() {
     staleTime: 5 * 60_000,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("profiles")
+        .from("company_members")
         .select("id, full_name")
         .eq("company_id", companyId!);
       if (error) throw error;

@@ -465,7 +465,7 @@ function CompanyDashboard({ role }: { role: AppRole }) {
     enabled: !!companyId && isBuilder,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("profiles")
+        .from("company_members")
         .select("id, full_name, position, department_id")
         .eq("company_id", companyId!)
         .order("full_name");
@@ -574,7 +574,7 @@ function CompanyDashboard({ role }: { role: AppRole }) {
     enabled: !!companyId && !isBuilder,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("profiles")
+        .from("company_members")
         .select("id, full_name")
         .eq("company_id", companyId!)
         .order("full_name");

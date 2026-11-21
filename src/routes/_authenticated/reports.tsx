@@ -82,7 +82,7 @@ function ReportsPage() {
     enabled: !!companyId,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("profiles").select("id, full_name, position")
+        .from("company_members").select("id, full_name, position")
         .eq("company_id", companyId!).order("full_name");
       if (error) throw error;
       return (data ?? []) as MemberRow[];

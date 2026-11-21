@@ -30,6 +30,7 @@ import {
   Ghost,
 } from "lucide-react";
 import { useAuth, ROLE_LABEL, type AppRole } from "@/lib/auth";
+import { CompanySwitcher } from "@/components/company-switcher";
 import { useAppRules } from "@/lib/app-rules";
 import { useCapabilities, CAPABILITY_LABELS, type CapabilityKey } from "@/lib/capabilities";
 import { useTrialStatus, trialCountdown } from "@/lib/trial";
@@ -218,6 +219,37 @@ function RejectionReason({ companyId }: { companyId: string }) {
   );
 }
 
+/** On a blocked company's screen: the person's other companies, to go to instead. */
+function OtherCompanies({
+  currentId,
+  memberships,
+  onPick,
+}: {
+  currentId: string;
+  memberships: { companyId: string; name: string; status: string; companyStatus: string }[];
+  onPick: (companyId: string) => Promise<void>;
+}) {
+  const t = useT("shell");
+  const others = memberships.filter(
+    (m) => m.companyId !== currentId && m.status === "active" && m.companyStatus === "active",
+  );
+  if (others.length === 0) return null;
+  return (
+    <div className="mt-6 space-y-2 text-left">
+      <p className="text-xs font-medium text-muted-foreground">{t("Your other companies")}</p>
+      {others.map((m) => (
+        <button
+          key={m.companyId}
+          onClick={() => void onPick(m.companyId)}
+          className="block w-full rounded-md border border-border px-3 py-2 text-left text-sm font-medium text-foreground hover:bg-accent"
+        >
+          {m.name}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function AuthLayout() {
   const {
     user,
@@ -230,6 +262,8 @@ function AuthLayout() {
     ghost,
     endGhost,
     signOut,
+    memberships,
+    switchCompany,
   } = useAuth();
   const [leavingGhost, setLeavingGhost] = useState(false);
   const t = useT("shell");
@@ -407,6 +441,11 @@ function AuthLayout() {
                   })}
           </p>
           {isRejected && <RejectionReason companyId={company.id} />}
+          <OtherCompanies
+            currentId={company.id}
+            memberships={memberships}
+            onPick={switchCompany}
+          />
           <button
             onClick={async () => {
               await signOut();
@@ -451,7 +490,34 @@ function AuthLayout() {
   // Every nav item needs a company, so offer the join code instead of an empty
   // shell. `profile` is optional on purpose: requiring it hid this screen from
   // exactly the accounts stuck without one.
-  if (!profile?.company_id && !profile?.pending_company_id && primaryRole !== "super_admin") {
+  if (!company && primaryRole !== "super_admin" && memberships.some((m) => m.status === "suspended")) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-secondary/30 px-4">
+        <div className="w-full max-w-md rounded-2xl border border-border bg-card p-8 text-center shadow-[var(--shadow-card)]">
+          <h2 className="text-xl font-semibold text-foreground">{t("Access suspended")}</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {t("Your access to {names} is suspended. Ask one of its admins to reinstate you.", {
+              names: memberships
+                .filter((m) => m.status === "suspended")
+                .map((m) => m.name)
+                .join(", "),
+            })}
+          </p>
+          <button
+            onClick={async () => {
+              await signOut();
+              navigate({ to: "/login" });
+            }}
+            className="mt-6 rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-accent"
+          >
+            {t("Sign out")}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!company && !profile?.pending_company_id && primaryRole !== "super_admin") {
     return (
       <JoinCompanyGate
         onSignOut={async () => {
@@ -634,22 +700,7 @@ function AuthLayout() {
               )}
             </button>
             <div className="min-w-0">
-              <p className="truncate text-xs text-muted-foreground">
-                {company?.name ?? t("Platform")}
-              </p>
-              <h1 className="truncate text-base font-semibold text-foreground">
-                {/* "workspace" is the word that goes on a phone, so the role
-                    itself — the part that tells you which screen you're on —
-                    is never the part that gets cut off. */}
-                {primaryRole ? (
-                  <>
-                    {t(ROLE_LABEL[primaryRole])}
-                    <span className="hidden sm:inline"> {t("workspace")}</span>
-                  </>
-                ) : (
-                  t("Workspace")
-                )}
-              </h1>
+              <CompanySwitcher primaryRole={primaryRole} fallbackName={t("Platform")} />
             </div>
           </div>
           <div className="flex items-center gap-1">
@@ -733,7 +784,9 @@ function AuthLayout() {
           {lockedCapability ? (
             <PlanLocked capability={lockedCapability} isAdmin={primaryRole === "company_admin"} />
           ) : (
-            <Outlet />
+            // Keyed by company: switching remounts every page, so no state
+            // read for one company survives into the next.
+            <Outlet key={company?.id ?? "no-company"} />
           )}
         </main>
       </div>
