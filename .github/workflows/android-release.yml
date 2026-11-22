@@ -8,6 +8,10 @@
 name: Android release
 
 on:
+  # Temporary: build the fingerprint clock-in branch on every push to it, so the
+  # tablet APK can be tested before merging. Remove this block before merging.
+  push:
+    branches: [feat/fingerprint-clock-in]
   workflow_dispatch:
     # Both may be left empty: each run then numbers itself from the run number
     # (versionCode N, versionName 1.0.N), which only ever goes up — what
