@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Coffee, Delete, LogIn, LogOut, Loader2, CheckCircle2 } from "lucide-react";
+import { Coffee, Delete, Fingerprint, LogIn, LogOut, Loader2, CheckCircle2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { fingerprintAvailable, scanFingerprint } from "@/lib/native/fingerprint";
 import { BrandLogo } from "@/components/brand";
 import {
   KioskSlideshow,
@@ -194,6 +195,26 @@ function SharedClockInPage() {
     });
   }, [token, t]);
 
+  // A fingerprint reader through the Pilot Clock app (Android app only). The
+  // keypad stays: a scan only fills in the code, so anyone can still type theirs.
+  const [canScan, setCanScan] = useState(false);
+  useEffect(() => {
+    void fingerprintAvailable().then(setCanScan);
+  }, []);
+
+  async function scan() {
+    setBusy(true);
+    setError(null);
+    const result = await scanFingerprint(t("Clock in"));
+    setBusy(false);
+    if ("code" in result) {
+      // The lookup effect below takes it from here, as for a typed code.
+      setCode(result.code);
+    } else if (!result.cancelled) {
+      setError(t(result.error));
+    }
+  }
+
   const reset = useCallback(() => {
     setCode("");
     setPerson(null);
@@ -377,6 +398,14 @@ function SharedClockInPage() {
         </div>
       ) : (
         <div className="mt-8 w-full">
+          {canScan && (
+            <div className="mb-8">
+              <BigButton onClick={() => void scan()} disabled={busy} tone="go">
+                <Fingerprint className="h-8 w-8" /> {t("Use fingerprint")}
+              </BigButton>
+              <p className="mt-6 text-center text-base text-muted-foreground">{t("or")}</p>
+            </div>
+          )}
           <p className="text-center text-lg text-muted-foreground">{t("Enter your 4-digit code")}</p>
 
           <div
