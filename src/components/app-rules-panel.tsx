@@ -8,8 +8,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { PositionPayRulesPanel } from "@/components/position-pay-rules-panel";
 import { useT } from "@/lib/i18n";
-import { Loader2, Check, Clock, FileClock, Calendar, ShieldAlert, EyeOff } from "lucide-react";
+import {
+  Loader2,
+  Check,
+  Clock,
+  FileClock,
+  Calendar,
+  CalendarClock,
+  ShieldAlert,
+  EyeOff,
+} from "lucide-react";
 
 /**
  * The shape and the defaults live in `@/lib/app-rules`, next to the hook every
@@ -64,6 +74,7 @@ export function AppRulesPanel() {
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
       qc.invalidateQueries({ queryKey: ["company-settings", company?.id] });
+      qc.invalidateQueries({ queryKey: ["company-app-rules", company?.id] });
     },
     onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
   });
@@ -76,7 +87,9 @@ export function AppRulesPanel() {
         <ShieldAlert className="mx-auto h-10 w-10 text-muted-foreground" />
         <h2 className="mt-3 text-lg font-semibold text-foreground">{t("Admin only")}</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          {t("Only company admins can manage app rules. Contact your administrator if you need a change.")}
+          {t(
+            "Only company admins can manage app rules. Contact your administrator if you need a change.",
+          )}
         </p>
         <Link to="/dashboard" className="mt-4 inline-block text-sm text-primary underline">
           {t("Back to Dashboard")}
@@ -93,7 +106,10 @@ export function AppRulesPanel() {
       <div>
         <h2 className="text-2xl font-semibold text-foreground">{t("App rules")}</h2>
         <p className="text-sm text-muted-foreground">
-          {t("Admin-only controls for timecards, clock-in behavior, and scheduling across {company}.", { company: company?.name ?? t("your company") })}
+          {t(
+            "Admin-only controls for timecards, clock-in behavior, and scheduling across {company}.",
+            { company: company?.name ?? t("your company") },
+          )}
         </p>
       </div>
 
@@ -110,7 +126,9 @@ export function AppRulesPanel() {
             <div className="mb-4 rounded-lg border border-border bg-muted/30 p-3">
               <p className="text-sm font-medium text-foreground">{t("Overtime")}</p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                {t("Daily rules apply first; the weekly threshold then promotes whatever regular hours are left, so a long day is never counted twice. Any field set to 0 turns that rule off.")}
+                {t(
+                  "Daily rules apply first; the weekly threshold then promotes whatever regular hours are left, so a long day is never counted twice. Any field set to 0 turns that rule off.",
+                )}
               </p>
               <div className="mt-3 grid gap-4 sm:grid-cols-3">
                 <Field label="Overtime after (hours/day)">
@@ -150,7 +168,9 @@ export function AppRulesPanel() {
             <div className="mb-4 rounded-lg border border-border bg-muted/30 p-3">
               <p className="text-sm font-medium text-foreground">{t("Punch rounding")}</p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                {t("Clock-in, clock-out and break punches all read to the nearest mark, and hours are paid from those times. On a 5-minute rule 2:23 reads 2:25 and 2:22 reads 2:20; on a 10-minute rule 2:23 reads 2:20. The punch the clock recorded is never changed — a manager editing a day still sees the real time.")}
+                {t(
+                  "Clock-in, clock-out and break punches all read to the nearest mark, and hours are paid from those times. On a 5-minute rule 2:23 reads 2:25 and 2:22 reads 2:20; on a 10-minute rule 2:23 reads 2:20. The punch the clock recorded is never changed — a manager editing a day still sees the real time.",
+                )}
               </p>
               <div className="mt-2 grid gap-2 sm:grid-cols-3">
                 <ModeChoice
@@ -178,7 +198,10 @@ export function AppRulesPanel() {
                 rules.punch_round_minutes !== 5 &&
                 rules.punch_round_minutes !== 10 && (
                   <p className="mt-2 text-xs text-warning-foreground">
-                    {t("Currently set to {n} minutes. Picking one of the options above replaces it.", { n: rules.punch_round_minutes })}
+                    {t(
+                      "Currently set to {n} minutes. Picking one of the options above replaces it.",
+                      { n: rules.punch_round_minutes },
+                    )}
                   </p>
                 )}
             </div>
@@ -209,7 +232,9 @@ export function AppRulesPanel() {
               <div className="rounded-md border border-border bg-secondary/30 px-3 py-2">
                 <div className="text-sm font-medium text-foreground">{t("Clock-in location")}</div>
                 <div className="text-xs text-muted-foreground">
-                  {t("Every punch records where it was made. Only company admins can see those locations.")}
+                  {t(
+                    "Every punch records where it was made. Only company admins can see those locations.",
+                  )}
                 </div>
                 <div className="mt-2 grid gap-2 sm:grid-cols-2">
                   <ModeChoice
@@ -251,10 +276,14 @@ export function AppRulesPanel() {
                   onChange={(v) => set("cap_break_to_length", v)}
                 />
                 <p className="mt-1.5 text-xs text-muted-foreground">
-                  {t("A 30-minute break that ran 37 comes off the shift as 30, so an overrun is yours to manage rather than theirs to pay for. Timecards still show how far over it went. Switch this off to charge the clock time as it was recorded.")}
+                  {t(
+                    "A 30-minute break that ran 37 comes off the shift as 30, so an overrun is yours to manage rather than theirs to pay for. Timecards still show how far over it went. Switch this off to charge the clock time as it was recorded.",
+                  )}
                 </p>
                 <p className="mt-1.5 text-xs text-muted-foreground">
-                  {t("Coming back early is never rounded up: a 30 taken in 22 counts as 22 and the day is flagged as an incomplete break, whichever way this is set.")}
+                  {t(
+                    "Coming back early is never rounded up: a 30 taken in 22 counts as 22 and the day is flagged as an incomplete break, whichever way this is set.",
+                  )}
                 </p>
               </div>
               <Field label="Auto clock-out after (hours, 0 = off)">
@@ -270,7 +299,9 @@ export function AppRulesPanel() {
               <div className="rounded-lg border border-border bg-muted/30 p-3">
                 <p className="text-sm font-medium text-foreground">{t("Break reminders")}</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  {t("Flags anyone on the dashboard who has been working this long without a break. Taking one clears the flag; a manager can also dismiss it.")}
+                  {t(
+                    "Flags anyone on the dashboard who has been working this long without a break. Taking one clears the flag; a manager can also dismiss it.",
+                  )}
                 </p>
                 <div className="mt-3 grid gap-4 sm:grid-cols-2">
                   <Field label="Remind about a break after (hours, 0 = off)">
@@ -298,6 +329,46 @@ export function AppRulesPanel() {
             </div>
           </section>
 
+          {/* Schedule ↔ time cards. Off by default: a company that never
+              turns it on sees nothing of it anywhere. */}
+          <section className="rounded-xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
+            <div className="mb-4 flex items-center gap-2">
+              <CalendarClock className="h-5 w-5 text-primary" />
+              <h3 className="font-semibold text-foreground">{t("Schedule and time cards")}</h3>
+            </div>
+            <div className="space-y-4">
+              <ToggleRow
+                label="Connect the schedule to time cards"
+                description="Each clock-in is read against the person's published shift. Anyone who clocks in after their shift start is marked late on the time clock and on their timecard. Draft shifts don't count, and editing a shift updates the mark."
+                checked={rules.schedule_lateness}
+                onChange={(v) => set("schedule_lateness", v)}
+              />
+              {rules.schedule_lateness && (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="Grace period before late (minutes)">
+                    <Input
+                      type="number"
+                      min={0}
+                      max={120}
+                      value={rules.late_grace_minutes}
+                      onChange={(e) =>
+                        set(
+                          "late_grace_minutes",
+                          Math.max(0, Math.floor(Number(e.target.value) || 0)),
+                        )
+                      }
+                    />
+                  </Field>
+                  <p className="self-end text-xs text-muted-foreground">
+                    {t(
+                      "With 5 minutes, a 9:00 shift clocked into at 9:05 is on time and at 9:06 is 6 minutes late.",
+                    )}
+                  </p>
+                </div>
+              )}
+            </div>
+          </section>
+
           {/* Scheduling options */}
           <section className="rounded-xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
             <div className="mb-4 flex items-center gap-2">
@@ -310,7 +381,9 @@ export function AppRulesPanel() {
               <div className="rounded-md border border-border bg-secondary/30 px-3 py-2">
                 <div className="text-sm font-medium text-foreground">{t("Schedule screen")}</div>
                 <div className="text-xs text-muted-foreground">
-                  {t("Which one appears in your menu. Employees always keep their own schedule view.")}
+                  {t(
+                    "Which one appears in your menu. Employees always keep their own schedule view.",
+                  )}
                 </div>
                 <div className="mt-2 grid gap-2 sm:grid-cols-2">
                   <ModeChoice
@@ -407,6 +480,9 @@ export function AppRulesPanel() {
               {saved ? t("Saved") : t("Save rules")}
             </Button>
           </div>
+
+          {/* Saved group by group, apart from the rules form above. */}
+          <PositionPayRulesPanel />
         </>
       )}
     </div>

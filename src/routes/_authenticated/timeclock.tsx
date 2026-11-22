@@ -5,6 +5,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useAppRules } from "@/lib/app-rules";
 import { readBreak } from "@/lib/timecard-totals";
+import { useLateness } from "@/lib/use-lateness";
+import { usePayRulesFor } from "@/lib/use-pay-rules";
+import { LateBadge } from "@/components/late-badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -72,8 +75,13 @@ const PUNCH_LABEL: Record<PunchKind, string> = {
  * to the minute, so it asks the same function payroll does — including the rule
  * that a break is recorded as the length that was picked, however long it ran.
  */
-function breakDeduction(elapsedMs: number, minutes: number | null, cap: boolean): number {
-  const read = readBreak(elapsedMs, minutes, cap);
+function breakDeduction(
+  elapsedMs: number,
+  minutes: number | null,
+  cap: boolean,
+  paidMeals = false,
+): number {
+  const read = readBreak(elapsedMs, minutes, cap, paidMeals);
   return read.paid ? 0 : read.countedMs;
 }
 
@@ -130,6 +138,8 @@ function TimeclockPage() {
   const { user, company, primaryRole, loading } = useAuth();
   const rules = useAppRules();
   const capBreaks = rules.cap_break_to_length;
+  // A position with paid lunch: a 30 or a 60 doesn't come off this shift.
+  const paidMeals = usePayRulesFor(user?.id)?.paid_meal_breaks ?? false;
   const qc = useQueryClient();
   const [coords, setCoords] = useState<Fix | null>(recentFix);
   const [geoErr, setGeoErr] = useState<string | null>(null);
@@ -157,7 +167,9 @@ function TimeclockPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("time_punches")
-        .select("id, kind, at, latitude, longitude, distance_m, within_geofence, break_minutes, location_id")
+        .select(
+          "id, kind, at, latitude, longitude, distance_m, within_geofence, break_minutes, location_id",
+        )
         .eq("user_id", user!.id)
         .order("at", { ascending: false })
         // Deep enough to always contain the open shift's clock-in, however many
@@ -203,6 +215,9 @@ function TimeclockPage() {
   const nextKind: "in" | "out" = status === "off" ? "in" : "out";
   // The clock-in of the shift they are on now.
   const openIn = status === "off" ? undefined : recentQ.data?.find((p) => p.kind === "in");
+  // Late marks, when the company reads clock-ins against the schedule. Empty otherwise.
+  const lateness = useLateness(user?.id, recentQ.data);
+  const openLate = openIn ? lateness.get(openIn.id) : undefined;
 
   // Where they have moved to since clocking in, newest first. Their time counts
   // at the latest one; before any move, at the clock-in's location.
@@ -272,19 +287,19 @@ function TimeclockPage() {
           openBreakMinutes = p.break_minutes;
         }
       } else if (p.kind === "break_end" && openBreakAt != null) {
-        closedUnpaidMs += breakDeduction(at - openBreakAt, openBreakMinutes, capBreaks);
+        closedUnpaidMs += breakDeduction(at - openBreakAt, openBreakMinutes, capBreaks, paidMeals);
         openBreakAt = null;
         openBreakMinutes = null;
       }
     }
     return { startedAt, closedUnpaidMs, openBreakAt, openBreakMinutes };
-  }, [recentQ.data, capBreaks]);
+  }, [recentQ.data, capBreaks, paidMeals]);
 
   // A break still running is capped too: once they pass the length they picked,
   // the worked total stops falling and the overrun shows on the countdown above.
   const liveUnpaidMs =
     shift.openBreakAt != null
-      ? breakDeduction(now - shift.openBreakAt, shift.openBreakMinutes, capBreaks)
+      ? breakDeduction(now - shift.openBreakAt, shift.openBreakMinutes, capBreaks, paidMeals)
       : 0;
   const workedMs =
     shift.startedAt == null
@@ -414,9 +429,13 @@ function TimeclockPage() {
       return data?.since ?? null;
     },
   });
-  const graceDeadline = graceQ.data ? new Date(graceQ.data).getTime() + GPS_GRACE_DAYS * DAY_MS : null;
+  const graceDeadline = graceQ.data
+    ? new Date(graceQ.data).getTime() + GPS_GRACE_DAYS * DAY_MS
+    : null;
   const graceDaysLeft =
-    graceDeadline == null ? GPS_GRACE_DAYS : Math.max(0, Math.ceil((graceDeadline - Date.now()) / DAY_MS));
+    graceDeadline == null
+      ? GPS_GRACE_DAYS
+      : Math.max(0, Math.ceil((graceDeadline - Date.now()) / DAY_MS));
   const graceExpired = gpsOffUnderFence && graceDeadline != null && Date.now() >= graceDeadline;
   const clockInBlockedNoGps = graceExpired && nextKind === "in";
 
@@ -475,11 +494,18 @@ function TimeclockPage() {
           kind: "warn",
           msg:
             nextKind === "in"
-              ? t("Clocked in without GPS. Your admin was notified and will review this clock-in. Turn on your location so your punches count as valid.")
-              : t("Clocked out without GPS. Your admin was notified and will review this punch. Turn on your location so your punches count as valid."),
+              ? t(
+                  "Clocked in without GPS. Your admin was notified and will review this clock-in. Turn on your location so your punches count as valid.",
+                )
+              : t(
+                  "Clocked out without GPS. Your admin was notified and will review this punch. Turn on your location so your punches count as valid.",
+                ),
         });
       } else {
-        setFlash({ kind: "ok", msg: nextKind === "in" ? t("Clocked in successfully.") : t("Clocked out successfully.") });
+        setFlash({
+          kind: "ok",
+          msg: nextKind === "in" ? t("Clocked in successfully.") : t("Clocked out successfully."),
+        });
       }
       qc.invalidateQueries({ queryKey: ["my-punches-recent"] });
       qc.invalidateQueries({ queryKey: ["timecards"] });
@@ -535,7 +561,10 @@ function TimeclockPage() {
       return data;
     },
     onSuccess: () => {
-      setFlash({ kind: "ok", msg: status === "on_break" ? t("Break ended.") : t("Break started.") });
+      setFlash({
+        kind: "ok",
+        msg: status === "on_break" ? t("Break ended.") : t("Break started."),
+      });
       qc.invalidateQueries({ queryKey: ["my-punches-recent"] });
       qc.invalidateQueries({ queryKey: ["timecards"] });
     },
@@ -545,7 +574,9 @@ function TimeclockPage() {
   if (loading) return <div className="text-sm text-muted-foreground">{t("Loading…")}</div>;
   if (!company)
     return (
-      <div className="text-sm text-muted-foreground">{t("Join a company to use the time clock.")}</div>
+      <div className="text-sm text-muted-foreground">
+        {t("Join a company to use the time clock.")}
+      </div>
     );
 
   const locationMissing = !company_loc;
@@ -583,7 +614,9 @@ function TimeclockPage() {
           <div>
             <p className="font-medium">{t("No worksite location set")}</p>
             <p>
-              {t("Set your company's worksite location and geofence radius so employees can clock in.")}{" "}
+              {t(
+                "Set your company's worksite location and geofence radius so employees can clock in.",
+              )}{" "}
               <Link to="/worksite" className="underline">
                 {t("Open worksite settings →")}
               </Link>
@@ -667,6 +700,17 @@ function TimeclockPage() {
                   {shift.closedUnpaidMs + liveUnpaidMs > 0 &&
                     ` · ${t("{time} unpaid break deducted", { time: fmtWorked(shift.closedUnpaidMs + liveUnpaidMs) })}`}
                 </p>
+                {openLate?.late && (
+                  <p className="mt-1 text-right text-xs font-medium text-red-700 dark:text-red-300">
+                    {t("You clocked in {n} min late for your {time} shift.", {
+                      n: openLate.minutesLate,
+                      time: new Date(openLate.shiftStart).toLocaleTimeString(tag, {
+                        hour: "numeric",
+                        minute: "2-digit",
+                      }),
+                    })}
+                  </p>
+                )}
 
                 {earnings ? (
                   <div className="mt-3 space-y-1 border-t border-border pt-3 text-sm">
@@ -703,7 +747,9 @@ function TimeclockPage() {
                       </span>
                     </div>
                     <p className="pt-1 text-right text-[11px] text-muted-foreground">
-                      {t("Estimate at {rate}/hr · visible only to you", { rate: fmtAmount(pay!.hourlyRate) })}
+                      {t("Estimate at {rate}/hr · visible only to you", {
+                        rate: fmtAmount(pay!.hourlyRate),
+                      })}
                     </p>
                   </div>
                 ) : (
@@ -763,9 +809,12 @@ function TimeclockPage() {
                     <p className="font-medium">
                       {graceExpired
                         ? t(GPS_BLOCKED_MSG)
-                        : t("Your GPS is off. You can still clock in for {n} more day(s), but your admin will be notified. After that you will not be able to clock in until location is turned on.", {
-                            n: graceDaysLeft,
-                          })}
+                        : t(
+                            "Your GPS is off. You can still clock in for {n} more day(s), but your admin will be notified. After that you will not be able to clock in until location is turned on.",
+                            {
+                              n: graceDaysLeft,
+                            },
+                          )}
                     </p>
                     <Button
                       type="button"
@@ -779,7 +828,9 @@ function TimeclockPage() {
                     </Button>
                     {settingsHelp && (
                       <p className="text-foreground/80">
-                        {t("Your browser is blocking location for this site. Tap the lock or settings icon next to the address bar, set Location to Allow, then reload the page.")}
+                        {t(
+                          "Your browser is blocking location for this site. Tap the lock or settings icon next to the address bar, set Location to Allow, then reload the page.",
+                        )}
                       </p>
                     )}
                   </div>
@@ -912,7 +963,9 @@ function TimeclockPage() {
                       key={m}
                       size="sm"
                       variant="outline"
-                      disabled={waitingForGps || locationMissing || breakMut.isPending || fenceBlocks}
+                      disabled={
+                        waitingForGps || locationMissing || breakMut.isPending || fenceBlocks
+                      }
                       onClick={() => {
                         setFlash(null);
                         breakMut.mutate(m);
@@ -936,7 +989,11 @@ function TimeclockPage() {
                 variant="outline"
                 className="mt-2 w-full"
                 disabled={
-                  waitingForGps || locationMissing || breakMut.isPending || fenceBlocks || breakLocked
+                  waitingForGps ||
+                  locationMissing ||
+                  breakMut.isPending ||
+                  fenceBlocks ||
+                  breakLocked
                 }
                 onClick={() => {
                   setFlash(null);
@@ -960,10 +1017,13 @@ function TimeclockPage() {
             {status === "on_break" && (
               <p className="mt-3 text-center text-xs text-amber-700 dark:text-amber-300">
                 {breakLocked
-                  ? t("Your {n}-minute break has to run its full time. You can end it in {time} — only an admin can end it sooner.", {
-                      n: breakMinutes ?? 0,
-                      time: fmtCountdown(breakRemainingMs!),
-                    })
+                  ? t(
+                      "Your {n}-minute break has to run its full time. You can end it in {time} — only an admin can end it sooner.",
+                      {
+                        n: breakMinutes ?? 0,
+                        time: fmtCountdown(breakRemainingMs!),
+                      },
+                    )
                   : t("You're on break. End your break before clocking out.")}
               </p>
             )}
@@ -1015,47 +1075,50 @@ function TimeclockPage() {
                 .sort((a, b) => b.at.localeCompare(a.at))
                 .slice(0, 10)
                 .map((p) => {
-                if (p.kind === "move") {
+                  if (p.kind === "move") {
+                    return (
+                      <li key={p.id} className="flex items-center justify-between py-2">
+                        <div>
+                          <span className="inline-block rounded bg-sky-100 px-1.5 py-0.5 text-xs font-medium text-sky-700 dark:bg-sky-500/15 dark:text-sky-300">
+                            {t("MOVED")}
+                          </span>
+                          <span className="ml-1.5 text-xs text-muted-foreground">
+                            {workLocations.find((l) => l.id === p.location_id)?.name}
+                          </span>
+                          <span className="ml-2 text-foreground">
+                            {new Date(p.at).toLocaleString(tag)}
+                          </span>
+                        </div>
+                      </li>
+                    );
+                  }
+                  const styles: Record<PunchKind, string> = {
+                    in: "bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+                    out: "bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300",
+                    break_start:
+                      "bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300",
+                    break_end:
+                      "bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300",
+                  };
                   return (
                     <li key={p.id} className="flex items-center justify-between py-2">
                       <div>
-                        <span className="inline-block rounded bg-sky-100 px-1.5 py-0.5 text-xs font-medium text-sky-700 dark:bg-sky-500/15 dark:text-sky-300">
-                          {t("MOVED")}
-                        </span>
-                        <span className="ml-1.5 text-xs text-muted-foreground">
-                          {workLocations.find((l) => l.id === p.location_id)?.name}
+                        <span
+                          className={`inline-block rounded px-1.5 py-0.5 text-xs font-medium ${styles[p.kind]}`}
+                        >
+                          {t(PUNCH_LABEL[p.kind])}
                         </span>
                         <span className="ml-2 text-foreground">
                           {new Date(p.at).toLocaleString(tag)}
                         </span>
+                        <LateBadge lateness={lateness.get(p.id)} className="ml-2" />
                       </div>
+                      <span className="text-xs text-muted-foreground">
+                        {p.distance_m != null ? `${Math.round(p.distance_m)} m` : "—"}
+                      </span>
                     </li>
                   );
-                }
-                const styles: Record<PunchKind, string> = {
-                  in: "bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
-                  out: "bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300",
-                  break_start: "bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300",
-                  break_end: "bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300",
-                };
-                return (
-                  <li key={p.id} className="flex items-center justify-between py-2">
-                    <div>
-                      <span
-                        className={`inline-block rounded px-1.5 py-0.5 text-xs font-medium ${styles[p.kind]}`}
-                      >
-                        {t(PUNCH_LABEL[p.kind])}
-                      </span>
-                      <span className="ml-2 text-foreground">
-                        {new Date(p.at).toLocaleString(tag)}
-                      </span>
-                    </div>
-                    <span className="text-xs text-muted-foreground">
-                      {p.distance_m != null ? `${Math.round(p.distance_m)} m` : "—"}
-                    </span>
-                  </li>
-                );
-              })}
+                })}
             </ul>
           </div>
         </div>
@@ -1066,11 +1129,18 @@ function TimeclockPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>{t("Your GPS is not on")}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t("Your company needs your location to confirm a valid clock-in. Turn on location for this app and try again.")}{" "}
-              {t("If you clock in anyway, it will be marked as unverified and your admin will be notified.")}{" "}
-              {t("You have {n} day(s) left to turn on location. After that you will not be able to clock in without it.", {
-                n: graceDaysLeft,
-              })}
+              {t(
+                "Your company needs your location to confirm a valid clock-in. Turn on location for this app and try again.",
+              )}{" "}
+              {t(
+                "If you clock in anyway, it will be marked as unverified and your admin will be notified.",
+              )}{" "}
+              {t(
+                "You have {n} day(s) left to turn on location. After that you will not be able to clock in without it.",
+                {
+                  n: graceDaysLeft,
+                },
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

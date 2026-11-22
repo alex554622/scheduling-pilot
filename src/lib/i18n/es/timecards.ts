@@ -5,6 +5,11 @@ export const timecards: Record<string, string> = {
   "No punches": "Sin registros",
   "Still clocked in": "Aún con entrada registrada",
   "Off-site punch": "Registro fuera del sitio",
+  "Late {n}m": "Tarde {n} min",
+  "Not scheduled": "Sin turno programado",
+  "Scheduled {times}": "Programado {times}",
+  "Clocked in with no published shift on the schedule":
+    "Entrada sin un turno publicado en el horario",
   Weekly: "Semanal",
   "Bi-weekly": "Quincenal",
   "Punch times and hours rounded to the nearest {n} minutes.":

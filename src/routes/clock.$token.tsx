@@ -49,6 +49,8 @@ type KioskReply = {
   break_ends_at?: string | null;
   kind?: string;
   at?: string;
+  /** Set on a clock-in past the grace period, when the company reads punches against the schedule. */
+  late_minutes?: number;
 };
 
 /** How long a confirmation stays up before the screen is ready for the next person. */
@@ -267,7 +269,11 @@ function SharedClockInPage() {
           : reply.kind === "break_start"
             ? t("Break started at {time}", { time })
             : t("Back from break at {time}", { time });
-    setConfirmation(what);
+    setConfirmation(
+      reply.late_minutes != null
+        ? `${what} · ${t("{n} min late", { n: reply.late_minutes })}`
+        : what,
+    );
     setPerson((p) => (p ? { ...p, name: reply.name ?? p.name } : p));
   }
 

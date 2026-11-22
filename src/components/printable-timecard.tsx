@@ -14,6 +14,10 @@ export interface PrintablePair {
   unpaidBreakMs: number;
   paidBreakMs: number;
   offSite: boolean;
+  /** "Late 12m" when the clock-in came after the scheduled start; otherwise null. */
+  late?: string | null;
+  /** "Night differential 6h 00m" for this shift, from the position's pay rules; otherwise null. */
+  diff?: string | null;
   /** Where it was worked; null when the company keeps no locations. */
   location?: string | null;
 }
@@ -24,6 +28,8 @@ export interface PrintableDay {
   absence?: string | null;
   /** A supervisor's comments on the day, ready to print. */
   comments?: string[];
+  /** The published schedule for the day, "Scheduled 9:00 AM – 5:00 PM"; detailed card only. */
+  scheduled?: string | null;
   pairs: PrintablePair[];
   totalMs: number;
 }
@@ -76,6 +82,8 @@ export interface PrintableTimecardProps {
   totals: { workedMs: number; unpaidBreakMs: number; paidBreakMs: number };
   /** Hours split by the company's daily and weekly overtime rules. */
   split: { regularMs: number; overtimeMs: number; doubleTimeMs: number };
+  /** The period's differential hours under the position's differential label; null when none. */
+  differential?: { label: string; ms: number } | null;
   /** Paid time per location, most first; empty when the company keeps none. */
   byLocation?: { name: string; ms: number }[];
   /** Plain-English summary of the rules in force, for the footer. */
@@ -117,6 +125,7 @@ export function PrintableTimecard({
   totals,
   split,
   byLocation = [],
+  differential = null,
   overtimeNote,
   roundMinutes,
   formatTime,
@@ -199,7 +208,10 @@ export function PrintableTimecard({
             if (day.pairs.length === 0) {
               return [
                 <tr key={day.date.toISOString()} className="border-b border-neutral-300">
-                  <Td className="text-left font-medium">{fmtRowDate(day.date)}</Td>
+                  <Td className="text-left font-medium">
+                    {fmtRowDate(day.date)}
+                    <ScheduledLine text={day.scheduled} />
+                  </Td>
                   <Td>—</Td>
                   <Td>—</Td>
                   <Td>—</Td>
@@ -219,7 +231,10 @@ export function PrintableTimecard({
                   className={i === day.pairs.length - 1 ? "border-b border-neutral-300" : ""}
                 >
                   {/* The date labels the day once; extra shifts hang beneath it. */}
-                  <Td className="text-left font-medium">{i === 0 ? fmtRowDate(day.date) : ""}</Td>
+                  <Td className="text-left font-medium">
+                    {i === 0 ? fmtRowDate(day.date) : ""}
+                    {i === 0 && <ScheduledLine text={day.scheduled} />}
+                  </Td>
                   <Td>{formatTime(pair.inAt)}</Td>
                   <Td>{pair.outAt ? formatTime(pair.outAt) : "—"}</Td>
                   <Td>{pair.unpaidBreakMs > 0 ? formatHours(pair.unpaidBreakMs) : "—"}</Td>
@@ -232,6 +247,8 @@ export function PrintableTimecard({
                       i === 0 ? (day.absence ?? null) : null,
                       ...(i === 0 ? (day.comments ?? []) : []),
                       pair.location ?? null,
+                      pair.late ?? null,
+                      pair.diff ?? null,
                       !pair.outAt ? t("Still clocked in") : null,
                       pair.offSite ? t("Off-site punch") : null,
                     ]
@@ -284,6 +301,12 @@ export function PrintableTimecard({
               <SummaryRow
                 label={t("Double time")}
                 value={`${formatHours(split.doubleTimeMs)}  (${decimalHours(split.doubleTimeMs)})`}
+              />
+            )}
+            {differential && differential.ms > 0 && (
+              <SummaryRow
+                label={differential.label}
+                value={`${formatHours(differential.ms)}  (${decimalHours(differential.ms)})`}
               />
             )}
             <SummaryRow
@@ -432,4 +455,10 @@ function SignatureLine({ role }: { role: string }) {
       </div>
     </div>
   );
+}
+
+/** The day's published schedule, small and grey under the date. */
+function ScheduledLine({ text }: { text?: string | null }) {
+  if (!text) return null;
+  return <div className="mt-0.5 text-[9px] font-normal text-neutral-500">{text}</div>;
 }

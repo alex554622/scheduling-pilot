@@ -310,6 +310,8 @@ export async function downloadInvoicePdf(data: InvoicePdfData): Promise<void> {
 
 export interface TimecardPdfRow {
   date: string;
+  /** The day's published schedule, printed small under the date; detailed card only. */
+  scheduled?: string;
   clockIn: string;
   clockOut: string;
   unpaid: string;
@@ -351,6 +353,8 @@ export interface TimecardPdfData {
   overtimeDecimal: string | null;
   doubleTime: string | null;
   doubleTimeDecimal: string | null;
+  /** The position's differential hours for the period, e.g. "Night differential". */
+  differential?: { label: string; hours: string; decimal: string } | null;
   /** Paid time per location, most first; empty when the company keeps none. */
   byLocation: { name: string; hours: string; decimal: string }[];
   /** Plain-English summary of the rules in force, printed in the footer. */
@@ -468,7 +472,15 @@ export async function downloadTimecardPdf(data: TimecardPdfData): Promise<void> 
                     { ...cell(r.notes, "left"), fillColor: FILL },
                   ]
                 : [
-                    { ...cell(r.date, "left"), bold: !!r.date },
+                    r.scheduled
+                      ? {
+                          ...cell("", "left"),
+                          text: [
+                            { text: r.date, bold: true },
+                            { text: `\n${r.scheduled}`, fontSize: 7, color: MUTED },
+                          ],
+                        }
+                      : { ...cell(r.date, "left"), bold: !!r.date },
                     cell(r.clockIn),
                     cell(r.clockOut),
                     cell(r.unpaid),
@@ -542,6 +554,18 @@ export async function downloadTimecardPdf(data: TimecardPdfData): Promise<void> 
                         { text: translate("Double time"), alignment: "right" as const, fontSize: 8.5 },
                         {
                           text: `${data.doubleTime}  (${data.doubleTimeDecimal})`,
+                          alignment: "right" as const,
+                          fontSize: 8.5,
+                        },
+                      ],
+                    ]
+                  : []),
+                ...(data.differential
+                  ? [
+                      [
+                        { text: data.differential.label, alignment: "right" as const, fontSize: 8.5 },
+                        {
+                          text: `${data.differential.hours}  (${data.differential.decimal})`,
                           alignment: "right" as const,
                           fontSize: 8.5,
                         },

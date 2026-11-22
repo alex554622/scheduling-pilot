@@ -45,6 +45,14 @@ export type AppRules = {
    * hands them nothing but their own row. Admins always see everyone.
    */
   staff_see_coworkers: boolean;
+  /**
+   * Read clock-ins against the published schedule and mark anyone who arrives
+   * after their shift start as late, on the time clock and the timecard. Off,
+   * the schedule and the clock know nothing of each other. See `@/lib/lateness`.
+   */
+  schedule_lateness: boolean;
+  /** Minutes after the shift start that still count as on time. */
+  late_grace_minutes: number;
 };
 
 export const DEFAULT_APP_RULES: AppRules = {
@@ -68,6 +76,8 @@ export const DEFAULT_APP_RULES: AppRules = {
   schedule_menu: "builder",
   hide_admins_from_staff: true,
   staff_see_coworkers: true,
+  schedule_lateness: false,
+  late_grace_minutes: 5,
 };
 
 export function useAppRules() {

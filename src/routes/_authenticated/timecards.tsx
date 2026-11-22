@@ -6,6 +6,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useAppRules } from "@/lib/app-rules";
+import { useScheduleMarks } from "@/lib/use-lateness";
+import { usePayRulesByMember, usePayRulesFor } from "@/lib/use-pay-rules";
+import { differentialMs } from "@/lib/pay-rules";
+import { LateBadge } from "@/components/late-badge";
 import { useStaffVisibility } from "@/lib/staff-visibility";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +21,8 @@ import {
   ChevronLeft,
   ChevronRight,
   CalendarOff,
+  CalendarClock,
+  CalendarX,
   Clock,
   Download,
   ExternalLink,
@@ -244,7 +250,16 @@ function TimecardsPage() {
   // The day-comment window keeps its own text, apart from the Notes form.
   const [commentText, setCommentText] = useState("");
   const [noteErr, setNoteErr] = useState<string | null>(null);
-  const [anchor, setAnchor] = useState<Date>(() => startOfWeek(new Date(), rules.week_start_day));
+  // The day the card is built around; the period starts on the week-start day
+  // on or before it. Kept as a day, not a week start, so the company's week
+  // start arriving after the first render (it loads with the App rules) puts
+  // today's week on screen. Re-aligning a Sunday anchor to a Monday rule used
+  // to step back to the Monday before it — the week before this one.
+  const [focusDay, setFocusDay] = useState<Date>(() => new Date());
+  const anchor = useMemo(
+    () => startOfWeek(focusDay, rules.week_start_day),
+    [focusDay, rules.week_start_day],
+  );
   const [selectedUser, setSelectedUser] = useState<string | "me">("me");
   const [editingDay, setEditingDay] = useState<Date | null>(null);
   const [savingPdf, setSavingPdf] = useState(false);
@@ -267,16 +282,11 @@ function TimecardsPage() {
     if (!isManager || !search.user || !search.day) return;
     const day = fromDayString(search.day);
     setSelectedUser(search.user);
-    setAnchor(startOfWeek(day, rules.week_start_day));
+    setFocusDay(day);
     setOpenDayOnLoad(day);
     // Spent once read, so a refresh or the back button doesn't reopen it.
     void navigate({ to: "/timecards", search: {}, replace: true });
-  }, [isManager, search.user, search.day, rules.week_start_day, navigate]);
-
-  // Keep the anchor aligned to the configured week-start day if it changes.
-  useEffect(() => {
-    setAnchor((a) => startOfWeek(a, rules.week_start_day));
-  }, [rules.week_start_day]);
+  }, [isManager, search.user, search.day, navigate]);
 
   // Live refresh: any insert/update/delete on time_punches for this company refetches the timecard.
   useEffect(() => {
@@ -337,6 +347,8 @@ function TimecardsPage() {
     () => staff.visible(rosterQ.data ?? [], (m) => m.id, "timecards"),
     [rosterQ.data, staff],
   );
+  /** Each roster member's position pay rules, for the roster-wide totals. */
+  const rulesOf = usePayRulesByMember();
 
   // Company names for the roster and the printed header. A company admin only
   // ever sees their own; a super admin spans several.
@@ -424,6 +436,43 @@ function TimecardsPage() {
       return punchesInPeriod((data ?? []) as Punch[], rangeStart, rangeEnd);
     },
   });
+
+  // Late clock-ins, and clock-ins on no shift, read against the published
+  // schedule. Both empty unless the company has connected the schedule to
+  // time cards.
+  // The pay rules on this person's position (paid lunch, a shift
+  // differential), or null for the company's App rules — see `@/lib/pay-rules`.
+  const payRules = usePayRulesFor(targetUserId);
+  const paidMeals = payRules?.paid_meal_breaks ?? false;
+  const diffRule = payRules?.diff_enabled ? payRules : null;
+  const {
+    late: lateness,
+    unscheduled,
+    shifts: scheduledShifts,
+  } = useScheduleMarks(targetUserId, punchesQ.data, { from: rangeStart, to: rangeEnd });
+  /**
+   * The detailed card puts each day's published schedule beside its punches,
+   * "Scheduled 9:00 AM – 5:00 PM", by the day each shift starts. Empty on the
+   * simple card, and whenever the company has the schedule link off.
+   */
+  const scheduledByDay = useMemo(() => {
+    const m = new Map<string, string>();
+    if (!detailed) return m;
+    const sorted = [...scheduledShifts].sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+    for (const s of sorted) {
+      const key = toDayString(new Date(s.starts_at));
+      const span = `${fmtTime(s.starts_at)} – ${fmtTime(s.ends_at)}`;
+      m.set(key, m.has(key) ? `${m.get(key)}, ${span}` : span);
+    }
+    for (const [k, v] of m) m.set(k, t("Scheduled {times}", { times: v }));
+    return m;
+  }, [detailed, scheduledShifts, t]);
+  /** "Late 12m" or "Not scheduled" for a printed or exported line; null otherwise. */
+  const lateText = (punchId: string) => {
+    if (unscheduled.has(punchId)) return t("Not scheduled");
+    const l = lateness.get(punchId);
+    return l?.late ? t("Late {n}m", { n: l.minutesLate }) : null;
+  };
 
   // Mid-shift location moves over the same stretch, so hours split by place.
   // Under the "timecards" key, so whatever refreshes the punches refreshes these.
@@ -672,6 +721,7 @@ function TimecardsPage() {
       rules.punch_round_minutes,
       rules.cap_break_to_length,
       allMovesQ.data ?? [],
+      (id) => rulesOf(id)?.paid_meal_breaks ?? false,
     );
     return roster
       .map((m) => {
@@ -699,7 +749,7 @@ function TimecardsPage() {
         };
       })
       .sort((a, b) => b.workedMs - a.workedMs || a.name.localeCompare(b.name));
-  }, [viewingAll, allQ.data, allMovesQ.data, roster, rules, period, t]);
+  }, [viewingAll, allQ.data, allMovesQ.data, roster, rules, period, t, rulesOf]);
 
   /** Everyone's paid time per location, for the foot of the roster-wide table. */
   const everyoneByLocation = useMemo(() => {
@@ -793,6 +843,8 @@ function TimecardsPage() {
       incompleteBreaks: number;
       /** Break time run past the picked length, which the shift was not charged. */
       overBreakMs: number;
+      /** Hours worked inside the position's differential window. */
+      diffMs: number;
     };
     const rows: {
       date: Date;
@@ -803,8 +855,10 @@ function TimecardsPage() {
       paidBreakMs: number;
       incompleteBreaks: number;
       overBreakMs: number;
+      diffMs: number;
     }[] = [];
     let weekTotal = 0;
+    let periodDiff = 0;
     let weekUnpaid = 0;
     let weekPaid = 0;
     for (let i = 0; i < days; i++) {
@@ -827,13 +881,17 @@ function TimecardsPage() {
       let currentOver = 0;
       let dayShort = 0;
       let dayOver = 0;
-      const openPair = (i: Punch, o?: Punch): Pair => ({
+      let dayDiff = 0;
+      // Unpaid breaks as charged, for taking them out of the differential.
+      let currentBreaks: { startMs: number; ms: number }[] = [];
+      const openPair = (i: Punch, o?: Punch, diffMs = 0): Pair => ({
         in: i,
         out: o,
         unpaidBreakMs: currentUnpaid,
         paidBreakMs: currentPaid,
         incompleteBreaks: currentShort,
         overBreakMs: currentOver,
+        diffMs,
       });
       for (const p of counted) {
         if (p.kind === "in") {
@@ -843,13 +901,27 @@ function TimecardsPage() {
           currentPaid = 0;
           currentShort = 0;
           currentOver = 0;
+          currentBreaks = [];
           openBreak = null;
         } else if (p.kind === "out") {
           if (openIn) {
             const gross = new Date(p.at).getTime() - new Date(openIn.at).getTime();
             const net = Math.max(0, gross - currentUnpaid);
-            pairs.push(openPair(openIn, p));
+            const diff = diffRule
+              ? differentialMs(
+                  {
+                    inMs: new Date(openIn.at).getTime(),
+                    outMs: new Date(p.at).getTime(),
+                    unpaidBreaks: currentBreaks,
+                  },
+                  diffRule.diff_start,
+                  diffRule.diff_end,
+                )
+              : 0;
+            pairs.push(openPair(openIn, p, diff));
             totalMs += net;
+            dayDiff += diff;
+            currentBreaks = [];
             dayUnpaidMs += currentUnpaid;
             dayPaidMs += currentPaid;
             dayShort += currentShort;
@@ -870,9 +942,13 @@ function TimecardsPage() {
               new Date(p.at).getTime() - new Date(openBreak.at).getTime(),
               openBreak.break_minutes,
               rules.cap_break_to_length,
+              paidMeals,
             );
             if (read.paid) currentPaid += read.countedMs;
-            else currentUnpaid += read.countedMs;
+            else {
+              currentUnpaid += read.countedMs;
+              currentBreaks.push({ startMs: new Date(openBreak.at).getTime(), ms: read.countedMs });
+            }
             if (read.incomplete) currentShort += 1;
             currentOver += read.overMs;
             openBreak = null;
@@ -893,8 +969,10 @@ function TimecardsPage() {
         totalMs,
         unpaidBreakMs: dayUnpaidMs,
         paidBreakMs: dayPaidMs,
+        diffMs: dayDiff,
       });
       weekTotal += totalMs;
+      periodDiff += dayDiff;
       weekUnpaid += dayUnpaidMs;
       weekPaid += dayPaidMs;
     }
@@ -907,6 +985,7 @@ function TimecardsPage() {
           rules.punch_round_minutes,
           rules.cap_break_to_length,
           movesQ.data ?? [],
+          () => paidMeals,
         ).get(targetUserId)
       : undefined;
     const byLocation = person?.byLocation ?? [];
@@ -914,16 +993,22 @@ function TimecardsPage() {
       (person?.days ?? []).flatMap((d) => d.spans).map((sp) => [sp.inAt, sp.byLocation] as const),
     );
     // Seven days at a time, for the detailed card's per-week subtotals.
-    const weeks: { workedMs: number; unpaidBreakMs: number; paidBreakMs: number }[] = [];
+    const weeks: {
+      workedMs: number;
+      unpaidBreakMs: number;
+      paidBreakMs: number;
+      diffMs: number;
+    }[] = [];
     for (let w = 0; w * 7 < rows.length; w++) {
       const slice = rows.slice(w * 7, w * 7 + 7);
       weeks.push({
         workedMs: slice.reduce((n, r) => n + r.totalMs, 0),
         unpaidBreakMs: slice.reduce((n, r) => n + r.unpaidBreakMs, 0),
         paidBreakMs: slice.reduce((n, r) => n + r.paidBreakMs, 0),
+        diffMs: slice.reduce((n, r) => n + r.diffMs, 0),
       });
     }
-    return { rows, weekTotal, weekUnpaid, weekPaid, byLocation, splits, weeks };
+    return { rows, weekTotal, weekUnpaid, weekPaid, periodDiff, byLocation, splits, weeks };
   }, [
     punchesQ.data,
     movesQ.data,
@@ -932,6 +1017,8 @@ function TimecardsPage() {
     days,
     rules.punch_round_minutes,
     rules.cap_break_to_length,
+    paidMeals,
+    diffRule,
   ]);
 
   // The day asked for from the dashboard, opened once that card has loaded —
@@ -954,7 +1041,7 @@ function TimecardsPage() {
   );
 
   function nav(dir: -1 | 1) {
-    setAnchor((a) => addDays(a, dir * days));
+    setFocusDay((d) => addDays(d, dir * days));
   }
 
   /**
@@ -993,18 +1080,22 @@ function TimecardsPage() {
             unpaid: "—",
             paid: "—",
             hours: "0h 00m",
+            scheduled: scheduledByDay.get(toDayString(r.date)) ?? undefined,
             notes: [
               absenceByDay.has(toDayString(r.date))
                 ? absenceLabel(absenceByDay.get(toDayString(r.date))!)
                 : t("No punches"),
               ...(commentsByDay.get(toDayString(r.date)) ?? []).map(quoted),
-            ].join(" · "),
+            ]
+              .filter(Boolean)
+              .join(" · "),
           },
         ];
       }
       const off = absenceByDay.get(toDayString(r.date));
       return r.pairs.map((p, i) => ({
         date: i === 0 ? fmtDate(r.date) : "",
+        scheduled: i === 0 ? (scheduledByDay.get(toDayString(r.date)) ?? undefined) : undefined,
         clockIn: fmtTime(p.in.at, rules.punch_round_minutes),
         clockOut: p.out ? fmtTime(p.out.at, rules.punch_round_minutes) : "—",
         unpaid: p.unpaidBreakMs > 0 ? fmtHours(p.unpaidBreakMs) : "—",
@@ -1014,6 +1105,8 @@ function TimecardsPage() {
           i === 0 && off ? absenceLabel(off) : null,
           ...(i === 0 ? (commentsByDay.get(toDayString(r.date)) ?? []).map(quoted) : []),
           hasLocations ? shiftPlaces(grouped.splits.get(p.in.at), p.in.location_id) : null,
+          lateText(p.in.id),
+          diffRule && p.diffMs > 0 ? `${diffRule.diff_label} ${fmtHours(p.diffMs)}` : null,
           !p.out ? t("Still clocked in") : null,
           // Where someone punched from is a manager's business; an employee's
           // own timecard is about their hours.
@@ -1071,6 +1164,14 @@ function TimecardsPage() {
       overtimeDecimal: overtimeMs > 0 ? dec(overtimeMs) : null,
       doubleTime: doubleTimeMs > 0 ? fmtHours(doubleTimeMs) : null,
       doubleTimeDecimal: doubleTimeMs > 0 ? dec(doubleTimeMs) : null,
+      differential:
+        diffRule && grouped.periodDiff > 0
+          ? {
+              label: diffRule.diff_label,
+              hours: fmtHours(grouped.periodDiff),
+              decimal: dec(grouped.periodDiff),
+            }
+          : null,
       byLocation: hasLocations
         ? grouped.byLocation.map((l) => ({
             name: locationName(l.locationId),
@@ -1147,12 +1248,15 @@ function TimecardsPage() {
         ? absenceLabel(absenceByDay.get(toDayString(r.date))!)
         : null,
       comments: (commentsByDay.get(toDayString(r.date)) ?? []).map(quoted),
+      scheduled: scheduledByDay.get(toDayString(r.date)) ?? null,
       pairs: r.pairs.map((p) => ({
         inAt: p.in.at,
         outAt: p.out?.at ?? null,
         unpaidBreakMs: p.unpaidBreakMs,
         paidBreakMs: p.paidBreakMs,
         offSite: isManager && (!p.in.within_geofence || (!!p.out && !p.out.within_geofence)),
+        late: lateText(p.in.id),
+        diff: diffRule && p.diffMs > 0 ? `${diffRule.diff_label} ${fmtHours(p.diffMs)}` : null,
         location: hasLocations ? shiftPlaces(grouped.splits.get(p.in.at), p.in.location_id) : null,
       })),
     })),
@@ -1166,6 +1270,10 @@ function TimecardsPage() {
       rules,
       period === "week",
     ),
+    differential:
+      diffRule && grouped.periodDiff > 0
+        ? { label: diffRule.diff_label, ms: grouped.periodDiff }
+        : null,
     byLocation: hasLocations
       ? grouped.byLocation.map((l) => ({ name: locationName(l.locationId), ms: l.workedMs }))
       : [],
@@ -1532,11 +1640,7 @@ function TimecardsPage() {
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setAnchor(startOfWeek(new Date(), rules.week_start_day))}
-            >
+            <Button variant="outline" size="sm" onClick={() => setFocusDay(new Date())}>
               {period === "week" ? t("This week") : t("This 2-week")}
             </Button>
             <Button variant="outline" size="icon" onClick={() => nav(1)} aria-label={t("Next")}>
@@ -1859,7 +1963,15 @@ function TimecardsPage() {
                   <div
                     className={`grid ${isManager ? "grid-cols-[1fr_2fr_1fr_auto]" : "grid-cols-[1fr_2fr_1fr]"} items-start gap-2 border-b border-border px-4 py-3 text-sm last:border-0`}
                   >
-                    <div className="font-medium text-foreground">{fmtDate(r.date)}</div>
+                    <div>
+                      <div className="font-medium text-foreground">{fmtDate(r.date)}</div>
+                      {scheduledByDay.has(toDayString(r.date)) && (
+                        <div className="mt-0.5 flex items-start gap-1 text-[11px] text-muted-foreground">
+                          <CalendarClock className="mt-px h-3 w-3 shrink-0" />
+                          <span>{scheduledByDay.get(toDayString(r.date))}</span>
+                        </div>
+                      )}
+                    </div>
                     <div className="space-y-1">
                       {absenceByDay.has(toDayString(r.date)) && (
                         <AbsenceBadge
@@ -1882,6 +1994,16 @@ function TimecardsPage() {
                           ) : (
                             <span className="rounded bg-amber-100 dark:bg-amber-500/15 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
                               {t("Still clocked in")}
+                            </span>
+                          )}
+                          <LateBadge lateness={lateness.get(p.in.id)} />
+                          {unscheduled.has(p.in.id) && (
+                            <span
+                              className="inline-flex items-center gap-0.5 rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-500/15 dark:text-slate-300"
+                              title={t("Clocked in with no published shift on the schedule")}
+                            >
+                              <CalendarX className="h-3 w-3" />
+                              {t("Not scheduled")}
                             </span>
                           )}
                           {(!p.in.within_geofence || (p.out && !p.out.within_geofence)) && (
@@ -1978,6 +2100,12 @@ function TimecardsPage() {
                           {t("{time} over, not counted", { time: fmtHours(r.overBreakMs) })}
                         </div>
                       )}
+                      {/* The position's differential: hours worked in its window. */}
+                      {diffRule && r.diffMs > 0 && (
+                        <div className="text-[10px] font-medium text-indigo-700 dark:text-indigo-300">
+                          {diffRule.diff_label} {fmtHours(r.diffMs)}
+                        </div>
+                      )}
                     </div>
                     {isManager && (
                       <div className="flex w-28 justify-end">
@@ -2045,6 +2173,11 @@ function TimecardsPage() {
                       {split.doubleTimeMs > 0 && (
                         <span className="ml-2 rounded bg-destructive/10 px-1.5 py-0.5 font-medium text-destructive">
                           2× {fmtHours(split.doubleTimeMs)}
+                        </span>
+                      )}
+                      {diffRule && grouped.periodDiff > 0 && (
+                        <span className="ml-2 rounded bg-indigo-100 px-1.5 py-0.5 font-medium text-indigo-800 dark:bg-indigo-500/15 dark:text-indigo-200">
+                          {diffRule.diff_label} {fmtHours(grouped.periodDiff)}
                         </span>
                       )}
                     </div>

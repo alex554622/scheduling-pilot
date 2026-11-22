@@ -902,6 +902,11 @@ export type Database = {
       }
       positions: {
         Row: {
+          diff_enabled: boolean
+          diff_end: string
+          diff_label: string
+          diff_start: string
+          paid_meal_breaks: boolean
           color: string
           company_id: string
           created_at: string
@@ -910,6 +915,11 @@ export type Database = {
           name: string
         }
         Insert: {
+          diff_enabled?: boolean
+          diff_end?: string
+          diff_label?: string
+          diff_start?: string
+          paid_meal_breaks?: boolean
           color?: string
           company_id: string
           created_at?: string
@@ -918,6 +928,11 @@ export type Database = {
           name: string
         }
         Update: {
+          diff_enabled?: boolean
+          diff_end?: string
+          diff_label?: string
+          diff_start?: string
+          paid_meal_breaks?: boolean
           color?: string
           company_id?: string
           created_at?: string

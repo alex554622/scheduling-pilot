@@ -80,6 +80,8 @@ export function readBreak(
   elapsedMs: number,
   pickedMinutes: number | null,
   cap = true,
+  /** The person's position pays meal breaks: a 30 or a 60 stays paid too. */
+  paidMeals = false,
 ): BreakReading {
   const elapsed = Math.max(0, elapsedMs);
   const allowance = pickedMinutes && pickedMinutes > 0 ? pickedMinutes * 60_000 : null;
@@ -91,7 +93,9 @@ export function readBreak(
     overMs,
     shortMs,
     incomplete: shortMs > 0,
-    paid: pickedMinutes === PAID_BREAK_MINUTES,
+    paid:
+      pickedMinutes === PAID_BREAK_MINUTES ||
+      (paidMeals && (pickedMinutes === 30 || pickedMinutes === 60)),
   };
 }
 
@@ -329,12 +333,15 @@ function openSpan(p: SimplePunch): ShiftSpan {
  * @param capBreaks the company's `cap_break_to_length` rule — see `readBreak`.
  * @param moves mid-shift location changes, for splitting each shift's hours
  * by place. Rounded by the same rule as the punches.
+ * @param paidMealsFor whether a person's position pays meal breaks —
+ * see `@/lib/pay-rules`. Left out, nobody's are.
  */
 export function totalsByPerson(
   punches: SimplePunch[],
   roundMinutes = 0,
   capBreaks = true,
   moves: LocationMove[] = [],
+  paidMealsFor?: (userId: string) => boolean,
 ): Map<string, PersonTotals> {
   const movesByUser = new Map<string, LocationMove[]>();
   for (const m of roundPunches(moves, roundMinutes)) {
@@ -357,6 +364,7 @@ export function totalsByPerson(
 
   const out = new Map<string, PersonTotals>();
   for (const [userId, days] of byUser) {
+    const paidMeals = paidMealsFor?.(userId) ?? false;
     const totals: PersonTotals = {
       grossMs: 0,
       workedMs: 0,
@@ -444,6 +452,7 @@ export function totalsByPerson(
               new Date(p.at).getTime() - new Date(openBreak.at).getTime(),
               openBreak.break_minutes,
               capBreaks,
+              paidMeals,
             );
             if (read.paid) paid += read.countedMs;
             else {

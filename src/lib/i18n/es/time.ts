@@ -369,4 +369,10 @@ export const time: Record<string, string> = {
   "Nothing to show.": "Nada que mostrar.",
   "Touch the screen to clock in": "Toca la pantalla para registrar tu entrada",
   MOVED: "CAMBIO",
+  "Late {n}m": "Tarde {n} min",
+  "{n} min late": "{n} min tarde",
+  "Clocked in {n} min after the {time} shift start":
+    "Entrada {n} min después del inicio del turno de las {time}",
+  "You clocked in {n} min late for your {time} shift.":
+    "Registraste tu entrada {n} min tarde para tu turno de las {time}.",
 };
