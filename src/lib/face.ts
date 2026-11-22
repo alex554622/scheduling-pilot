@@ -20,12 +20,18 @@
 
 type FaceApi = typeof import("@vladmandic/face-api/dist/face-api.esm.js");
 
+const FACE_API_URL = "/vendor/face-api/face-api.esm.js";
+
 let apiPromise: Promise<FaceApi> | null = null;
 
 /** Loads the library and the three models once. Rejects if the device can't run them. */
 export function loadFaceApi(): Promise<FaceApi> {
   apiPromise ??= (async () => {
-    const faceapi = await import("@vladmandic/face-api/dist/face-api.esm.js");
+    // Loaded as a static file (public/vendor/face-api), not bundled: the
+    // library is 1.3 MB of minified TensorFlow.js, and bundling it ran the
+    // production build out of memory. After upgrading @vladmandic/face-api,
+    // copy dist/face-api.esm.js there again (drop its sourceMappingURL line).
+    const faceapi = (await import(/* @vite-ignore */ FACE_API_URL)) as FaceApi;
     // The bundled TensorFlow.js; its typings aren't shipped with the package.
     const tf = faceapi.tf as unknown as {
       setBackend(name: string): Promise<boolean>;
