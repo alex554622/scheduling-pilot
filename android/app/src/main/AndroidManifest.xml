@@ -90,6 +90,12 @@
         <intent>
             <action android:name="com.schedpilot.fingerprint.IDENTIFY" />
         </intent>
+        <intent>
+            <action android:name="com.schedpilot.fingerprint.ENROLL" />
+        </intent>
+        <intent>
+            <action android:name="com.schedpilot.fingerprint.API" />
+        </intent>
     </queries>
 
     <!-- Permissions. Each one is used by an existing feature; nothing else is requested. -->
