@@ -184,8 +184,8 @@ export const people: Record<string, string> = {
   "No pending join requests.": "No hay solicitudes de unión pendientes.",
 
   // Organization
-  "Departments, job positions, worksites, and reusable shift templates for {name}.":
-    "Departamentos, puestos de trabajo, lugares de trabajo y plantillas de turno reutilizables para {name}.",
+  "Departments, job positions, and worksites for {name}.":
+    "Departamentos, puestos de trabajo y lugares de trabajo para {name}.",
   General: "General",
   Departments: "Departamentos",
   Locations: "Ubicaciones",

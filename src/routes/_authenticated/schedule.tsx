@@ -3,9 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth, type AppRole } from "@/lib/auth";
-import { useCapabilities } from "@/lib/capabilities";
 import { useStaffVisibility } from "@/lib/staff-visibility";
-import { ScheduleRunsPanel } from "@/components/schedule-runs-panel";
 import {
   Dialog,
   DialogContent,
@@ -32,10 +30,14 @@ import {
   Download,
   CheckSquare,
   Plane,
+  ClipboardPaste,
+  X,
 } from "lucide-react";
 import { SHIFT_COLORS, shiftColorClass, shiftColorHex } from "@/lib/shift-colors";
 import { ScheduleCopyPaste } from "@/components/schedule-copy-paste";
 import { CopyLastWeekButton } from "@/components/copy-last-week";
+import { ApplyToManyDialog, ShiftTemplatesBar, sourceSummary } from "@/components/shift-templates";
+import { shiftFromSource, sourceFromShift, type PasteSource } from "@/lib/paste-source";
 import { LayoutSwitch, ScheduleGrid } from "@/components/schedule-grid";
 import { sheetLegend, sheetTime, shortName } from "@/lib/sheet-format";
 import {
@@ -402,7 +404,6 @@ function endOfMonth(d: Date): Date {
 function CompanyDashboard({ role }: { role: AppRole }) {
   const t = useT("schedule");
   const { profile, company, user } = useAuth();
-  const { capabilities } = useCapabilities();
   // "Keep the office off the floor's screens" — the company's own rule about
   // which colleagues an employee is shown. It applies to the posted roster
   // exactly as it does to the dashboard list.
@@ -645,10 +646,6 @@ function CompanyDashboard({ role }: { role: AppRole }) {
         onLayout={(l) => void setLayout(l)}
         layoutSaving={layoutSaving}
       />
-
-      {/* Generating a schedule and then fixing it up is one job, so it lives
-          under the builder rather than on a page of its own. */}
-      {canEdit && capabilities.auto_scheduling && <ScheduleRunsPanel companyId={companyId} />}
     </div>
   );
 }
@@ -955,6 +952,12 @@ interface EditTarget {
   shift: ShiftRow | null;
 }
 
+/** A copied shift or template waiting to be dropped onto someone's empty day. */
+interface PasteMode {
+  pending: boolean;
+  onPaste: (memberId: string, day: Date) => void;
+}
+
 interface BuilderProps {
   role: AppRole;
   companyId: string;
@@ -999,8 +1002,53 @@ function ScheduleBuilder(props: BuilderProps) {
   const [edit, setEdit] = useState<EditTarget | null>(null);
   const [copiedId, setCopiedId] = useState(false);
   const [savingPdf, setSavingPdf] = useState(false);
-  // Double-click a day heading or a shift to start picking things to clear.
+  // Picking several shifts or days happens only after pressing Select; a plain
+  // tap on a shift opens it.
   const sel = useScheduleSelection();
+  // A copied shift or a tapped template, waiting to be dropped on other days.
+  const [copied, setCopied] = useState<PasteSource | null>(null);
+  const [pasteError, setPasteError] = useState<string | null>(null);
+  const [applyOpen, setApplyOpen] = useState(false);
+
+  const pasteMutation = useMutation({
+    mutationFn: async ({ memberId, day }: { memberId: string; day: Date }) => {
+      if (!copied) return;
+      const { error } = await supabase
+        .from("shifts")
+        .insert(shiftFromSource(copied, companyId, memberId, day));
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setPasteError(null);
+      void qc.invalidateQueries({ queryKey: ["shifts"] });
+    },
+    onError: (e: unknown) => setPasteError(e instanceof Error ? e.message : String(e)),
+  });
+
+  const paste = copied
+    ? {
+        pending: pasteMutation.isPending,
+        onPaste: (memberId: string, day: Date) => pasteMutation.mutate({ memberId, day }),
+      }
+    : undefined;
+
+  function startPaste(src: PasteSource | null) {
+    sel.clear();
+    setPasteError(null);
+    setCopied(src);
+    setEdit(null);
+  }
+
+  function startCopy(s: ShiftRow) {
+    const src = sourceFromShift(s, "");
+    src.label = `${sourceSummary(src)}${s.position ? ` · ${s.position}` : ""}`;
+    startPaste(src);
+  }
+
+  const sameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
+  const hasShiftOn = (memberId: string, day: Date) =>
+    shifts.some((s) => s.employee_id === memberId && sameDay(new Date(s.starts_at), day));
+  const isOffOn = (memberId: string, day: Date) => !!timeOffOn(props.timeOff, memberId, day);
 
   // Divide the rows under their team. Remembered per browser, because a
   // company that runs teams wants them every time and one that does not
@@ -1251,7 +1299,10 @@ function ScheduleBuilder(props: BuilderProps) {
             <Button
               variant="outline"
               size="sm"
-              onClick={sel.enable}
+              onClick={() => {
+                setCopied(null);
+                sel.enable();
+              }}
               title={t("Pick shifts or days to erase")}
             >
               <CheckSquare className="mr-2 h-4 w-4" />
@@ -1337,6 +1388,51 @@ function ScheduleBuilder(props: BuilderProps) {
         />
       )}
 
+      {canEdit && layout !== "grid" && (
+        <ShiftTemplatesBar
+          companyId={companyId}
+          activeTemplateId={copied?.template_id ?? null}
+          onPick={startPaste}
+        />
+      )}
+
+      {canEdit && copied && layout !== "grid" && (
+        <div className="sticky top-16 z-[5] flex flex-wrap items-center gap-3 rounded-xl border border-primary/40 bg-primary-soft px-4 py-3 shadow-[var(--shadow-card)]">
+          <ClipboardPaste className="h-4 w-4 shrink-0 text-primary" />
+          <div className="min-w-0 flex-1 text-sm">
+            <p className="font-semibold text-foreground">
+              {copied.template_id
+                ? t("Pasting {time}", { time: copied.label })
+                : t("Copied {time}", { time: copied.label })}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {view === "month"
+                ? t("Switch to Day, Week or 2-Week to paste it onto someone's day.")
+                : t("Tap any empty day for anyone on the team to paste it there. Days off are skipped.")}
+            </p>
+            {pasteError && <p className="mt-1 text-xs text-destructive">{pasteError}</p>}
+          </div>
+          {pasteMutation.isPending && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
+          <Button size="sm" onClick={() => setApplyOpen(true)}>
+            <Users className="mr-2 h-4 w-4" /> {t("Several people…")}
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setCopied(null)}>
+            <X className="mr-2 h-4 w-4" /> {t("Done")}
+          </Button>
+        </div>
+      )}
+
+      <ApplyToManyDialog
+        open={applyOpen}
+        onClose={() => setApplyOpen(false)}
+        source={copied}
+        companyId={companyId}
+        members={members}
+        days={days}
+        hasShift={hasShiftOn}
+        isOff={isOffOn}
+      />
+
       {/* The weekly grid is a reading surface, not an editing one: the builder's
           cells are where shifts are added and changed. Drafts are on it and
           marked, because a manager needs to see the week they are about to
@@ -1367,7 +1463,7 @@ function ScheduleBuilder(props: BuilderProps) {
       )}
 
       {layout !== "grid" && view === "day" && (
-        <DayView {...props} groups={groups} onEdit={setEdit} />
+        <DayView {...props} groups={groups} onEdit={setEdit} paste={paste} />
       )}
       {layout !== "grid" && view === "week" && (
         <GridView
@@ -1376,6 +1472,7 @@ function ScheduleBuilder(props: BuilderProps) {
           onEdit={setEdit}
           dayCount={7}
           selection={canEdit ? sel : undefined}
+          paste={paste}
         />
       )}
       {layout !== "grid" && view === "twoweek" && (
@@ -1385,6 +1482,7 @@ function ScheduleBuilder(props: BuilderProps) {
           onEdit={setEdit}
           dayCount={14}
           selection={canEdit ? sel : undefined}
+          paste={paste}
         />
       )}
       {layout !== "grid" && view === "month" && <MonthView {...props} onEdit={setEdit} />}
@@ -1394,6 +1492,7 @@ function ScheduleBuilder(props: BuilderProps) {
         companyId={companyId}
         memberShifts={(edit && shifts.filter((s) => s.employee_id === edit.memberId)) || []}
         onClose={() => setEdit(null)}
+        onCopy={startCopy}
       />
     </div>
   );
@@ -1412,12 +1511,16 @@ function GridView({
   onEdit,
   dayCount,
   selection,
+  paste,
 }: BuilderProps & {
   groups: TeamGroup[] | null;
   onEdit: (t: EditTarget) => void;
   dayCount: 7 | 14;
   selection?: ScheduleSelection;
+  paste?: PasteMode;
 }) {
+  // Picking is a mode the Select button turns on; outside it a tap edits.
+  const picking = !!selection?.active;
   const t = useT("schedule");
   const tag = useLocaleTag();
   const grid = useMemo(() => {
@@ -1462,9 +1565,9 @@ function GridView({
               <button
                 type="button"
                 key={d.toISOString()}
-                disabled={!selection}
+                disabled={!picking}
                 onClick={() => selection?.toggleDay(dayKey)}
-                title={t("Click to pick this whole day")}
+                title={picking ? t("Click to pick this whole day") : undefined}
                 className={`px-1 py-3 text-center text-[11px] font-semibold ${today ? "text-primary" : "text-foreground"} ${weekDivider ? "border-l-2 border-primary/30" : ""} ${picked ? "bg-primary/20 ring-1 ring-inset ring-primary" : ""}`}
               >
                 <div className="uppercase tracking-wide text-muted-foreground">
@@ -1539,26 +1642,22 @@ function GridView({
                         <button
                           key={i}
                           type="button"
-                          disabled={!canEdit}
-                          onDoubleClick={() => {
-                            if (!canEdit) return;
-                            // The two clicks behind this double-click picked the
-                            // cell and put it back, so the selection is unchanged
-                            // and the editor can open cleanly.
-                            onEdit({
-                              memberId: m.id,
-                              memberName: m.full_name || t("(unnamed)"),
-                              day: days[i],
-                              shift: s,
-                            });
-                          }}
+                          disabled={
+                            !canEdit ||
+                            (picking && !s) ||
+                            // A paste never lands on someone's approved day off.
+                            (!!paste && !s && (paste.pending || !!off))
+                          }
                           onClick={() => {
                             if (!canEdit) return;
-                            // A filled cell is picked by clicking it; an empty one
-                            // has nothing to pick, so it opens the editor to make
-                            // a shift there.
-                            if (s) {
-                              selection?.toggleShift(s.id);
+                            // In Select mode a tap adds or removes the shift.
+                            if (picking) {
+                              if (s) selection?.toggleShift(s.id);
+                              return;
+                            }
+                            // With a shift copied, an empty day takes the paste.
+                            if (paste && !s) {
+                              if (!off) paste.onPaste(m.id, days[i]);
                               return;
                             }
                             onEdit({
@@ -1570,8 +1669,12 @@ function GridView({
                           }}
                           title={
                             s
-                              ? t("Click to pick this shift · double-click to edit it")
-                              : off
+                              ? picking
+                                ? t("Click to pick this shift")
+                                : t("Click to edit this shift")
+                              : paste && !off
+                                ? t("Paste the copied shift here")
+                                : off
                                 ? t("{name} is off ({kind}) this day", {
                                     name: m.full_name || t("This employee"),
                                     kind: timeOffLabel(off).toLowerCase(),
@@ -1593,6 +1696,11 @@ function GridView({
                             </div>
                           ) : off ? (
                             <TimeOffChip off={off} />
+                          ) : paste && !picking ? (
+                            // Shown without hovering, since phones have no hover.
+                            <div className="grid h-full min-h-10 place-items-center rounded-md border border-dashed border-primary/50 text-primary">
+                              <ClipboardPaste className="h-4 w-4" />
+                            </div>
                           ) : canEdit ? (
                             <div className="grid h-full min-h-10 place-items-center rounded-md border border-dashed border-transparent text-muted-foreground opacity-0 transition-opacity group-hover:border-primary/40 group-hover:opacity-100">
                               <Plus className="h-4 w-4" />
@@ -1633,7 +1741,12 @@ function DayView({
   canEdit,
   isLoading,
   onEdit,
-}: BuilderProps & { groups: TeamGroup[] | null; onEdit: (t: EditTarget) => void }) {
+  paste,
+}: BuilderProps & {
+  groups: TeamGroup[] | null;
+  onEdit: (t: EditTarget) => void;
+  paste?: PasteMode;
+}) {
   const t = useT("schedule");
   const day = days[0];
   if (isLoading)
@@ -1706,7 +1819,16 @@ function DayView({
                     </span>
                   )}
                   {mine.length === 0 ? (
-                    off ? null : canEdit ? (
+                    off ? null : canEdit && paste ? (
+                      <button
+                        type="button"
+                        disabled={paste.pending}
+                        onClick={() => paste.onPaste(m.id, day)}
+                        className="inline-flex items-center gap-1 rounded-md border border-dashed border-primary/50 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary-soft disabled:opacity-50"
+                      >
+                        <ClipboardPaste className="h-3.5 w-3.5" /> {t("Paste here")}
+                      </button>
+                    ) : canEdit ? (
                       <button
                         type="button"
                         onClick={() =>
@@ -1867,11 +1989,13 @@ function ShiftEditor({
   companyId,
   memberShifts,
   onClose,
+  onCopy,
 }: {
   target: EditTarget | null;
   companyId: string;
   memberShifts: ShiftRow[];
   onClose: () => void;
+  onCopy: (s: ShiftRow) => void;
 }) {
   return (
     <Dialog open={!!target} onOpenChange={(o) => !o && onClose()}>
@@ -1883,6 +2007,7 @@ function ShiftEditor({
             companyId={companyId}
             memberShifts={memberShifts}
             onClose={onClose}
+            onCopy={onCopy}
           />
         )}
       </DialogContent>
@@ -1895,11 +2020,13 @@ function ShiftEditorForm({
   companyId,
   memberShifts,
   onClose,
+  onCopy,
 }: {
   target: EditTarget;
   companyId: string;
   memberShifts: ShiftRow[];
   onClose: () => void;
+  onCopy: (s: ShiftRow) => void;
 }) {
   const t = useT("schedule");
   const qc = useQueryClient();
@@ -2277,7 +2404,7 @@ function ShiftEditorForm({
         )}
       </div>
       <DialogFooter className="flex-row justify-between sm:justify-between">
-        <div>
+        <div className="flex gap-1">
           {target.shift && (
             <Button
               type="button"
@@ -2287,6 +2414,16 @@ function ShiftEditorForm({
               disabled={deleteMutation.isPending}
             >
               <Trash2 className="h-4 w-4" /> {t("Delete")}
+            </Button>
+          )}
+          {target.shift && (
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => target.shift && onCopy(target.shift)}
+              title={t("Copy this shift, then tap any empty day to paste it")}
+            >
+              <Copy className="h-4 w-4" /> {t("Copy")}
             </Button>
           )}
         </div>

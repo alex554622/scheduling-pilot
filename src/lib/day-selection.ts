@@ -5,8 +5,8 @@ import type { DayString } from "@/lib/day-string";
  * Picking parts of a schedule to clear.
  *
  * Two ways in, which add up rather than compete: whole days, picked from the
- * day headings, and individual shifts, picked from the cells. Double-clicking
- * either one starts a selection; after that a single click adds or removes.
+ * day headings, and individual shifts, picked from the cells. Picking starts
+ * only from the Select button; until then a tap on a shift opens its editor.
  *
  * Kept apart from the bar that renders it so the hook and the component live
  * in their own modules, which is what fast refresh wants.

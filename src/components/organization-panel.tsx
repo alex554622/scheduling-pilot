@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { LeafletMap } from "@/components/leaflet-map";
 import { useT } from "@/lib/i18n";
-import { Building2, MapPin, BriefcaseBusiness, LayoutTemplate, Plus, Trash2, Pencil, Loader2, Crosshair, Globe } from "lucide-react";
+import { Building2, MapPin, BriefcaseBusiness, Plus, Trash2, Pencil, Loader2, Crosshair, Globe } from "lucide-react";
 
 type Department = { id: string; name: string; description: string | null };
 type Position = { id: string; name: string; description: string | null; color: string };
@@ -19,14 +19,9 @@ type Location = {
   id: string; name: string; address: string | null;
   latitude: number | null; longitude: number | null; geofence_radius_m: number;
 };
-type Template = {
-  id: string; name: string; start_time: string; end_time: string;
-  break_minutes: number; required_headcount: number;
-  department_id: string | null; location_id: string | null; position_id: string | null;
-};
 
 /**
- * Departments, positions, locations and shift templates. Shown as the
+ * Departments, positions and locations. Shown as the
  * "Organization" tab of Settings; the old /organization address forwards there.
  */
 export function OrganizationPanel() {
@@ -49,7 +44,7 @@ export function OrganizationPanel() {
       <div>
         <h1 className="text-2xl font-semibold text-foreground">{t("Organization")}</h1>
         <p className="text-sm text-muted-foreground">
-          {t("Departments, job positions, worksites, and reusable shift templates for {name}.", { name: company.name })}
+          {t("Departments, job positions, and worksites for {name}.", { name: company.name })}
         </p>
       </div>
 
@@ -59,14 +54,12 @@ export function OrganizationPanel() {
           <TabsTrigger value="departments"><Building2 className="mr-2 h-4 w-4" />{t("Departments")}</TabsTrigger>
           <TabsTrigger value="positions"><BriefcaseBusiness className="mr-2 h-4 w-4" />{t("Positions")}</TabsTrigger>
           <TabsTrigger value="locations"><MapPin className="mr-2 h-4 w-4" />{t("Locations")}</TabsTrigger>
-          <TabsTrigger value="templates"><LayoutTemplate className="mr-2 h-4 w-4" />{t("Shift templates")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general" className="mt-6"><GeneralTab companyId={company.id} /></TabsContent>
         <TabsContent value="departments" className="mt-6"><DepartmentsTab companyId={company.id} /></TabsContent>
         <TabsContent value="positions" className="mt-6"><PositionsTab companyId={company.id} /></TabsContent>
         <TabsContent value="locations" className="mt-6"><LocationsTab companyId={company.id} /></TabsContent>
-        <TabsContent value="templates" className="mt-6"><TemplatesTab companyId={company.id} /></TabsContent>
       </Tabs>
     </div>
   );
@@ -662,170 +655,5 @@ function LocationsTab({ companyId }: { companyId: string }) {
           )}
       </Panel>
     </div>
-  );
-}
-
-/* -------------------------------- templates -------------------------------- */
-
-function TemplatesTab({ companyId }: { companyId: string }) {
-  const t = useT("people");
-  const qc = useQueryClient();
-  const [draft, setDraft] = useState<Partial<Template> | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-
-  const templatesQ = useQuery({
-    queryKey: ["shift_templates", companyId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("shift_templates")
-        .select("id, name, start_time, end_time, break_minutes, required_headcount, department_id, location_id, position_id")
-        .eq("company_id", companyId).order("name");
-      if (error) throw error;
-      return (data ?? []) as Template[];
-    },
-  });
-
-  const positionsQ = useQuery({
-    queryKey: ["positions", companyId],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("positions").select("id, name").eq("company_id", companyId).order("name");
-      if (error) throw error;
-      return (data ?? []) as { id: string; name: string }[];
-    },
-  });
-
-  const save = useMutation({
-    mutationFn: async () => {
-      if (!draft?.name?.trim()) throw new Error(t("Give the template a name."));
-      const payload = {
-        name: draft.name.trim(),
-        start_time: draft.start_time || "09:00",
-        end_time: draft.end_time || "17:00",
-        break_minutes: draft.break_minutes ?? 0,
-        required_headcount: draft.required_headcount ?? 1,
-        position_id: draft.position_id || null,
-      };
-      if (draft.id) {
-        const { error } = await supabase.from("shift_templates").update(payload).eq("id", draft.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from("shift_templates").insert({ company_id: companyId, ...payload });
-        if (error) throw error;
-      }
-    },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["shift_templates"] }); setDraft(null); setErr(null); },
-    onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
-  });
-
-  const del = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from("shift_templates").delete().eq("id", id);
-      if (error) throw error;
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["shift_templates"] }),
-    onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
-  });
-
-  const rows = templatesQ.data ?? [];
-  const positions = positionsQ.data ?? [];
-  const posName = (id: string | null | undefined) => positions.find((p) => p.id === id)?.name;
-
-  return (
-    <Panel
-      title={t("Shift templates")}
-      subtitle={t("Reusable start/end times you can apply when building a schedule.")}
-      action={
-        <Button size="sm" onClick={() => { setErr(null); setDraft({ name: "", start_time: "09:00", end_time: "17:00", break_minutes: 30, required_headcount: 1 }); }}>
-          <Plus className="mr-2 h-4 w-4" />{t("Add template")}
-        </Button>
-      }
-    >
-      {templatesQ.isLoading ? <EmptyState>Loading…</EmptyState>
-        : rows.length === 0 ? <EmptyState>{t("No templates yet.")}</EmptyState>
-        : (
-          <ul className="divide-y divide-border">
-            {rows.map((tpl) => (
-              <li key={tpl.id} className="flex items-center justify-between gap-3 py-3">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-foreground">{tpl.name}</p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {tpl.start_time.slice(0, 5)}–{tpl.end_time.slice(0, 5)}
-                    {tpl.break_minutes ? ` · ${t("{n}m break", { n: tpl.break_minutes })}` : ""}
-                    {tpl.required_headcount > 1 ? ` · ${t("needs {n}", { n: tpl.required_headcount })}` : ""}
-                    {posName(tpl.position_id) ? ` · ${posName(tpl.position_id)}` : ""}
-                  </p>
-                </div>
-                <div className="flex shrink-0 gap-1">
-                  <Button variant="ghost" size="sm" onClick={() => { setErr(null); setDraft(tpl); }} aria-label={t("Edit {name}", { name: tpl.name })}>
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                    onClick={() => del.mutate(tpl.id)} aria-label={t("Delete {name}", { name: tpl.name })}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      <ErrorNote error={err} />
-
-      <Dialog open={!!draft} onOpenChange={(o) => { if (!o) setDraft(null); }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{draft?.id ? t("Edit template") : t("New shift template")}</DialogTitle>
-            <DialogDescription>{t("Times are the site's local wall-clock times.")}</DialogDescription>
-          </DialogHeader>
-          {draft && (
-            <div className="space-y-4 py-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="tpl-name">{t("Name")}</Label>
-                <Input id="tpl-name" value={draft.name ?? ""} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder={t("e.g. Day Shift")} />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="tpl-start">{t("Starts")}</Label>
-                  <Input id="tpl-start" type="time" value={(draft.start_time ?? "09:00").slice(0, 5)}
-                    onChange={(e) => setDraft({ ...draft, start_time: e.target.value })} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="tpl-end">{t("Ends")}</Label>
-                  <Input id="tpl-end" type="time" value={(draft.end_time ?? "17:00").slice(0, 5)}
-                    onChange={(e) => setDraft({ ...draft, end_time: e.target.value })} />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="tpl-break">{t("Break (minutes)")}</Label>
-                  <Input id="tpl-break" type="number" min={0} value={draft.break_minutes ?? 0}
-                    onChange={(e) => setDraft({ ...draft, break_minutes: Number(e.target.value) })} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="tpl-head">{t("People needed")}</Label>
-                  <Input id="tpl-head" type="number" min={1} value={draft.required_headcount ?? 1}
-                    onChange={(e) => setDraft({ ...draft, required_headcount: Number(e.target.value) })} />
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="tpl-pos">{t("Position")}</Label>
-                <select id="tpl-pos"
-                  className="h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
-                  value={draft.position_id ?? ""}
-                  onChange={(e) => setDraft({ ...draft, position_id: e.target.value || null })}>
-                  <option value="">{t("— none —")}</option>
-                  {positions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDraft(null)}>{t("Cancel")}</Button>
-            <Button disabled={save.isPending} onClick={() => save.mutate()}>
-              {save.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{t("Save")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </Panel>
   );
 }
