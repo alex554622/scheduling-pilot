@@ -16,6 +16,7 @@ export type Database = {
     Tables: {
       company_memberships: {
         Row: {
+          location_id: string | null
           company_id: string
           department_id: string | null
           employee_code: string | null
@@ -32,6 +33,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          location_id?: string | null
           company_id: string
           department_id?: string | null
           employee_code?: string | null
@@ -48,6 +50,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          location_id?: string | null
           company_id?: string
           department_id?: string | null
           employee_code?: string | null
@@ -482,8 +485,34 @@ export type Database = {
           },
         ]
       }
+      department_positions: {
+        Row: {
+          company_id: string
+          created_at: string
+          department_id: string
+          id: string
+          position_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          department_id: string
+          id?: string
+          position_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          department_id?: string
+          id?: string
+          position_id?: string
+        }
+        Relationships: []
+      }
       departments: {
         Row: {
+          location_id: string | null
+          is_active: boolean
           company_id: string
           created_at: string
           description: string | null
@@ -491,6 +520,8 @@ export type Database = {
           name: string
         }
         Insert: {
+          location_id?: string | null
+          is_active?: boolean
           company_id: string
           created_at?: string
           description?: string | null
@@ -498,6 +529,8 @@ export type Database = {
           name: string
         }
         Update: {
+          location_id?: string | null
+          is_active?: boolean
           company_id?: string
           created_at?: string
           description?: string | null
@@ -825,6 +858,7 @@ export type Database = {
       }
       locations: {
         Row: {
+          is_active: boolean
           address: string | null
           company_id: string
           created_at: string
@@ -835,6 +869,7 @@ export type Database = {
           name: string
         }
         Insert: {
+          is_active?: boolean
           address?: string | null
           company_id: string
           created_at?: string
@@ -845,6 +880,7 @@ export type Database = {
           name: string
         }
         Update: {
+          is_active?: boolean
           address?: string | null
           company_id?: string
           created_at?: string
@@ -902,6 +938,7 @@ export type Database = {
       }
       positions: {
         Row: {
+          is_active: boolean
           diff_enabled: boolean
           diff_end: string
           diff_label: string
@@ -915,6 +952,7 @@ export type Database = {
           name: string
         }
         Insert: {
+          is_active?: boolean
           diff_enabled?: boolean
           diff_end?: string
           diff_label?: string
@@ -928,6 +966,7 @@ export type Database = {
           name: string
         }
         Update: {
+          is_active?: boolean
           diff_enabled?: boolean
           diff_end?: string
           diff_label?: string
@@ -1661,6 +1700,7 @@ export type Database = {
     Views: {
       company_members: {
         Row: {
+          location_id: string | null
           company_id: string
           created_at: string
           department_id: string | null
@@ -1679,6 +1719,7 @@ export type Database = {
           [_ in never]: never
         }
         Update: {
+          location_id?: string | null
           department_id?: string | null
           employee_code?: string | null
           full_name?: string

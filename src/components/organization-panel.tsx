@@ -10,6 +10,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { LeafletMap } from "@/components/leaflet-map";
+import { Switch } from "@/components/ui/switch";
+import { ORG_STRUCTURE_KEY, useOrgStructure } from "@/lib/use-org-structure";
+import { activeOrCurrent, diffIds, type OrgItem } from "@/lib/org-structure";
 import { useT } from "@/lib/i18n";
 import { Building2, MapPin, BriefcaseBusiness, Plus, Trash2, Pencil, Loader2, Crosshair, Globe } from "lucide-react";
 
@@ -257,6 +260,7 @@ function OrgNamePanel({ companyId }: { companyId: string }) {
 function DepartmentsTab({ companyId }: { companyId: string }) {
   const t = useT("people");
   const qc = useQueryClient();
+  const org = useOrgStructure(companyId);
   const [editing, setEditing] = useState<Department | null>(null);
   const [creating, setCreating] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -272,19 +276,41 @@ function DepartmentsTab({ companyId }: { companyId: string }) {
     },
   });
 
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: ["departments"] });
+    void qc.invalidateQueries({ queryKey: [ORG_STRUCTURE_KEY] });
+  };
+
   const save = useMutation({
-    mutationFn: async (v: { id?: string; name: string; description: string }) => {
-      if (v.id) {
-        const { error } = await supabase.from("departments")
-          .update({ name: v.name, description: v.description || null }).eq("id", v.id);
+    mutationFn: async (v: OrgItemDraft & { id?: string }) => {
+      const base = { name: v.name, description: v.description || null };
+      const extra = org.missing ? {} : { is_active: v.isActive, location_id: v.locationId || null };
+      let id = v.id;
+      if (id) {
+        const { error } = await supabase.from("departments").update({ ...base, ...extra }).eq("id", id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from("departments")
-          .insert({ company_id: companyId, name: v.name, description: v.description || null });
+        const { data, error } = await supabase.from("departments")
+          .insert({ company_id: companyId, ...base, ...extra }).select("id").single();
+        if (error) throw error;
+        id = data.id;
+      }
+      if (org.missing) return;
+      const before = org.links.filter((l) => l.department_id === id).map((l) => l.position_id);
+      const { add, remove } = diffIds(before, v.linked);
+      if (add.length) {
+        const { error } = await supabase.from("department_positions").insert(
+          add.map((position_id) => ({ company_id: companyId, department_id: id!, position_id })),
+        );
+        if (error) throw error;
+      }
+      if (remove.length) {
+        const { error } = await supabase.from("department_positions").delete()
+          .eq("department_id", id).in("position_id", remove);
         if (error) throw error;
       }
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["departments"] }); setEditing(null); setCreating(false); setErr(null); },
+    onSuccess: () => { refresh(); setEditing(null); setCreating(false); setErr(null); },
     onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
   });
 
@@ -293,7 +319,7 @@ function DepartmentsTab({ companyId }: { companyId: string }) {
       const { error } = await supabase.from("departments").delete().eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["departments"] }),
+    onSuccess: refresh,
     onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
   });
 
@@ -331,51 +357,88 @@ function DepartmentsTab({ companyId }: { companyId: string }) {
         .map((a) => nameById.get(a.supervisor_id) ?? t("Unnamed")),
     ),
   ];
+  const orgDept = (id: string) => org.departments.find((d) => d.id === id);
+  const locationName = (id: string | null | undefined) =>
+    org.locations.find((l) => l.id === id)?.name ?? null;
+  const positionsOf = (deptId: string) =>
+    org.links
+      .filter((l) => l.department_id === deptId)
+      .map((l) => org.positions.find((p) => p.id === l.position_id)?.name)
+      .filter(Boolean) as string[];
 
   const rows = q.data ?? [];
+  const current = editing ? orgDept(editing.id) : undefined;
 
   return (
     <Panel
       title={t("Departments")}
-      subtitle={t("Group employees and shifts by team.")}
+      subtitle={t("Group people and shifts by department. Each department lists the positions people in it can hold.")}
       action={<Button size="sm" onClick={() => { setErr(null); setCreating(true); }}><Plus className="mr-2 h-4 w-4" />{t("Add department")}</Button>}
     >
-      {q.isLoading ? <EmptyState>Loading…</EmptyState>
+      {q.isLoading ? <EmptyState>{t("Loading…")}</EmptyState>
         : rows.length === 0 ? <EmptyState>{t("No departments yet.")}</EmptyState>
         : (
           <ul className="divide-y divide-border">
-            {rows.map((d) => (
-              <li key={d.id} className="flex items-center justify-between gap-3 py-3">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-foreground">{d.name}</p>
-                  {d.description && <p className="truncate text-xs text-muted-foreground">{d.description}</p>}
-                  <p className="truncate text-xs text-muted-foreground">
-                    {headcount(d.id) === 1 ? t("1 person") : t("{n} people", { n: headcount(d.id) })}
-                    {" · "}
-                    {supervisorsOf(d.id).length === 0
-                      ? t("No supervisor")
-                      : t("Supervised by {names}", { names: supervisorsOf(d.id).join(", ") })}
-                  </p>
-                </div>
-                <div className="flex shrink-0 gap-1">
-                  <Button variant="ghost" size="sm" onClick={() => { setErr(null); setEditing(d); }} aria-label={t("Edit {name}", { name: d.name })}>
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                    onClick={() => del.mutate(d.id)} aria-label={t("Delete {name}", { name: d.name })}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </li>
-            ))}
+            {rows.map((d) => {
+              const od = orgDept(d.id);
+              const loc = locationName(od?.location_id);
+              const pos = positionsOf(d.id);
+              return (
+                <li key={d.id} className={`flex items-center justify-between gap-3 py-3 ${od && !od.is_active ? "opacity-60" : ""}`}>
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-2 truncate text-sm font-medium text-foreground">
+                      {d.name}
+                      {od && !od.is_active && <InactiveTag />}
+                    </p>
+                    {d.description && <p className="truncate text-xs text-muted-foreground">{d.description}</p>}
+                    <p className="truncate text-xs text-muted-foreground">
+                      {loc ? `${loc} · ` : ""}
+                      {pos.length ? t("Positions: {names}", { names: pos.join(", ") }) : t("Any position")}
+                    </p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {headcount(d.id) === 1 ? t("1 person") : t("{n} people", { n: headcount(d.id) })}
+                      {" · "}
+                      {supervisorsOf(d.id).length === 0
+                        ? t("No supervisor")
+                        : t("Supervised by {names}", { names: supervisorsOf(d.id).join(", ") })}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 gap-1">
+                    <Button variant="ghost" size="sm" onClick={() => { setErr(null); setEditing(d); }} aria-label={t("Edit {name}", { name: d.name })}>
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      onClick={() => {
+                        if (confirm(t("Delete “{name}”? People in it are left without a department. To keep it on old records, turn it off instead.", { name: d.name })))
+                          del.mutate(d.id);
+                      }}
+                      aria-label={t("Delete {name}", { name: d.name })}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
       <ErrorNote error={err} />
 
-      <NameDescDialog
+      <OrgItemDialog
         open={creating || !!editing}
         title={editing ? t("Edit department") : t("New department")}
-        initial={editing ? { name: editing.name, description: editing.description ?? "" } : { name: "", description: "" }}
+        initial={{
+          name: editing?.name ?? "",
+          description: editing?.description ?? "",
+          isActive: current?.is_active ?? true,
+          locationId: current?.location_id ?? "",
+          linked: editing ? org.links.filter((l) => l.department_id === editing.id).map((l) => l.position_id) : [],
+        }}
+        missing={org.missing}
+        locations={activeOrCurrent(org.locations, current?.location_id)}
+        linkOptions={org.positions}
+        linkLabel={t("Positions in this department")}
+        linkHint={t("The Position dropdown in Edit member offers only these. Leave all unticked to allow any position.")}
+        activeHint={t("Off: no one new can be put in this department. People already in it stay, and old records still show it.")}
         pending={save.isPending}
         onCancel={() => { setCreating(false); setEditing(null); }}
         onSave={(v) => save.mutate({ id: editing?.id, ...v })}
@@ -384,34 +447,102 @@ function DepartmentsTab({ companyId }: { companyId: string }) {
   );
 }
 
-function NameDescDialog({ open, title, initial, pending, onCancel, onSave }: {
-  open: boolean; title: string; initial: { name: string; description: string };
-  pending: boolean; onCancel: () => void; onSave: (v: { name: string; description: string }) => void;
+interface OrgItemDraft {
+  name: string;
+  description: string;
+  isActive: boolean;
+  locationId: string;
+  linked: string[];
+}
+
+function InactiveTag() {
+  const t = useT("people");
+  return (
+    <span className="rounded-full border border-border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+      {t("Inactive")}
+    </span>
+  );
+}
+
+/**
+ * Name, description and the Active switch, for a department or a position;
+ * a department also picks its location. The ticked list links positions and
+ * departments, from whichever side is being edited.
+ */
+function OrgItemDialog({ open, title, initial, missing, locations, linkOptions, linkLabel, linkHint, activeHint, pending, onCancel, onSave }: {
+  open: boolean; title: string; initial: OrgItemDraft; missing: boolean;
+  locations?: OrgItem[]; linkOptions: OrgItem[]; linkLabel: string; linkHint: string; activeHint: string;
+  pending: boolean; onCancel: () => void; onSave: (v: OrgItemDraft) => void;
 }) {
   const t = useT("people");
-  const [name, setName] = useState(initial.name);
-  const [description, setDescription] = useState(initial.description);
+  const [draft, setDraft] = useState<OrgItemDraft>(initial);
+  const seed = JSON.stringify(initial);
 
   // Re-seed the form whenever a different row opens the dialog.
-  useEffect(() => { setName(initial.name); setDescription(initial.description); }, [initial.name, initial.description, open]);
+  useEffect(() => { setDraft(JSON.parse(seed) as OrgItemDraft); }, [seed, open]);
+
+  const toggle = (id: string) =>
+    setDraft((d) => ({ ...d, linked: d.linked.includes(id) ? d.linked.filter((x) => x !== id) : [...d.linked, id] }));
+  const options = linkOptions.filter((o) => o.is_active || draft.linked.includes(o.id));
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onCancel(); }}>
       <DialogContent>
         <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
-        <div className="space-y-4 py-2">
+        <div className="max-h-[65vh] space-y-4 overflow-y-auto py-2 pr-1">
           <div className="space-y-1.5">
             <Label htmlFor="nd-name">{t("Name")}</Label>
-            <Input id="nd-name" value={name} onChange={(e) => setName(e.target.value)} placeholder={t("e.g. Front of House")} />
+            <Input id="nd-name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder={t("e.g. Traffic Division")} />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="nd-desc">{t("Description")}</Label>
-            <Textarea id="nd-desc" value={description} onChange={(e) => setDescription(e.target.value)} rows={3} />
+            <Textarea id="nd-desc" value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} rows={2} />
           </div>
+          {missing ? (
+            <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+              {t("Apply the organization structure migration to turn items off and link positions to departments.")}
+            </p>
+          ) : (
+            <>
+              {locations && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="nd-loc">{t("Location")}</Label>
+                  <select id="nd-loc" className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
+                    value={draft.locationId} onChange={(e) => setDraft({ ...draft, locationId: e.target.value })}>
+                    <option value="">{t("— no location —")}</option>
+                    {locations.map((l) => <option key={l.id} value={l.id}>{l.name}{l.is_active ? "" : ` (${t("inactive")})`}</option>)}
+                  </select>
+                </div>
+              )}
+              <div className="space-y-1.5">
+                <Label>{linkLabel}</Label>
+                {options.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">{t("None set up yet.")}</p>
+                ) : (
+                  <div className="grid gap-1.5 sm:grid-cols-2">
+                    {options.map((o) => (
+                      <label key={o.id} className="flex cursor-pointer items-center gap-2 rounded-lg border border-border px-2.5 py-2 text-sm hover:bg-accent">
+                        <input type="checkbox" className="h-4 w-4" checked={draft.linked.includes(o.id)} onChange={() => toggle(o.id)} />
+                        <span className="truncate text-foreground">{o.name}{o.is_active ? "" : ` (${t("inactive")})`}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">{linkHint}</p>
+              </div>
+              <div className="flex items-start justify-between gap-4 rounded-md border border-border bg-secondary/30 px-3 py-2">
+                <div>
+                  <div className="text-sm font-medium text-foreground">{t("Active")}</div>
+                  <div className="text-xs text-muted-foreground">{activeHint}</div>
+                </div>
+                <Switch checked={draft.isActive} onCheckedChange={(v) => setDraft({ ...draft, isActive: v })} />
+              </div>
+            </>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onCancel}>{t("Cancel")}</Button>
-          <Button disabled={!name.trim() || pending} onClick={() => onSave({ name: name.trim(), description })}>
+          <Button disabled={!draft.name.trim() || pending} onClick={() => onSave({ ...draft, name: draft.name.trim() })}>
             {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{t("Save")}
           </Button>
         </DialogFooter>
@@ -425,6 +556,7 @@ function NameDescDialog({ open, title, initial, pending, onCancel, onSave }: {
 function PositionsTab({ companyId }: { companyId: string }) {
   const t = useT("people");
   const qc = useQueryClient();
+  const org = useOrgStructure(companyId);
   const [editing, setEditing] = useState<Position | null>(null);
   const [creating, setCreating] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -440,19 +572,42 @@ function PositionsTab({ companyId }: { companyId: string }) {
     },
   });
 
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: ["positions"] });
+    void qc.invalidateQueries({ queryKey: [ORG_STRUCTURE_KEY] });
+    void qc.invalidateQueries({ queryKey: ["position-pay-rules"] });
+  };
+
   const save = useMutation({
-    mutationFn: async (v: { id?: string; name: string; description: string }) => {
-      if (v.id) {
-        const { error } = await supabase.from("positions")
-          .update({ name: v.name, description: v.description || null }).eq("id", v.id);
+    mutationFn: async (v: OrgItemDraft & { id?: string }) => {
+      const base = { name: v.name, description: v.description || null };
+      const extra = org.missing ? {} : { is_active: v.isActive };
+      let id = v.id;
+      if (id) {
+        const { error } = await supabase.from("positions").update({ ...base, ...extra }).eq("id", id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from("positions")
-          .insert({ company_id: companyId, name: v.name, description: v.description || null });
+        const { data, error } = await supabase.from("positions")
+          .insert({ company_id: companyId, ...base, ...extra }).select("id").single();
+        if (error) throw error;
+        id = data.id;
+      }
+      if (org.missing) return;
+      const before = org.links.filter((l) => l.position_id === id).map((l) => l.department_id);
+      const { add, remove } = diffIds(before, v.linked);
+      if (add.length) {
+        const { error } = await supabase.from("department_positions").insert(
+          add.map((department_id) => ({ company_id: companyId, department_id, position_id: id! })),
+        );
+        if (error) throw error;
+      }
+      if (remove.length) {
+        const { error } = await supabase.from("department_positions").delete()
+          .eq("position_id", id).in("department_id", remove);
         if (error) throw error;
       }
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["positions"] }); setEditing(null); setCreating(false); setErr(null); },
+    onSuccess: () => { refresh(); setEditing(null); setCreating(false); setErr(null); },
     onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
   });
 
@@ -461,47 +616,82 @@ function PositionsTab({ companyId }: { companyId: string }) {
       const { error } = await supabase.from("positions").delete().eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["positions"] }),
+    onSuccess: refresh,
     onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
   });
 
+  const orgPos = (id: string) => org.positions.find((p) => p.id === id);
+  const departmentsOf = (posId: string) =>
+    org.links
+      .filter((l) => l.position_id === posId)
+      .map((l) => org.departments.find((d) => d.id === l.department_id)?.name)
+      .filter(Boolean) as string[];
+
   const rows = q.data ?? [];
+  const current = editing ? orgPos(editing.id) : undefined;
 
   return (
     <Panel
-      title={t("Job positions")}
-      subtitle={t("Roles employees can be qualified for. The scheduler warns when someone isn't qualified.")}
+      title={t("Positions")}
+      subtitle={t("What people do, picked from Edit member. A position belongs to one or more departments; pay rules for positions are under App rules.")}
       action={<Button size="sm" onClick={() => { setErr(null); setCreating(true); }}><Plus className="mr-2 h-4 w-4" />{t("Add position")}</Button>}
     >
-      {q.isLoading ? <EmptyState>Loading…</EmptyState>
+      {q.isLoading ? <EmptyState>{t("Loading…")}</EmptyState>
         : rows.length === 0 ? <EmptyState>{t("No positions yet.")}</EmptyState>
         : (
           <ul className="divide-y divide-border">
-            {rows.map((p) => (
-              <li key={p.id} className="flex items-center justify-between gap-3 py-3">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-foreground">{p.name}</p>
-                  {p.description && <p className="truncate text-xs text-muted-foreground">{p.description}</p>}
-                </div>
-                <div className="flex shrink-0 gap-1">
-                  <Button variant="ghost" size="sm" onClick={() => { setErr(null); setEditing(p); }} aria-label={t("Edit {name}", { name: p.name })}>
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                    onClick={() => del.mutate(p.id)} aria-label={t("Delete {name}", { name: p.name })}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </li>
-            ))}
+            {rows.map((p) => {
+              const op = orgPos(p.id);
+              const depts = departmentsOf(p.id);
+              return (
+                <li key={p.id} className={`flex items-center justify-between gap-3 py-3 ${op && !op.is_active ? "opacity-60" : ""}`}>
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-2 truncate text-sm font-medium text-foreground">
+                      {p.name}
+                      {op && !op.is_active && <InactiveTag />}
+                    </p>
+                    {p.description && <p className="truncate text-xs text-muted-foreground">{p.description}</p>}
+                    {!org.missing && (
+                      <p className="truncate text-xs text-muted-foreground">
+                        {depts.length ? depts.join(", ") : t("Not in a department yet")}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 gap-1">
+                    <Button variant="ghost" size="sm" onClick={() => { setErr(null); setEditing(p); }} aria-label={t("Edit {name}", { name: p.name })}>
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      onClick={() => {
+                        if (confirm(t("Delete “{name}”? People who hold it are left without a position. To keep it on old records, turn it off instead.", { name: p.name })))
+                          del.mutate(p.id);
+                      }}
+                      aria-label={t("Delete {name}", { name: p.name })}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
       <ErrorNote error={err} />
 
-      <NameDescDialog
+      <OrgItemDialog
         open={creating || !!editing}
         title={editing ? t("Edit position") : t("New position")}
-        initial={editing ? { name: editing.name, description: editing.description ?? "" } : { name: "", description: "" }}
+        initial={{
+          name: editing?.name ?? "",
+          description: editing?.description ?? "",
+          isActive: current?.is_active ?? true,
+          locationId: "",
+          linked: editing ? org.links.filter((l) => l.position_id === editing.id).map((l) => l.department_id) : [],
+        }}
+        missing={org.missing}
+        linkOptions={org.departments}
+        linkLabel={t("Departments with this position")}
+        linkHint={t("People in these departments can be given this position.")}
+        activeHint={t("Off: no one new can be given this position. People who hold it keep it, and old records still show it.")}
         pending={save.isPending}
         onCancel={() => { setCreating(false); setEditing(null); }}
         onSave={(v) => save.mutate({ id: editing?.id, ...v })}
@@ -515,10 +705,12 @@ function PositionsTab({ companyId }: { companyId: string }) {
 function LocationsTab({ companyId }: { companyId: string }) {
   const t = useT("people");
   const qc = useQueryClient();
+  const org = useOrgStructure(companyId);
+  const isActive = (id: string) => org.locations.find((l) => l.id === id)?.is_active ?? true;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<{
     id?: string; name: string; address: string;
-    latitude: number | ""; longitude: number | ""; radius: number;
+    latitude: number | ""; longitude: number | ""; radius: number; isActive: boolean;
   } | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -545,6 +737,7 @@ function LocationsTab({ companyId }: { companyId: string }) {
         latitude: draft.latitude === "" ? null : Number(draft.latitude),
         longitude: draft.longitude === "" ? null : Number(draft.longitude),
         geofence_radius_m: draft.radius,
+        ...(org.missing ? {} : { is_active: draft.isActive }),
       };
       if (draft.id) {
         const { error } = await supabase.from("locations").update(payload).eq("id", draft.id);
@@ -554,7 +747,11 @@ function LocationsTab({ companyId }: { companyId: string }) {
         if (error) throw error;
       }
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["locations"] }); setDraft(null); setErr(null); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["locations"] });
+      qc.invalidateQueries({ queryKey: [ORG_STRUCTURE_KEY] });
+      setDraft(null); setErr(null);
+    },
     onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
   });
 
@@ -613,7 +810,7 @@ function LocationsTab({ companyId }: { companyId: string }) {
         title={t("Locations")}
         subtitle={t("Each site can carry its own geofence radius.")}
         action={
-          <Button size="sm" onClick={() => { setErr(null); setSelectedId(null); setDraft({ name: "", address: "", latitude: "", longitude: "", radius: 200 }); }}>
+          <Button size="sm" onClick={() => { setErr(null); setSelectedId(null); setDraft({ name: "", address: "", latitude: "", longitude: "", radius: 200, isActive: true }); }}>
             <Plus className="mr-2 h-4 w-4" />{t("Add")}
           </Button>
         }
@@ -648,6 +845,17 @@ function LocationsTab({ companyId }: { companyId: string }) {
               <input type="range" min={25} max={2000} step={25} value={draft.radius}
                 onChange={(e) => setDraft({ ...draft, radius: Number(e.target.value) })} className="w-full" />
             </div>
+            {!org.missing && (
+              <div className="flex items-start justify-between gap-4 rounded-md border border-border bg-secondary/30 px-3 py-2">
+                <div>
+                  <div className="text-sm font-medium text-foreground">{t("Active")}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {t("Off: no one new can be given this location. People already there keep it, and old records still show it.")}
+                  </div>
+                </div>
+                <Switch checked={draft.isActive} onCheckedChange={(v) => setDraft({ ...draft, isActive: v })} />
+              </div>
+            )}
             <div className="flex gap-2">
               <Button variant="outline" className="flex-1" onClick={() => { setDraft(null); setErr(null); }}>{t("Cancel")}</Button>
               <Button className="flex-1" disabled={save.isPending} onClick={() => save.mutate()}>
@@ -666,7 +874,10 @@ function LocationsTab({ companyId }: { companyId: string }) {
                     className={`flex cursor-pointer items-center justify-between gap-3 py-3 ${selectedId === l.id ? "opacity-100" : ""}`}
                     onClick={() => setSelectedId(l.id)}>
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-foreground">{l.name}</p>
+                      <p className={`flex items-center gap-2 truncate text-sm font-medium text-foreground ${isActive(l.id) ? "" : "opacity-60"}`}>
+                        {l.name}
+                        {!isActive(l.id) && <InactiveTag />}
+                      </p>
                       <p className="truncate text-xs text-muted-foreground">
                         {l.address || (l.latitude != null ? `${l.latitude.toFixed(4)}, ${l.longitude?.toFixed(4)}` : t("No pin set"))}
                         {" · "}{l.geofence_radius_m} m
@@ -679,6 +890,7 @@ function LocationsTab({ companyId }: { companyId: string }) {
                           setDraft({
                             id: l.id, name: l.name, address: l.address ?? "",
                             latitude: l.latitude ?? "", longitude: l.longitude ?? "", radius: l.geofence_radius_m,
+                            isActive: isActive(l.id),
                           });
                         }}>
                         <Pencil className="h-4 w-4" />

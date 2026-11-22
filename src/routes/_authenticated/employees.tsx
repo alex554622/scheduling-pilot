@@ -11,6 +11,8 @@ import { useT, translate, useLocaleTag } from "@/lib/i18n";
 import { Users, ShieldCheck, Search, Copy, Check, Loader2, UserCog, Trash2, Pencil, Mail, Send, X, Link2, RefreshCw, CalendarClock, Inbox, History, RotateCcw, UserCheck, PauseCircle, PlayCircle } from "lucide-react";
 import { shareableOrigin } from "@/lib/native/platform";
 import type { VisibilityMode } from "@/lib/staff-visibility";
+import { ORG_STRUCTURE_KEY, useOrgStructure } from "@/lib/use-org-structure";
+import { activeOrCurrent, positionFitsDepartment, positionsForDepartment } from "@/lib/org-structure";
 
 export const Route = createFileRoute("/_authenticated/employees")({
   component: EmployeesPage,
@@ -29,6 +31,8 @@ interface MemberRow {
   id: string;
   full_name: string;
   position: string | null;
+  position_id?: string | null;
+  department_id?: string | null;
 }
 
 type SeparationReason = "rehire" | "laid_off" | "other";
@@ -112,13 +116,16 @@ function Roster({
   const [removing, setRemoving] = useState<MemberRow | null>(null);
   // The supervisor whose departments are being chosen.
   const [scoping, setScoping] = useState<MemberRow | null>(null);
+  const org = useOrgStructure(companyId);
+  const departmentName = (id: string | null | undefined) =>
+    org.departments.find((d) => d.id === id)?.name ?? null;
 
   const membersQ = useQuery({
     queryKey: ["company-members", companyId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("company_members")
-        .select("id, full_name, position")
+        .select("id, full_name, position, position_id, department_id")
         .eq("company_id", companyId)
         .order("full_name");
       if (error) throw error;
@@ -616,7 +623,10 @@ function Roster({
                     </div>
                     <div className="min-w-0">
                       <p className="truncate font-medium text-foreground">{m.full_name || t("Unnamed")}</p>
-                      <p className="truncate text-xs text-muted-foreground">{m.position || t("No position set")}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {[m.position, departmentName(m.department_id)].filter(Boolean).join(" · ") ||
+                          t("No position set")}
+                      </p>
                       {current === "supervisor" && (
                         <p className="truncate text-xs text-primary">
                           {(() => {
@@ -1567,10 +1577,15 @@ function EditMemberDialog({
 }) {
   const t = useT("people");
   const [fullName, setFullName] = useState("");
-  const [position, setPosition] = useState("");
-  // Which team they are on. Teams are the company's departments, and the
-  // schedule builder can divide its rows by them.
+  // A job title typed before positions were picked from a list. It shows
+  // until an admin picks a position.
+  const [legacyTitle, setLegacyTitle] = useState("");
+  // Work location, department and position, all from Settings → Organization.
+  // The schedule builder can divide its rows by department.
+  const [locationId, setLocationId] = useState("");
   const [departmentId, setDepartmentId] = useState("");
+  const [positionId, setPositionId] = useState("");
+  const org = useOrgStructure(companyId, !!member);
   const [maxHours, setMaxHours] = useState<number>(40);
   const [isActive, setIsActive] = useState(true);
   const [worksAt, setWorksAt] = useState<Set<string>>(new Set());
@@ -1580,19 +1595,45 @@ function EditMemberDialog({
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const departmentsQ = useQuery({
-    queryKey: ["departments", companyId],
+  // Who supervises them: whoever has their department, whole or by name.
+  // Supervisors are given departments from the roster, not here.
+  const supervisorsQ = useQuery({
+    queryKey: ["supervisor-assignments", companyId, "names"],
     enabled: !!member,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("departments")
-        .select("id, name")
+        .from("supervisor_assignments")
+        .select("supervisor_id, department_id, employee_id")
+        .eq("company_id", companyId);
+      if (error || !data?.length) return { assignments: [], names: new Map<string, string>() };
+      const ids = [...new Set(data.map((a) => a.supervisor_id))];
+      const { data: people } = await supabase
+        .from("company_members")
+        .select("id, full_name")
         .eq("company_id", companyId)
-        .order("name");
-      if (error) throw error;
-      return (data ?? []) as { id: string; name: string }[];
+        .in("id", ids);
+      return {
+        assignments: data,
+        names: new Map((people ?? []).map((p) => [p.id, p.full_name || ""])),
+      };
     },
   });
+  const supervisorNames = useMemo(() => {
+    if (!member || !departmentId || !supervisorsQ.data) return [];
+    const { assignments, names } = supervisorsQ.data;
+    return [
+      ...new Set(
+        assignments
+          .filter(
+            (a) =>
+              a.department_id === departmentId &&
+              a.supervisor_id !== member.id &&
+              (a.employee_id === null || a.employee_id === member.id),
+          )
+          .map((a) => names.get(a.supervisor_id) || t("Unnamed")),
+      ),
+    ];
+  }, [member, departmentId, supervisorsQ.data, t]);
 
   // Where they work. A clock-in is filed under one of these, so their hours
   // can be split by location on the timecard.
@@ -1646,19 +1687,27 @@ function EditMemberDialog({
     queryFn: async () => {
       const { data, error } = await supabase
         .from("company_members")
-        .select("max_weekly_hours, is_active, department_id")
+        .select("max_weekly_hours, is_active, department_id, position_id")
         .eq("id", member!.id)
         .eq("company_id", companyId)
         .maybeSingle();
       if (error) throw error;
-      return data;
+      if (!data) return data;
+      // Missing until the organization structure migration runs.
+      const loc = await supabase
+        .from("company_members")
+        .select("location_id")
+        .eq("id", member!.id)
+        .eq("company_id", companyId)
+        .maybeSingle();
+      return { ...data, location_id: loc.error ? null : (loc.data?.location_id ?? null) };
     },
   });
 
   useEffect(() => {
     if (member) {
       setFullName(member.full_name);
-      setPosition(member.position ?? "");
+      setLegacyTitle(member.position ?? "");
       setErr(null);
     }
   }, [member]);
@@ -1668,8 +1717,30 @@ function EditMemberDialog({
       setMaxHours(Number(profileQ.data.max_weekly_hours ?? 40));
       setIsActive(profileQ.data.is_active ?? true);
       setDepartmentId(profileQ.data.department_id ?? "");
+      setPositionId(profileQ.data.position_id ?? "");
+      setLocationId(profileQ.data.location_id ?? "");
     }
   }, [profileQ.data]);
+
+  const positionName = (id: string) => org.positions.find((p) => p.id === id)?.name ?? "";
+  const departmentName = (id: string) => org.departments.find((d) => d.id === id)?.name ?? "";
+  // A department change that leaves their position behind: a new one has to
+  // be picked before saving.
+  const mustRepick =
+    !positionId &&
+    !!profileQ.data?.position_id &&
+    !positionFitsDepartment(profileQ.data.position_id, departmentId, org.links);
+  const positionFits =
+    !mustRepick && positionFitsDepartment(positionId, departmentId, org.links);
+  const locationOptions = activeOrCurrent(org.locations, profileQ.data?.location_id);
+  const departmentOptions = activeOrCurrent(org.departments, profileQ.data?.department_id);
+  const positionOptions = positionsForDepartment(
+    departmentId,
+    org.positions,
+    org.links,
+    profileQ.data?.position_id,
+  );
+  const inactive = (item: { is_active: boolean }) => (item.is_active ? "" : ` (${t("inactive")})`);
 
   useEffect(() => {
     if (worksAtQ.data) setWorksAt(new Set(worksAtQ.data));
@@ -1685,15 +1756,25 @@ function EditMemberDialog({
 
   async function save() {
     if (!member) return;
+    if (!positionFits) {
+      setErr(t("Pick a position that is part of {department}.", { department: departmentName(departmentId) }));
+      return;
+    }
+    // Stops at the first Edit member field; bulk edit has its own.
     setSaving(true);
     setErr(null);
 
+    const hadPosition = !!profileQ.data?.position_id;
     const { error } = await supabase
       .from("company_members")
       .update({
         full_name: fullName.trim(),
-        position: position.trim() || null,
+        position_id: positionId || null,
+        // The shown job title is the position's name. A typed title with no
+        // position is left alone until a position is picked.
+        ...(positionId ? { position: positionName(positionId) } : hadPosition ? { position: null } : {}),
         department_id: departmentId || null,
+        ...(org.missing ? {} : { location_id: locationId || null }),
         max_weekly_hours: maxHours,
         is_active: isActive,
       })
@@ -1739,6 +1820,10 @@ function EditMemberDialog({
     }
 
     setSaving(false);
+    void qc.invalidateQueries({ queryKey: ["member-profile", member.id] });
+    void qc.invalidateQueries({ queryKey: ["employee-locations", member.id] });
+    void qc.invalidateQueries({ queryKey: ["position-pay-rules"] });
+    void qc.invalidateQueries({ queryKey: [ORG_STRUCTURE_KEY] });
     onSaved();
   }
 
@@ -1756,36 +1841,96 @@ function EditMemberDialog({
             <Label htmlFor="full-name">{t("Full name")}</Label>
             <Input id="full-name" value={fullName} onChange={(e) => setFullName(e.target.value)} maxLength={120} />
           </div>
-          <div>
-            <Label htmlFor="position">{t("Job title")}</Label>
-            <Input
-              id="position"
-              value={position}
-              onChange={(e) => setPosition(e.target.value)}
-              placeholder={t("e.g. Barista, Shift Lead")}
-              maxLength={120}
-            />
-          </div>
+          {!org.missing && (
+            <div>
+              <Label htmlFor="work-location">{t("Work location")}</Label>
+              <select
+                id="work-location"
+                className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
+                value={locationId}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  setLocationId(id);
+                  if (id) setWorksAt((prev) => new Set(prev).add(id));
+                }}
+              >
+                <option value="">{t("— no work location —")}</option>
+                {locationOptions.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                    {inactive(l)}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {locationOptions.length === 0
+                  ? t("No locations yet — add them under Settings → Organization → Locations.")
+                  : t("Where they mainly work.")}
+              </p>
+            </div>
+          )}
 
           <div>
-            <Label htmlFor="team">{t("Team")}</Label>
+            <Label htmlFor="department">{t("Department")}</Label>
             <select
-              id="team"
+              id="department"
               className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
               value={departmentId}
-              onChange={(e) => setDepartmentId(e.target.value)}
+              onChange={(e) => {
+                const id = e.target.value;
+                setDepartmentId(id);
+                // A position that isn't part of the new department has to be picked again.
+                if (!positionFitsDepartment(positionId, id, org.links)) setPositionId("");
+              }}
             >
-              <option value="">{t("— no team —")}</option>
-              {(departmentsQ.data ?? []).map((d) => (
+              <option value="">{t("— no department —")}</option>
+              {departmentOptions.map((d) => (
                 <option key={d.id} value={d.id}>
                   {d.name}
+                  {inactive(d)}
                 </option>
               ))}
             </select>
             <p className="mt-1 text-xs text-muted-foreground">
-              {(departmentsQ.data ?? []).length === 0
-                ? t("No teams yet — add them on Settings → Organization → Departments.")
-                : t("The schedule builder can divide its rows under each team.")}
+              {departmentOptions.length === 0
+                ? t("No departments yet — add them under Settings → Organization → Departments.")
+                : supervisorNames.length
+                  ? t("Supervisor: {names}", { names: supervisorNames.join(", ") })
+                  : departmentId
+                    ? t("No supervisor for this department.")
+                    : t("The schedule builder can divide its rows by department.")}
+            </p>
+          </div>
+
+          <div>
+            <Label htmlFor="position">{t("Position")}</Label>
+            <select
+              id="position"
+              className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
+              value={positionId}
+              onChange={(e) => setPositionId(e.target.value)}
+            >
+              <option value="">{t("— no position —")}</option>
+              {positionOptions.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                  {inactive(p)}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {!positionId && legacyTitle && !profileQ.data?.position_id
+                ? t("Was typed as “{title}”. Pick the position it should be.", { title: legacyTitle })
+                : mustRepick && profileQ.data?.position_id
+                  ? t("“{title}” isn't part of {department}. Pick a position from the department.", {
+                      title: positionName(profileQ.data.position_id),
+                      department: departmentName(departmentId),
+                    })
+                  : org.positions.length === 0
+                    ? t("No positions yet — add them under Settings → Organization → Positions.")
+                    : departmentId
+                      ? t("Positions in {department}.", { department: departmentName(departmentId) })
+                      : t("Pick a department first to see only its positions.")}
             </p>
           </div>
 
@@ -1846,14 +1991,16 @@ function EditMemberDialog({
           </div>
 
           <div>
-            <Label>{t("Work locations")}</Label>
+            <Label>{t("Clock-in locations")}</Label>
             {(locationsQ.data ?? []).length === 0 ? (
               <p className="mt-1 text-xs text-muted-foreground">
                 {t("No locations yet — add them under Settings → Organization → Locations.")}
               </p>
             ) : (
               <div className="mt-1.5 grid gap-1.5 sm:grid-cols-2">
-                {(locationsQ.data ?? []).map((l) => (
+                {(locationsQ.data ?? [])
+                  .filter((l) => worksAt.has(l.id) || (org.locations.find((o) => o.id === l.id)?.is_active ?? true))
+                  .map((l) => (
                   <label
                     key={l.id}
                     className="flex cursor-pointer items-center gap-2 rounded-lg border border-border px-2.5 py-2 text-sm hover:bg-accent"
@@ -1870,7 +2017,7 @@ function EditMemberDialog({
               </div>
             )}
             <p className="mt-1.5 text-xs text-muted-foreground">
-              {t("Their hours on the timecard are split by the location each shift was worked at.")}
+              {t("Where they may clock in. Their hours on the timecard are split by the location each shift was worked at.")}
             </p>
           </div>
 
@@ -1880,7 +2027,7 @@ function EditMemberDialog({
           <Button variant="outline" onClick={onClose} disabled={saving}>
             {t("Cancel")}
           </Button>
-          <Button onClick={save} disabled={saving || !fullName.trim()}>
+          <Button onClick={save} disabled={saving || !fullName.trim() || !positionFits}>
             {saving && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
             {t("Save")}
           </Button>
@@ -1910,8 +2057,10 @@ function BulkEditDialog({
 }) {
   const t = useT("people");
   const KEEP = "__keep__";
-  const [jobTitle, setJobTitle] = useState("");
+  const [positionId, setPositionId] = useState(KEEP);
   const [departmentId, setDepartmentId] = useState(KEEP);
+  const [locationId, setLocationId] = useState(KEEP);
+  const org = useOrgStructure(companyId, open);
   const [maxHours, setMaxHours] = useState("");
   const [status, setStatus] = useState(KEEP);
   const [visibility, setVisibility] = useState(KEEP);
@@ -1923,8 +2072,9 @@ function BulkEditDialog({
   // A fresh form each time it opens.
   useEffect(() => {
     if (!open) return;
-    setJobTitle("");
+    setPositionId(KEEP);
     setDepartmentId(KEEP);
+    setLocationId(KEEP);
     setMaxHours("");
     setStatus(KEEP);
     setVisibility(KEEP);
@@ -1932,17 +2082,6 @@ function BulkEditDialog({
     setWorksAt(new Set());
     setErr(null);
   }, [open]);
-
-  const departmentsQ = useQuery({
-    queryKey: ["departments", companyId],
-    enabled: open,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("departments").select("id, name").eq("company_id", companyId).order("name");
-      if (error) throw error;
-      return (data ?? []) as { id: string; name: string }[];
-    },
-  });
 
   const locationsQ = useQuery({
     queryKey: ["locations", companyId, "names"],
@@ -1957,8 +2096,21 @@ function BulkEditDialog({
 
   const hours = maxHours.trim() === "" ? null : Number(maxHours);
   const hoursBad = hours != null && (!Number.isFinite(hours) || hours < 1 || hours > 168);
+  // Who would end up in a department their position isn't part of.
+  const misfits = members.filter((m) => {
+    const dept = departmentId === KEEP ? m.department_id : departmentId || null;
+    const pos = positionId === KEEP ? m.position_id : positionId || null;
+    return !positionFitsDepartment(pos, dept, org.links);
+  });
+  const departmentName = (id: string) => org.departments.find((d) => d.id === id)?.name ?? "";
+  const positionName = (id: string) => org.positions.find((p) => p.id === id)?.name ?? "";
+  const positionOptions =
+    departmentId !== KEEP && departmentId
+      ? positionsForDepartment(departmentId, org.positions, org.links)
+      : activeOrCurrent(org.positions);
   const nothingChanged =
-    !jobTitle.trim() &&
+    positionId === KEEP &&
+    locationId === KEEP &&
     departmentId === KEEP &&
     hours == null &&
     status === KEEP &&
@@ -1968,17 +2120,24 @@ function BulkEditDialog({
   async function save() {
     const ids = members.map((m) => m.id);
     if (ids.length === 0) return;
+    if (misfits.length) return;
     setSaving(true);
     setErr(null);
     try {
       const patch: {
-        position?: string;
+        position?: string | null;
+        position_id?: string | null;
         department_id?: string | null;
+        location_id?: string | null;
         max_weekly_hours?: number;
         is_active?: boolean;
       } = {};
-      if (jobTitle.trim()) patch.position = jobTitle.trim();
+      if (positionId !== KEEP) {
+        patch.position_id = positionId || null;
+        patch.position = positionId ? positionName(positionId) : null;
+      }
       if (departmentId !== KEEP) patch.department_id = departmentId || null;
+      if (locationId !== KEEP && !org.missing) patch.location_id = locationId || null;
       if (hours != null) patch.max_weekly_hours = hours;
       if (status !== KEEP) patch.is_active = status === "active";
       if (Object.keys(patch).length > 0) {
@@ -2050,33 +2209,77 @@ function BulkEditDialog({
             {members.map((m) => m.full_name || t("Unnamed")).join(", ")}
           </p>
 
-          <div>
-            <Label htmlFor="bulk-title">{t("Job title")}</Label>
-            <Input
-              id="bulk-title"
-              value={jobTitle}
-              onChange={(e) => setJobTitle(e.target.value)}
-              placeholder={t("Leave empty to keep each person's own")}
-              maxLength={120}
-            />
-          </div>
+          {!org.missing && (
+            <div>
+              <Label htmlFor="bulk-location">{t("Work location")}</Label>
+              <select
+                id="bulk-location"
+                className={selectClass}
+                value={locationId}
+                onChange={(e) => setLocationId(e.target.value)}
+              >
+                <option value={KEEP}>{t("— leave as is —")}</option>
+                <option value="">{t("— no work location —")}</option>
+                {activeOrCurrent(org.locations).map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div>
-            <Label htmlFor="bulk-team">{t("Team")}</Label>
+            <Label htmlFor="bulk-department">{t("Department")}</Label>
             <select
-              id="bulk-team"
+              id="bulk-department"
               className={selectClass}
               value={departmentId}
-              onChange={(e) => setDepartmentId(e.target.value)}
+              onChange={(e) => {
+                const id = e.target.value;
+                setDepartmentId(id);
+                if (positionId !== KEEP && !positionFitsDepartment(positionId || null, id === KEEP ? null : id || null, org.links))
+                  setPositionId(KEEP);
+              }}
             >
               <option value={KEEP}>{t("— leave as is —")}</option>
-              <option value="">{t("— no team —")}</option>
-              {(departmentsQ.data ?? []).map((d) => (
+              <option value="">{t("— no department —")}</option>
+              {activeOrCurrent(org.departments).map((d) => (
                 <option key={d.id} value={d.id}>
                   {d.name}
                 </option>
               ))}
             </select>
+          </div>
+
+          <div>
+            <Label htmlFor="bulk-position">{t("Position")}</Label>
+            <select
+              id="bulk-position"
+              className={selectClass}
+              value={positionId}
+              onChange={(e) => setPositionId(e.target.value)}
+            >
+              <option value={KEEP}>{t("— leave as is —")}</option>
+              <option value="">{t("— no position —")}</option>
+              {positionOptions.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            {misfits.length > 0 && (
+              <p className="mt-1 text-xs text-destructive">
+                {departmentId !== KEEP && departmentId
+                  ? t("Pick a position from {department} — these people's positions aren't part of it: {names}", {
+                      department: departmentName(departmentId),
+                      names: misfits.map((m) => m.full_name || t("Unnamed")).join(", "),
+                    })
+                  : t("That position isn't part of the department of: {names}", {
+                      names: misfits.map((m) => m.full_name || t("Unnamed")).join(", "),
+                    })}
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -2125,7 +2328,7 @@ function BulkEditDialog({
           </div>
 
           <div>
-            <Label>{t("Work locations")}</Label>
+            <Label>{t("Clock-in locations")}</Label>
             <label className="mt-1 flex cursor-pointer items-center gap-2 text-sm text-foreground">
               <input
                 type="checkbox"
@@ -2133,7 +2336,7 @@ function BulkEditDialog({
                 checked={replaceLocations}
                 onChange={(e) => setReplaceLocations(e.target.checked)}
               />
-              {t("Replace their work locations with:")}
+              {t("Replace their clock-in locations with:")}
             </label>
             {(locationsQ.data ?? []).length === 0 ? (
               <p className="mt-1 text-xs text-muted-foreground">
@@ -2174,7 +2377,7 @@ function BulkEditDialog({
           <Button variant="outline" onClick={onClose} disabled={saving}>
             {t("Cancel")}
           </Button>
-          <Button onClick={save} disabled={saving || nothingChanged || hoursBad}>
+          <Button onClick={save} disabled={saving || nothingChanged || hoursBad || misfits.length > 0}>
             {saving && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
             {members.length === 1
               ? t("Save for 1 person")

@@ -141,14 +141,12 @@ function AccountSettings() {
   const { user, profile, primaryRole, company, refresh, loading } = useAuth();
   const t = useT("shell");
   const [fullName, setFullName] = useState("");
-  const [position, setPosition] = useState("");
   const [savedProfile, setSavedProfile] = useState(false);
   const [profileErr, setProfileErr] = useState<string | null>(null);
 
   useEffect(() => {
     if (profile) {
       setFullName(profile.full_name ?? "");
-      setPosition(profile.position ?? "");
     }
   }, [profile]);
 
@@ -159,15 +157,6 @@ function AccountSettings() {
         .update({ full_name: fullName.trim() })
         .eq("id", user!.id);
       if (error) throw error;
-      // The job title belongs to this company only.
-      if (company) {
-        const { error: posErr } = await supabase
-          .from("company_members")
-          .update({ position: position.trim() || null })
-          .eq("id", user!.id)
-          .eq("company_id", company.id);
-        if (posErr) throw posErr;
-      }
       await refresh();
     },
     onSuccess: () => {
@@ -352,12 +341,12 @@ function AccountSettings() {
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="po">{t("Position")}</Label>
-            <Input
-              id="po"
-              value={position}
-              onChange={(e) => setPosition(e.target.value)}
-              placeholder={t("e.g. Shift Lead")}
-            />
+            <Input id="po" value={profile?.position ?? ""} placeholder={t("No position set")} disabled />
+            <p className="text-xs text-muted-foreground">
+              {primaryRole === "company_admin" || primaryRole === "super_admin"
+                ? t("Set from Employees → Edit member, like everyone's.")
+                : t("Your admin sets this.")}
+            </p>
           </div>
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
             <span>

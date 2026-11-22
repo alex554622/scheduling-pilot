@@ -372,4 +372,8 @@ export const shell: Record<string, string> = {
   "Exit ghost mode": "Salir del modo fantasma",
   "Can't reach the server": "No se puede conectar con el servidor",
   "We couldn't load your account. This usually clears up on its own — we'll keep trying.": "No pudimos cargar tu cuenta. Normalmente se resuelve solo; seguiremos intentándolo.",
+  // Organization structure in Edit member and Settings
+  "Set from Employees → Edit member, like everyone's.": "Se cambia en Empleados → Editar miembro, como el de todos.",
+  "Your admin sets this.": "Lo asigna tu administrador.",
+  "No position set": "Sin puesto asignado",
 };

@@ -181,7 +181,7 @@ function groupByTeam(members: MemberRow[], teams: TeamRow[]): TeamGroup[] {
     .filter((t) => byTeam.has(t.id))
     .map((t) => ({ id: t.id, name: t.name, members: byTeam.get(t.id)! }));
   const rest = byTeam.get(NO_TEAM);
-  if (rest?.length) out.push({ id: NO_TEAM, name: translate("No team"), members: rest });
+  if (rest?.length) out.push({ id: NO_TEAM, name: translate("No department"), members: rest });
   return out;
 }
 
@@ -1301,11 +1301,11 @@ function ScheduleBuilder(props: BuilderProps) {
               onClick={toggleGroupByTeam}
               aria-pressed={groupByTeamOn}
               title={
-                groupByTeamOn ? t("Show everyone in one list") : t("Divide the rows under each team")
+                groupByTeamOn ? t("Show everyone in one list") : t("Divide the rows under each department")
               }
             >
               <Users className="mr-2 h-4 w-4" />
-              {groupByTeamOn ? t("Teams on") : t("Group by team")}
+              {groupByTeamOn ? t("Departments on") : t("Group by department")}
             </Button>
           )}
           {canEdit && !sel.active && layout !== "grid" && (
@@ -1566,7 +1566,7 @@ function GridView({
         >
           <div className="px-3 py-3 text-sm font-semibold text-foreground">
             {groups
-              ? `${groups.length === 1 ? t("1 team") : t("{n} teams", { n: groups.length })} · ${members.length}`
+              ? `${groups.length === 1 ? t("1 department") : t("{n} departments", { n: groups.length })} · ${members.length}`
               : t("Team ({n})", { n: members.length })}
           </div>
           {days.map((d, i) => {

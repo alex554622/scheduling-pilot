@@ -310,4 +310,11 @@ export const schedule: Record<string, string> = {
   "Two breaks overlap.": "Dos descansos se traslapan.",
   "Only the last shift of the day can be left without a clock-out.": "Solo el último turno del día puede quedar sin salida.",
   "Starts before the shift above it has ended.": "Empieza antes de que termine el turno anterior.",
+  // Organization structure in Edit member and Settings
+  "Divide the rows under each department": "Dividir las filas por departamento",
+  "Departments on": "Departamentos activados",
+  "Group by department": "Agrupar por departamento",
+  "1 department": "1 departamento",
+  "{n} departments": "{n} departamentos",
+  "No department": "Sin departamento",
 };

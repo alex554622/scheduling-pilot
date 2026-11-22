@@ -24,6 +24,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useLocaleTag, useT } from "@/lib/i18n";
+import { useOrgStructure } from "@/lib/use-org-structure";
+import { activeOrCurrent, positionFitsDepartment, positionsForDepartment } from "@/lib/org-structure";
 import {
   Loader2,
   UserCheck,
@@ -277,23 +279,15 @@ function DecideDialog({
   const [position, setPosition] = useState(NONE);
   const [note, setNote] = useState("");
 
-  const orgQ = useQuery({
-    queryKey: ["join-request-org", companyId],
-    enabled: approve,
-    queryFn: async () => {
-      const [d, p] = await Promise.all([
-        supabase.from("departments").select("id, name").eq("company_id", companyId).order("name"),
-        supabase.from("positions").select("id, name").eq("company_id", companyId).order("name"),
-      ]);
-      if (d.error) throw d.error;
-      if (p.error) throw p.error;
-      return { departments: d.data ?? [], positions: p.data ?? [] };
-    },
-  });
+  // Active departments, and the positions of the one picked.
+  const org = useOrgStructure(companyId, approve);
+  const pickedDepartment = department === NONE ? null : department;
+  const departmentOptions = activeOrCurrent(org.departments);
+  const positionOptions = positionsForDepartment(pickedDepartment, org.positions, org.links);
 
   const decide = useMutation({
     mutationFn: async () => {
-      const pos = orgQ.data?.positions.find((x) => x.id === position);
+      const pos = org.positions.find((x) => x.id === position);
       const { error } = await supabase.rpc("decide_join_request", {
         _request: row.id,
         _approve: approve,
@@ -357,13 +351,20 @@ function DecideDialog({
             </div>
             <div className="space-y-1.5">
               <Label>{t("Department")}</Label>
-              <Select value={department} onValueChange={setDepartment}>
+              <Select
+                value={department}
+                onValueChange={(v) => {
+                  setDepartment(v);
+                  if (position !== NONE && !positionFitsDepartment(position, v === NONE ? null : v, org.links))
+                    setPosition(NONE);
+                }}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={NONE}>{t("No department")}</SelectItem>
-                  {(orgQ.data?.departments ?? []).map((d) => (
+                  {departmentOptions.map((d) => (
                     <SelectItem key={d.id} value={d.id}>
                       {d.name}
                     </SelectItem>
@@ -379,7 +380,7 @@ function DecideDialog({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={NONE}>{t("No position")}</SelectItem>
-                  {(orgQ.data?.positions ?? []).map((p) => (
+                  {positionOptions.map((p) => (
                     <SelectItem key={p.id} value={p.id}>
                       {p.name}
                     </SelectItem>
