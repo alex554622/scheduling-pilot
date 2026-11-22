@@ -99,6 +99,16 @@
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
 
     <!--
+      Face clock-in on the shared clock-in screen (clock.$token.tsx) and face
+      enrollment on Shared clock-in (shared-clock-in.tsx) read the front camera
+      in the web view. Frames are turned into face descriptors on the device;
+      no photo is uploaded or saved.
+    -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera.front" android:required="false" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <!--
       Android 13+ asks before an app may show notifications. Asked from the
       "Turn on notifications" card or the switch in Settings, never at launch.
       Older Android versions grant it at install.

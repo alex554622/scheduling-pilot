@@ -1,8 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Coffee, Delete, LogIn, LogOut, Loader2, CheckCircle2 } from "lucide-react";
+import { Coffee, Delete, KeyRound, LogIn, LogOut, Loader2, CheckCircle2, ScanFace } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { BrandLogo } from "@/components/brand";
+import { KioskFaceScan } from "@/components/kiosk-face-scan";
+import { cameraSupported } from "@/lib/face";
 import {
   KioskSlideshow,
   playableSlides,
@@ -17,7 +19,10 @@ import { translateRuleMessage } from "@/lib/team-rules";
  * The shared clock-in screen: a tablet by the door that belongs to nobody.
  *
  * It is deliberately outside `_authenticated` and holds no session. Staff are
- * identified by a 4-digit code, and every action goes through a kiosk_* RPC
+ * identified by their face (the default, once an admin has enrolled faces) or
+ * by a 4-digit PIN. A face match on the server gives a short-lived ticket that
+ * stands in for the PIN, so both paths punch through the same kiosk_state /
+ * kiosk_punch rules. Every action goes through a kiosk_* RPC
  * that authenticates the *device* by the token in this URL. There is nothing
  * to navigate to from here — no links, no sign-in — so the device cannot reach
  * anyone's account, and losing the tablet leaks nothing but the ability to
@@ -31,6 +36,8 @@ export const Route = createFileRoute("/clock/$token")({
 
 type Device = { company: string | null; label: string | null };
 type Person = {
+  /** What kiosk_punch is called with: the typed PIN, or a "face:<uuid>" ticket. */
+  credential: string;
   name: string;
   state: "in" | "out" | "on_break";
   breaks: Record<string, boolean>;
@@ -106,6 +113,40 @@ function useKioskDisplay(token: string): DisplayConfig | null {
     };
   }, [token]);
   return display;
+}
+
+/** A server message in the screen's language, or `fallback` when there is none. */
+function kioskText(message: string | undefined, fallback: string) {
+  return translate(translateRuleMessage(message) ?? fallback);
+}
+
+/**
+ * Whether to offer face clock-in: someone in the company has a face enrolled
+ * and this browser can open a camera. Until it answers, the PIN keypad shows.
+ */
+function useFaceAvailable(token: string): boolean {
+  const [enrolled, setEnrolled] = useState(false);
+  useEffect(() => {
+    if (!cameraSupported()) return;
+    let stopped = false;
+    const load = () =>
+      supabase.rpc("kiosk_face_info", { _token: token }).then(({ data, error }) => {
+        if (stopped) return;
+        if (error) {
+          console.warn("[shared clock-in] face info", error);
+          return;
+        }
+        const r = data as { ok?: boolean; enrolled?: number } | null;
+        setEnrolled(!!r?.ok && (r.enrolled ?? 0) > 0);
+      });
+    void load();
+    const id = setInterval(() => void load(), DISPLAY_REFRESH_MS);
+    return () => {
+      stopped = true;
+      clearInterval(id);
+    };
+  }, [token]);
+  return enrolled;
 }
 
 function callKiosk(
@@ -195,11 +236,47 @@ function SharedClockInPage() {
     });
   }, [token, t]);
 
+  // Face is the default way in; the PIN keypad is the second option.
+  const faceAvailable = useFaceAvailable(token);
+  const [faceBroken, setFaceBroken] = useState<string | null>(null);
+  const [usePin, setUsePin] = useState(false);
+  const faceMode = faceAvailable && !faceBroken && !usePin;
+  // A new key restarts the face scan (camera stays off while it isn't shown).
+  const [scanKey, setScanKey] = useState(0);
+
   const reset = useCallback(() => {
     setCode("");
     setPerson(null);
     setError(null);
+    // The next person starts on the face scan again.
+    setUsePin(false);
+    setScanKey((k) => k + 1);
   }, []);
+
+  /** Who is this (a typed PIN or a face ticket), and are they in or out? */
+  const lookup = useCallback(
+    (credential: string, fallback: string) => {
+      setBusy(true);
+      setError(null);
+      void callKiosk("kiosk_state", { _token: token, _code: credential }).then((reply) => {
+        setBusy(false);
+        if (!reply.ok || !reply.name || !reply.state) {
+          setError(kioskText(reply.message, fallback));
+          setCode("");
+          setScanKey((k) => k + 1);
+          return;
+        }
+        setPerson({
+          credential,
+          name: reply.name,
+          state: reply.state,
+          breaks: reply.breaks ?? {},
+          breakEndsAt: reply.break_ends_at ? new Date(reply.break_ends_at).getTime() : null,
+        });
+      });
+    },
+    [token],
+  );
 
   // A confirmation clears itself, so the next person always walks up to a fresh
   // keypad rather than the last person's name.
@@ -215,23 +292,8 @@ function SharedClockInPage() {
   // Four digits is the whole code, so look the person up without an extra tap.
   useEffect(() => {
     if (code.length !== 4 || person || busy) return;
-    setBusy(true);
-    setError(null);
-    void callKiosk("kiosk_state", { _token: token, _code: code }).then((reply) => {
-      setBusy(false);
-      if (!reply.ok || !reply.name || !reply.state) {
-        setError(translateRuleMessage(reply.message) ?? t("That code was not recognised."));
-        setCode("");
-        return;
-      }
-      setPerson({
-        name: reply.name,
-        state: reply.state,
-        breaks: reply.breaks ?? {},
-        breakEndsAt: reply.break_ends_at ? new Date(reply.break_ends_at).getTime() : null,
-      });
-    });
-  }, [code, person, busy, token, t]);
+    lookup(code, "That code was not recognised.");
+  }, [code, person, busy, lookup]);
 
   // Back to the slideshow after a quiet spell. Never while a request is in
   // flight, so a punch someone just made always gets its answer on screen.
@@ -247,17 +309,18 @@ function SharedClockInPage() {
   }, [slideshowOn, idle, busy, deviceError, idleMs, reset]);
 
   async function punch(action: "clock" | "break", minutes?: number) {
+    if (!person) return;
     setBusy(true);
     setError(null);
     const reply = await callKiosk("kiosk_punch", {
       _token: token,
-      _code: code,
+      _code: person.credential,
       _action: action,
       _minutes: minutes ?? null,
     });
     setBusy(false);
     if (!reply.ok) {
-      setError(translateRuleMessage(reply.message) ?? t("That didn't go through. Try again."));
+      setError(kioskText(reply.message, "That didn't go through. Try again."));
       return;
     }
     const at = reply.at ? new Date(reply.at) : new Date();
@@ -376,8 +439,39 @@ function SharedClockInPage() {
             </button>
           </div>
         </div>
+      ) : faceMode ? (
+        <div className="w-full">
+          {/* Off while the slideshow covers the screen, so the camera isn't left running. */}
+          {!(slideshowOn && idle) && (
+            <KioskFaceScan
+              key={scanKey}
+              token={token}
+              onTicket={(ticket) => lookup(ticket, "Face not recognised. Try again or use your PIN.")}
+              onUnavailable={setFaceBroken}
+              onActivity={() => {
+                lastActivity.current = Date.now();
+              }}
+            />
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setError(null);
+              setUsePin(true);
+            }}
+            disabled={busy}
+            className="mx-auto mt-6 flex items-center gap-2 rounded-xl border border-border bg-card px-6 py-4 text-lg font-medium text-foreground shadow-sm hover:bg-accent disabled:opacity-50"
+          >
+            <KeyRound className="h-6 w-6" /> {t("Use PIN instead")}
+          </button>
+        </div>
       ) : (
         <div className="mt-8 w-full">
+          {faceBroken && faceAvailable && (
+            <p className="mb-4 rounded-lg bg-secondary px-4 py-3 text-center text-sm text-muted-foreground">
+              {faceBroken}
+            </p>
+          )}
           <p className="text-center text-lg text-muted-foreground">{t("Enter your 4-digit code")}</p>
 
           <div
@@ -408,7 +502,14 @@ function SharedClockInPage() {
                 {d}
               </KeypadKey>
             ))}
-            <KeypadKey onClick={reset} disabled={busy} aria-label={t("Clear")}>
+            <KeypadKey
+              onClick={() => {
+                setCode("");
+                setError(null);
+              }}
+              disabled={busy}
+              aria-label={t("Clear")}
+            >
               <span className="text-lg">{t("Clear")}</span>
             </KeypadKey>
             <KeypadKey onClick={() => setCode((c) => (c.length < 4 ? c + "0" : c))} disabled={busy}>
@@ -422,6 +523,16 @@ function SharedClockInPage() {
               <Delete className="h-7 w-7" />
             </KeypadKey>
           </div>
+          {faceAvailable && !faceBroken && (
+            <button
+              type="button"
+              onClick={reset}
+              disabled={busy}
+              className="mx-auto mt-6 flex items-center gap-2 px-4 py-3 text-base font-medium text-muted-foreground hover:text-foreground disabled:opacity-50"
+            >
+              <ScanFace className="h-5 w-5" /> {t("Use face instead")}
+            </button>
+          )}
         </div>
       )}
 

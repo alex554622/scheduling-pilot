@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, Check, Loader2, Tablet, Trash2, RefreshCw } from "lucide-react";
+import { Copy, Check, Loader2, ScanFace, Tablet, Trash2, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { useLocaleTag, useT } from "@/lib/i18n";
 import { shareableOrigin } from "@/lib/native/platform";
 import { KioskDisplaySettings } from "@/components/kiosk-display-settings";
+import { FaceEnrollDialog } from "@/components/face-enroll-dialog";
 
 /**
  * Set-up screen for the shared clock-in device: the link a tablet is opened
@@ -119,6 +120,27 @@ function SharedClockInAdminPage() {
     onError: (e: Error) => setError(e.message),
   });
 
+  // Face clock-in: who is enrolled (never the face data itself).
+  const facesQ = useQuery({
+    queryKey: ["face-enrollment", company?.id],
+    enabled: !!company?.id && isAdmin,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("face_enrollment_status");
+      if (error) throw error;
+      return new Set((data ?? []).map((r) => r.user_id));
+    },
+  });
+  const [enrolling, setEnrolling] = useState<{ id: string; name: string } | null>(null);
+
+  const clearFace = useMutation({
+    mutationFn: async (userId: string) => {
+      const { error } = await supabase.rpc("clear_employee_face", { _user: userId });
+      if (error) throw error;
+    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["face-enrollment"] }),
+    onError: (e: Error) => setError(e.message),
+  });
+
   async function copy(text: string, id: string) {
     try {
       await navigator.clipboard.writeText(text);
@@ -224,9 +246,12 @@ function SharedClockInAdminPage() {
       {company?.id && <KioskDisplaySettings companyId={company.id} />}
 
       <section className="rounded-2xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
-        <h2 className="text-lg font-semibold text-foreground">{t("Employee codes")}</h2>
+        <h2 className="text-lg font-semibold text-foreground">{t("Face and PIN")}</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          {t("Each person types their own 4-digit code on the shared device. Give someone a new code any time; the old one stops working straight away.")}
+          {t("On the shared device people clock in by looking at the camera. Enroll each person's face here, from a device with a camera, with them in front of it. Their 4-digit PIN is the backup: give someone a new PIN any time and the old one stops working straight away.")}
+        </p>
+        <p className="mt-2 text-xs text-muted-foreground">
+          {t("No photos are kept: only a set of numbers describing the face, which can't be turned back into a picture and which only the clock-in can use. Remove someone's face at any time.")}
         </p>
 
         <div className="mt-5 divide-y divide-border">
@@ -234,7 +259,39 @@ function SharedClockInAdminPage() {
           {staffQ.data?.map((p) => (
             <div key={p.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
               <span className="font-medium text-foreground">{p.name}</span>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {facesQ.data?.has(p.id) ? (
+                  <span className="flex items-center gap-1">
+                    <span className="flex items-center gap-1 rounded-md bg-emerald-600/10 px-2 py-1 text-sm font-medium text-emerald-700">
+                      <ScanFace className="h-4 w-4" /> {t("Face enrolled")}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setEnrolling({ id: p.id, name: p.name })}
+                    >
+                      {t("Redo")}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => clearFace.mutate(p.id)}
+                      disabled={clearFace.isPending}
+                      aria-label={t("Remove {name}'s face", { name: p.name })}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </span>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setEnrolling({ id: p.id, name: p.name })}
+                    disabled={facesQ.isLoading}
+                  >
+                    <ScanFace className="mr-2 h-4 w-4" /> {t("Enroll face")}
+                  </Button>
+                )}
                 <span
                   className={`rounded-md px-3 py-1.5 font-mono text-lg tracking-widest ${
                     p.code ? "bg-primary-soft text-primary" : "text-muted-foreground"
@@ -269,6 +326,12 @@ function SharedClockInAdminPage() {
           )}
         </div>
       </section>
+
+      <FaceEnrollDialog
+        person={enrolling}
+        onClose={() => setEnrolling(null)}
+        onSaved={() => void qc.invalidateQueries({ queryKey: ["face-enrollment"] })}
+      />
     </div>
   );
 }

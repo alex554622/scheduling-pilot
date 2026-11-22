@@ -29,6 +29,8 @@
 	</array>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSCameraUsageDescription</key>
+	<string>The camera is used for face clock-in on the shared clock-in screen and when an admin enrolls an employee's face. Your face is turned into numbers on this device; no photo is uploaded or saved.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Your location is used while the Time clock screen is open, to check that you are at your worksite and to record where each clock-in and clock-out happened. Admins also use it to place a worksite on the map. It is never tracked in the background.</string>
 	<key>LSRequiresIPhoneOS</key>

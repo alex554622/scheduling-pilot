@@ -1854,6 +1854,17 @@ export type Database = {
       clear_employee_clock_code: { Args: { _user: string }; Returns: undefined }
       kiosk_device_info: { Args: { _token: string }; Returns: Json }
       kiosk_display: { Args: { _token: string }; Returns: Json }
+      kiosk_face_info: { Args: { _token: string }; Returns: Json }
+      kiosk_face_match: { Args: { _token: string; _descriptor: number[] }; Returns: Json }
+      enroll_employee_face: {
+        Args: { _user: string; _samples: Json; _consent: boolean }
+        Returns: undefined
+      }
+      clear_employee_face: { Args: { _user: string }; Returns: undefined }
+      face_enrollment_status: {
+        Args: never
+        Returns: { user_id: string; samples: number; updated_at: string }[]
+      }
       reorder_kiosk_slides: { Args: { _ids: string[] }; Returns: undefined }
       kiosk_state: { Args: { _token: string; _code: string }; Returns: Json }
       kiosk_punch: {
