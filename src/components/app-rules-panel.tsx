@@ -278,24 +278,14 @@ export function AppRulesPanel() {
                     onChange={(e) => set("early_clock_in_minutes", minutesOrNull(e.target.value, 720))}
                   />
                 </Field>
-                <Field label="Late after (minutes past the shift start)">
-                  <Input
-                    type="number"
-                    min={0}
-                    max={240}
-                    placeholder={t("Not tracked")}
-                    value={rules.late_after_minutes ?? ""}
-                    onChange={(e) => set("late_after_minutes", minutesOrNull(e.target.value, 240))}
-                  />
-                </Field>
+                <p className="self-end text-xs text-muted-foreground">
+                  {t("Only counts on a day the person has a published shift. Leave empty for no limit.")}
+                </p>
               </div>
-              <p className="-mt-2 text-xs text-muted-foreground">
-                {t("Both only count on a day the person has a published shift. Leave empty to switch off. A late clock-in is flagged on the timecard and the admins and supervisors are told.")}
-              </p>
               <div className="grid gap-4 sm:grid-cols-2">
                 <ToggleRow
-                  label="Require GPS to clock in or out"
-                  description="Off: someone with location turned off can still clock in, and the admins are told."
+                  label="Require GPS to clock in"
+                  description="On: Clock IN waits until location is on, with no 7-day grace period. Clock OUT always works."
                   checked={rules.require_gps}
                   onChange={(v) => set("require_gps", v)}
                 />

@@ -11,19 +11,21 @@ meaning an assignment with no specific employee.
 | Rule | Where it is enforced |
 | --- | --- |
 | Earliest clock-in (minutes before a published shift that day) | `clock_punch`, `kiosk_punch` refuse it |
-| Late after (minutes past the shift start) | stored on the punch as `time_punches.late_minutes`, shown on the timecard and the dashboard. The admins and the person's supervisors get a "Late clock-in" notification. Nothing is blocked. |
+| Mark late clock-ins against the schedule, and the grace period | worked out on read from published shifts (`src/lib/lateness.ts`, `punch_late_minutes()` in SQL), never stored. Shown on the time clock, the timecard, the tablet reply and the dashboard. The admins and the person's supervisors get a "Late clock-in" notification. Nothing is blocked. |
 | Block punches outside the worksite radius | `clock_punch`, `break_punch`, `switch_location` |
-| Require GPS to clock in or out | `clock_punch` refuses a punch with no location |
+| Require GPS to clock in | `clock_punch` refuses a Clock IN with no location, with no 7-day grace period. Clock OUT always works. |
 | Allow the shared clock-in | `kiosk_state`, `kiosk_punch` turn the person away |
 | Allowed break lengths 10 / 30 / 60 | `break_punch`, `kiosk_state`, `kiosk_punch` |
 | Rounding, daily OT, daily double time, weekly OT | timecards (on screen, print, PDF), the dashboard's hours today, and the Reports over-hours flag (weekly threshold scaled to the range) |
 | Require a note on edits | trigger on `time_punch_audit`, so it covers every `manager_*_punch` call and the range delete |
 
 Every rule also has a company default in **Settings → App rules**. The
-five newer ones (earliest clock-in, late after, require GPS, shared clock-in
-allowed, note on edits) start switched off there, so nothing changes until
-someone turns them on. A team can set its own earliest clock-in and late
-after, or switch them **off** even when the company has them on.
+newer ones (earliest clock-in, require GPS, note on edits) start switched off
+there and the shared clock-in starts allowed, so nothing changes until someone
+changes them. Lateness uses the company's existing "Connect the schedule to
+time cards" switch and grace period. A team can turn lateness on or off and set
+its own grace, set its own earliest clock-in, or set it to **No limit** even
+when the company has one.
 
 The database merges the rules in `member_rules(user, company)`, which is
 `companies.settings || department_rules.rules`. The frontend does the same
@@ -32,19 +34,20 @@ merge in `src/lib/team-rules.ts`.
 ## Apply
 
 1. Open Studio at supabase.schedulingpilot.com, then go to **SQL editor → New query**.
-2. Paste all of `supabase/migrations/20261124120000_team_rules.sql` and run it.
-   - It depends on `20261121120000_supervisor_departments.sql` and the two
-     multi-company migrations, which are already applied.
-   - It can be run more than once.
+2. Paste all of `supabase/migrations/20261128120000_team_rules.sql` and run it.
+   - It depends on the supervisor, multi-company, GPS grace and schedule
+     lateness migrations, which are already applied. It stops with an error
+     naming what is missing if one isn't.
+   - It can be run more than once. It replaces the earlier team-rules SQL
+     (`20261124120000`): it drops the `late_minutes` column that one added and
+     restores main's `clock_punch` GPS grace period and `kiosk_punch` late reply.
 3. Check it worked:
    ```sql
    select count(*) from public.department_rules;                       -- 0, no error
    select column_name from information_schema.columns
-    where table_name = 'time_punches' and column_name = 'late_minutes';  -- one row
+    where table_name = 'time_punches' and column_name = 'late_minutes';  -- no rows
    ```
-4. Only then Redeploy in Coolify. The timecards and dashboard
-   screens read `time_punches.late_minutes`, and they fail if that column
-   doesn't exist yet.
+4. Then Redeploy in Coolify.
 
 ## Manual test plan
 
@@ -65,13 +68,14 @@ employee who isn't in any department.
    - Clock In is refused with "Too early… you can clock in from …". Check this in
      Spanish too.
    - The employee with no department, or one with no shift today, can still clock in.
-4. **Late after.**
-   - Set it to 5 and publish a shift that started 20 minutes ago.
+4. **Lateness.**
+   - Turn on "Mark late clock-ins against the schedule" for Parking with a
+     5-minute grace, and publish a shift that started 20 minutes ago.
    - Clock in. The timecard shows "Late 20 min" on that IN, and on the printed or PDF card.
    - Clock out and back in during the same shift. The second IN isn't flagged.
 5. **Require GPS.** Turn it on, then deny location in the browser. The time
    clock explains why, Clock In is disabled, and calling the RPC directly
-   still fails.
+   still fails. Someone already clocked in can still clock out.
 6. **Shared clock-in.** Turn it off for Parking, then enter the test
    employee's code on the tablet. They get "Your team can't use the shared
    clock-in…". Someone outside Parking still works.

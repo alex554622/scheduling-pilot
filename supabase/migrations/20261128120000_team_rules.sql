@@ -1,48 +1,73 @@
 -- Team rules: clock-in and timesheet rules that apply to one department.
 --
--- Run AFTER 20261121120000_supervisor_departments.sql,
--- 20261122120000_multi_company_memberships.sql and
--- 20261122130000_multi_company_supervisor_scope.sql (all already applied).
+-- Run AFTER every earlier migration, in particular
+-- 20261124120000_reconcile_clock_punch_and_absences.sql (GPS grace period) and
+-- 20261125120000_schedule_lateness.sql (lateness against the schedule).
 --
--- A team row holds only the settings that team changes. Anything it leaves
--- out comes from companies.settings, exactly as before. The effective rules
--- for a person are   companies.settings || department_rules.rules   for the
--- department their membership in that company puts them in.
+-- A team row (department_rules) holds only the settings that team changes.
+-- Anything it leaves out comes from companies.settings (App rules), exactly
+-- as before. The effective rules for a person are
+--     companies.settings || department_rules.rules
+-- for the department their membership in that company puts them in
+-- (member_rules()).
 --
 -- Keys a team may set:
---   early_clock_in_minutes   int     how long before a scheduled shift (that
---                                    day) someone may clock in. false = no limit.
---   late_after_minutes       int     clock-ins more than this after the shift
---                                    start are flagged late (time_punches.late_minutes)
---                                    and the admins and the person's supervisors
---                                    are notified. false = not tracked.
---   require_geofence         bool    same meaning as the company setting.
---   require_gps              bool    refuse a clock-in/out with GPS off.
---   allow_kiosk              bool    false = the shared clock-in turns them away.
---   allow_break_10/30/60     bool    same meaning as the company settings.
---   punch_round_minutes      int     same meaning as the company setting.
---   daily_overtime_hours     num     same meaning as the company setting.
---   daily_double_time_hours  num     same meaning as the company setting.
---   overtime_threshold_hours num     same meaning as the company setting.
---   require_edit_note        bool    an admin/supervisor changing this team's
---                                    punches must give a reason.
+--   early_clock_in_minutes   int|false  minutes before a published shift (that
+--                                       day) someone may clock in. false = no
+--                                       limit. Company default: null (no limit).
+--   schedule_lateness        bool       mark late clock-ins (see
+--                                       20261125120000_schedule_lateness.sql).
+--   late_grace_minutes       int        minutes after the shift start that still
+--                                       count as on time.
+--   require_geofence         bool       as the company setting.
+--   require_gps              bool       refuse Clock IN with GPS off, with no
+--                                       7-day grace period. Clock OUT is never
+--                                       refused.
+--   allow_kiosk              bool       false = the shared clock-in turns them away.
+--   allow_break_10/30/60     bool       as the company settings.
+--   punch_round_minutes      int        as the company setting.
+--   daily_overtime_hours     num        as the company setting.
+--   daily_double_time_hours  num        as the company setting.
+--   overtime_threshold_hours num        as the company setting.
+--   require_edit_note        bool       an admin or supervisor changing someone's
+--                                       punches must give a reason.
 --
--- The same keys are company defaults in companies.settings (App rules), where
--- early/late are a number or null.
+-- A late clock-in (schedule_lateness on) now also notifies the company admins
+-- and the person's supervisors.
 --
 -- Who may edit: company admins (and super admins) any team; a supervisor only
 -- a team they supervise as a whole department (an assignment with no
 -- employee_id), in the company they have selected.
 --
--- Function bodies below are the latest ones from 20261122120000 (clock_punch,
--- break_punch, switch_location, kiosk_state, kiosk_punch), changed only to
--- read member_rules() instead of companies.settings and to apply the new
--- rules. manager_*_punch are NOT redefined: the note rule is a trigger on
--- time_punch_audit, which every one of them writes in the same transaction.
+-- Redefined here, from their latest versions plus the team rules:
+--   clock_punch         20261124120000_reconcile (multi-company + GPS grace)
+--   kiosk_punch         20261125120000_schedule_lateness (late_minutes reply)
+--   punch_late_minutes  20261125120000_schedule_lateness, reading member_rules()
+--   break_punch, switch_location, kiosk_state   20261122120000_multi_company
+-- manager_*_punch are NOT redefined: the note rule is a trigger on
+-- time_punch_audit, which each of them writes in the same transaction.
+--
+-- An earlier draft of this file stored lateness on time_punches.late_minutes
+-- and had a "late_after_minutes" team rule. If that draft was applied, this
+-- removes both, and restores the GPS grace period and the kiosk's late reply
+-- it had replaced.
 --
 -- Re-runnable. Paste the whole file into the Studio SQL editor.
 
 begin;
+
+-- Stop here, changing nothing, if what this builds on isn't live.
+do $$
+begin
+  if to_regprocedure('public.current_company_id()') is null
+     or to_regclass('public.company_memberships') is null
+     or to_regclass('public.supervisor_assignments') is null
+     or to_regclass('public.gps_off_grace') is null
+     or to_regprocedure('public.punch_match_shift(uuid, uuid, timestamp with time zone)') is null then
+    raise exception 'multi-company, supervisor, GPS grace or schedule lateness migrations are missing; apply those first';
+  end if;
+end;
+$$;
 
 -- ---------------------------------------------------------------- table ----
 
@@ -54,8 +79,6 @@ create table if not exists public.department_rules (
   updated_at    timestamptz not null default now()
 );
 create index if not exists department_rules_company_idx on public.department_rules(company_id);
-
-alter table public.time_punches add column if not exists late_minutes integer;
 
 -- ------------------------------------------------------------ validation ----
 
@@ -75,17 +98,17 @@ begin
     -- null means "use the company's setting": leave the key out.
     if v is null or jsonb_typeof(v) = 'null' then continue; end if;
 
-    if k in ('require_geofence', 'require_gps', 'allow_kiosk',
+    if k in ('require_geofence', 'require_gps', 'allow_kiosk', 'schedule_lateness',
              'allow_break_10', 'allow_break_30', 'allow_break_60', 'require_edit_note') then
       if jsonb_typeof(v) <> 'boolean' then raise exception '% must be true or false', k; end if;
-    elsif k in ('early_clock_in_minutes', 'late_after_minutes') and v = 'false'::jsonb then
-      null; -- switched off for this team, whatever the company sets
-    elsif k in ('early_clock_in_minutes', 'late_after_minutes', 'punch_round_minutes') then
+    elsif k = 'early_clock_in_minutes' and v = 'false'::jsonb then
+      null; -- no limit for this team, whatever the company sets
+    elsif k in ('early_clock_in_minutes', 'late_grace_minutes', 'punch_round_minutes') then
       if jsonb_typeof(v) <> 'number' then raise exception '% must be a number', k; end if;
       n := (v #>> '{}')::numeric;
       if n <> trunc(n) or n < 0 then raise exception '% must be a whole number of minutes', k; end if;
       if k = 'early_clock_in_minutes' and n > 720 then raise exception 'early clock-in can be at most 720 minutes'; end if;
-      if k = 'late_after_minutes' and n > 240 then raise exception 'late after can be at most 240 minutes'; end if;
+      if k = 'late_grace_minutes' and n > 240 then raise exception 'the grace period can be at most 240 minutes'; end if;
       if k = 'punch_round_minutes' and n > 60 then raise exception 'rounding can be at most 60 minutes'; end if;
     elsif k in ('daily_overtime_hours', 'daily_double_time_hours', 'overtime_threshold_hours') then
       if jsonb_typeof(v) <> 'number' then raise exception '% must be a number', k; end if;
@@ -151,6 +174,11 @@ create trigger department_rules_guard
   before insert or update on public.department_rules
   for each row execute function public.department_rules_guard();
 
+-- The earlier draft's late rule is gone; main's lateness keys replace it.
+update public.department_rules
+   set rules = rules - 'late_after_minutes'
+ where rules ? 'late_after_minutes';
+
 -- ------------------------------------------------------------------- RLS ----
 
 alter table public.department_rules enable row level security;
@@ -179,7 +207,7 @@ create policy department_rules_delete on public.department_rules for delete to a
 -- -------------------------------------------------------- effective rules ----
 
 -- Company settings with the person's team rules laid over them. Internal: it
--- takes any user and company, so only the security-definer functions call it.
+-- takes any user and company, so only security-definer functions call it.
 create or replace function public.member_rules(_user uuid, _company uuid)
 returns jsonb language sql stable security definer set search_path = public
 as $$
@@ -192,25 +220,21 @@ as $$
 $$;
 revoke all on function public.member_rules(uuid, uuid) from public, anon, authenticated;
 
--- The shift a clock-in belongs to, and what the team's rules say about it.
--- Returns {} (nothing to say), {"error": "..."} (too early) or {"late": n}.
--- Only a published shift that starts today (company time) and hasn't ended
--- counts; with none, neither rule applies. A clock-in after an earlier one
--- for the same shift (back from a split, say) is neither early nor late.
-create or replace function public.clock_in_check(_user uuid, _company uuid, _rules jsonb)
-returns jsonb language plpgsql stable security definer set search_path = public
+-- Why a clock-in now would be too early, or null when it isn't. Only a
+-- published shift that starts today (company time) and hasn't ended counts;
+-- with none there is no limit. A clock-in after an earlier one for the same
+-- shift (back from a split, say) is never too early.
+create or replace function public.early_clock_in_error(_user uuid, _company uuid, _rules jsonb)
+returns text language plpgsql stable security definer set search_path = public
 as $$
 declare
   tz text;
   st timestamptz;
-  -- Only a number counts: null (company) and false (team) both mean "off".
+  -- Only a number counts: null (company) and false (team) both mean no limit.
   early int := case when jsonb_typeof(_rules->'early_clock_in_minutes') = 'number'
                     then (_rules->>'early_clock_in_minutes')::numeric::int end;
-  late_after int := case when jsonb_typeof(_rules->'late_after_minutes') = 'number'
-                         then (_rules->>'late_after_minutes')::numeric::int end;
-  mins int;
 begin
-  if early is null and late_after is null then return '{}'::jsonb; end if;
+  if early is null then return null; end if;
 
   select coalesce(c.timezone, 'UTC') into tz from public.companies c where c.id = _company;
   tz := coalesce(tz, 'UTC');
@@ -222,28 +246,62 @@ begin
      and (s.starts_at at time zone tz)::date = (now() at time zone tz)::date
    order by s.starts_at
    limit 1;
-  if st is null then return '{}'::jsonb; end if;
+  if st is null or now() >= st - make_interval(mins => early) then return null; end if;
 
   if exists (select 1 from public.time_punches p
               where p.user_id = _user and p.company_id = _company and p.kind = 'in'
-                and p.at >= st - make_interval(mins => greatest(coalesce(early, 0), 120))) then
-    return '{}'::jsonb;
+                and p.at >= st - make_interval(mins => greatest(early, 120))) then
+    return null;
   end if;
 
-  if early is not null and now() < st - make_interval(mins => early) then
-    return jsonb_build_object('error',
-      format('Too early to clock in: your shift starts at %s. You can clock in from %s.',
-             to_char(st at time zone tz, 'FMHH12:MI AM'),
-             to_char((st - make_interval(mins => early)) at time zone tz, 'FMHH12:MI AM')));
-  end if;
-
-  if late_after is not null and now() > st then
-    mins := floor(extract(epoch from now() - st) / 60)::int;
-    if mins > late_after then return jsonb_build_object('late', mins); end if;
-  end if;
-  return '{}'::jsonb;
+  return format('Too early to clock in: your shift starts at %s. You can clock in from %s.',
+                to_char(st at time zone tz, 'FMHH12:MI AM'),
+                to_char((st - make_interval(mins => early)) at time zone tz, 'FMHH12:MI AM'));
 end; $$;
-revoke all on function public.clock_in_check(uuid, uuid, jsonb) from public, anon, authenticated;
+revoke all on function public.early_clock_in_error(uuid, uuid, jsonb) from public, anon, authenticated;
+
+-- The earlier draft's combined early/late check.
+drop function if exists public.clock_in_check(uuid, uuid, jsonb);
+
+-- punch_late_minutes as in 20261125120000_schedule_lateness, with the rule and
+-- grace read from the person's team rules over the company's.
+create or replace function public.punch_late_minutes(_user uuid, _company uuid, _at timestamptz)
+returns integer
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  s jsonb;
+  grace int;
+  sid uuid;
+  start_at timestamptz;
+  mins int;
+begin
+  s := public.member_rules(_user, _company);
+  if not coalesce((s->>'schedule_lateness')::boolean, false) then return null; end if;
+  grace := greatest(0, coalesce((s->>'late_grace_minutes')::numeric::int, 5));
+
+  sid := public.punch_match_shift(_user, _company, _at);
+  if sid is null then return null; end if;
+  select starts_at into start_at from public.shifts where id = sid;
+
+  if exists (
+    select 1 from public.time_punches p
+     where p.user_id = _user and p.kind = 'in'
+       and p.at < _at and p.at >= start_at - interval '4 hours'
+       and public.punch_match_shift(_user, _company, p.at) = sid
+  ) then
+    return null;
+  end if;
+
+  mins := greatest(0, floor(extract(epoch from (_at - start_at)) / 60)::int);
+  if mins <= grace then return null; end if;
+  return mins;
+end;
+$$;
+revoke all on function public.punch_late_minutes(uuid, uuid, timestamptz) from public, anon, authenticated;
 
 -- Tell the company admins, and whoever supervises the person, about a late
 -- clock-in. Muted like any other kind through wants_notification().
@@ -294,6 +352,9 @@ create trigger require_edit_note
   for each row execute function public.require_edit_note();
 
 -- ---------------------------------------------------------- clock_punch ----
+-- 20261124120000_reconcile's version (multi-company + 7-day GPS grace) with
+-- the team rules: member_rules(), require_gps, the early limit, and the late
+-- notification.
 
 create or replace function public.clock_punch(_lat double precision, _lng double precision, _accuracy double precision default null)
 returns public.time_punches
@@ -307,12 +368,15 @@ declare
   c record;
   s jsonb;
   require_geo boolean;
+  fence_on boolean;
   has_gps boolean := _lat is not null and _lng is not null;
   last_kind text;
   next_kind text;
   dist double precision;
   who text;
-  chk jsonb := '{}'::jsonb;
+  grace_since timestamptz;
+  days_left int;
+  too_early text;
   row public.time_punches;
 begin
   if uid is null then raise exception 'not authenticated'; end if;
@@ -325,10 +389,7 @@ begin
   from public.companies where id = cid;
   s := public.member_rules(uid, cid);
   require_geo := coalesce((s->>'require_geofence')::boolean, true);
-
-  if not has_gps and coalesce((s->>'require_gps')::boolean, false) then
-    raise exception 'Your team needs your GPS location to clock in or out. Turn on location and try again.';
-  end if;
+  fence_on := require_geo and c.latitude is not null and c.longitude is not null;
 
   if has_gps and c.latitude is not null and c.longitude is not null then
     dist := public.haversine_m(c.latitude, c.longitude, _lat, _lng);
@@ -352,25 +413,59 @@ begin
                end;
 
   if next_kind = 'in' then
-    chk := public.clock_in_check(uid, cid, s);
-    if chk ? 'error' then raise exception '%', chk->>'error'; end if;
+    -- A team that requires GPS gets no grace period.
+    if not has_gps and coalesce((s->>'require_gps')::boolean, false) then
+      raise exception 'Your team needs your GPS location to clock in. Turn on location and try again.';
+    end if;
+    too_early := public.early_clock_in_error(uid, cid, s);
+    if too_early is not null then raise exception '%', too_early; end if;
   end if;
 
-  insert into public.time_punches (user_id, company_id, kind, latitude, longitude, accuracy_m, distance_m, within_geofence, late_minutes)
-  values (uid, cid, next_kind, _lat, _lng, _accuracy, dist, has_gps, (chk->>'late')::int)
+  -- The grace period belongs to the person, not the company: it is about
+  -- whether their phone lets the app read location at all.
+  if has_gps then
+    -- Location works: whatever grace period was running is over.
+    delete from public.gps_off_grace where user_id = uid;
+  elsif fence_on and next_kind = 'in' then
+    select since into grace_since from public.gps_off_grace where user_id = uid;
+    if grace_since is null then
+      grace_since := now();
+      insert into public.gps_off_grace (user_id, company_id, since)
+      values (uid, cid, grace_since)
+      on conflict (user_id) do update set since = excluded.since, company_id = excluded.company_id;
+    elsif now() >= grace_since + interval '7 days' then
+      raise exception 'GPS_GRACE_EXPIRED: You will not be able to clock in until you authorize the proper location settings on your phone or tablet.';
+    end if;
+  end if;
+
+  insert into public.time_punches (user_id, company_id, kind, latitude, longitude, accuracy_m, distance_m, within_geofence)
+  values (uid, cid, next_kind, _lat, _lng, _accuracy, dist, has_gps)
   returning * into row;
 
-  perform public.notify_late_clock_in(uid, cid, row.late_minutes);
+  if row.kind = 'in' then
+    perform public.notify_late_clock_in(uid, cid, public.punch_late_minutes(uid, cid, row.at));
+  end if;
 
   -- No location while the company has a geofence: tell the admins.
-  if not has_gps and require_geo and c.latitude is not null and c.longitude is not null then
+  if not has_gps and fence_on then
     select coalesce(nullif(trim(full_name), ''), 'An employee') into who
       from public.profiles where id = uid;
+
+    select since into grace_since from public.gps_off_grace where user_id = uid;
+    days_left := case
+                   when grace_since is null then null
+                   else greatest(0, ceil(extract(epoch from (grace_since + interval '7 days' - now())) / 86400)::int)
+                 end;
 
     insert into public.notifications (user_id, type, title, body, link)
     select distinct ur.user_id, 'punch_without_gps',
            case when next_kind = 'in' then 'Clock-in without GPS' else 'Clock-out without GPS' end,
-           who || ' clocked ' || next_kind || ' with their GPS location turned off.',
+           who || ' clocked ' || next_kind || ' with their GPS location turned off.'
+             || case
+                  when days_left is null then ''
+                  else ' They have ' || days_left || ' day' || case when days_left = 1 then '' else 's' end
+                       || ' left to turn it on before clock-in is blocked.'
+                end,
            '/timecards'
       from public.user_roles ur
       join public.company_memberships m on m.user_id = ur.user_id and m.company_id = ur.company_id and m.status = 'active'
@@ -580,6 +675,9 @@ begin
 end; $$;
 
 -- ----------------------------------------------------------- kiosk_punch ----
+-- 20261125120000_schedule_lateness's version (late_minutes in the reply) with
+-- the team rules: member_rules(), allow_kiosk, the early limit, and the late
+-- notification.
 
 create or replace function public.kiosk_punch(_token text, _code text, _action text, _minutes integer default null)
 returns jsonb
@@ -596,7 +694,8 @@ declare
   next_kind text;
   bmin int;
   locked timestamptz;
-  chk jsonb := '{}'::jsonb;
+  late int;
+  too_early text;
   row public.time_punches;
 begin
   r := public.kiosk_resolve(_token, _code);
@@ -632,9 +731,9 @@ begin
     next_kind := case when last_kind is null or last_kind = 'out' then 'in' else 'out' end;
     bmin := null;
     if next_kind = 'in' then
-      chk := public.clock_in_check(uid, cid, s);
-      if chk ? 'error' then
-        return jsonb_build_object('ok', false, 'message', chk->>'error');
+      too_early := public.early_clock_in_error(uid, cid, s);
+      if too_early is not null then
+        return jsonb_build_object('ok', false, 'message', too_early);
       end if;
     end if;
   elsif _action = 'break' then
@@ -659,15 +758,22 @@ begin
     return jsonb_build_object('ok', false, 'message', 'Unknown action.');
   end if;
 
-  insert into public.time_punches (user_id, company_id, kind, latitude, longitude, distance_m, within_geofence, break_minutes, late_minutes)
+  insert into public.time_punches (user_id, company_id, kind, latitude, longitude, distance_m, within_geofence, break_minutes)
   values (uid, cid, next_kind, c.latitude, c.longitude,
-          case when c.latitude is not null then 0 else null end, true, bmin, (chk->>'late')::int)
+          case when c.latitude is not null then 0 else null end, true, bmin)
   returning * into row;
 
-  perform public.notify_late_clock_in(uid, cid, row.late_minutes);
+  if row.kind = 'in' then
+    late := public.punch_late_minutes(uid, cid, row.at);
+    perform public.notify_late_clock_in(uid, cid, late);
+  end if;
 
-  return jsonb_build_object('ok', true, 'name', r->>'name', 'kind', row.kind, 'at', row.at);
+  return jsonb_build_object('ok', true, 'name', r->>'name', 'kind', row.kind, 'at', row.at)
+    || case when late is not null then jsonb_build_object('late_minutes', late) else '{}'::jsonb end;
 end; $$;
+
+-- The earlier draft stored lateness on the punch; it is worked out on read now.
+alter table public.time_punches drop column if exists late_minutes;
 
 commit;
 

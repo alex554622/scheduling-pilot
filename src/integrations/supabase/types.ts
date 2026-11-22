@@ -1643,7 +1643,6 @@ export type Database = {
           distance_m: number | null
           id: string
           kind: string
-          late_minutes: number | null
           latitude: number | null
           location_id: string | null
           longitude: number | null
@@ -1660,7 +1659,6 @@ export type Database = {
           distance_m?: number | null
           id?: string
           kind: string
-          late_minutes?: number | null
           latitude?: number | null
           location_id?: string | null
           longitude?: number | null
@@ -1677,7 +1675,6 @@ export type Database = {
           distance_m?: number | null
           id?: string
           kind?: string
-          late_minutes?: number | null
           latitude?: number | null
           location_id?: string | null
           longitude?: number | null

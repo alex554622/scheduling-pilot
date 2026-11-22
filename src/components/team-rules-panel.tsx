@@ -25,8 +25,9 @@ const BOOL_RULES: { key: TeamRuleKey; label: string; detail?: string }[] = [
   },
   {
     key: "require_gps",
-    label: "Require GPS to clock in or out",
-    detail: "Off: someone with location turned off can still clock in, and the admins are told.",
+    label: "Require GPS to clock in",
+    detail:
+      "On: Clock IN waits until location is on, with no 7-day grace period. Clock OUT always works.",
   },
   {
     key: "allow_kiosk",
@@ -40,6 +41,12 @@ const BOOL_RULES: { key: TeamRuleKey; label: string; detail?: string }[] = [
 ];
 
 const TIMESHEET_BOOLS: { key: TeamRuleKey; label: string; detail?: string }[] = [
+  {
+    key: "schedule_lateness",
+    label: "Mark late clock-ins against the schedule",
+    detail:
+      "A clock-in after the shift start plus the grace period is marked late on the time clock and the timecard, and the admins and the team's supervisors are told.",
+  },
   {
     key: "require_edit_note",
     label: "Require a note when someone edits this team's time",
@@ -65,15 +72,6 @@ const NUMBER_RULES: {
     max: 720,
     suggested: 15,
     off: "No limit",
-  },
-  {
-    key: "late_after_minutes",
-    label: "Late after (minutes past the shift start)",
-    detail:
-      "A later clock-in is flagged late on the timecard, and the admins and the team's supervisors are told. Nothing is blocked.",
-    max: 240,
-    suggested: 5,
-    off: "Not tracked",
   },
 ];
 
@@ -398,6 +396,17 @@ export function TeamRulesPanel() {
             </div>
           </div>
           {TIMESHEET_BOOLS.map(boolRow)}
+          {effective.schedule_lateness && (
+            <div className="space-y-1.5">
+              <Label>{t("Grace period before late (minutes)")}</Label>
+              {numberInput(
+                "late_grace_minutes",
+                120,
+                t("Company: {n}", { n: companyEff.late_grace_minutes }),
+                t("Grace period before late (minutes)"),
+              )}
+            </div>
+          )}
         </div>
       </section>
 

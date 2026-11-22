@@ -8,6 +8,7 @@ import { useMemberRules } from "@/lib/team-rules";
 import { useStaffVisibility } from "@/lib/staff-visibility";
 import { PAID_BREAK_MINUTES, readBreak, roundPunches } from "@/lib/timecard-totals";
 import { toDayString } from "@/lib/day-string";
+import { latenessByPunch } from "@/lib/lateness";
 import { breakAlertsFor, type BreakAlert, type ReminderDismissal, type ReminderKind } from "@/lib/break-reminders";
 import { Button } from "@/components/ui/button";
 import { localeTag, translate, useLocaleTag, useT } from "@/lib/i18n";
@@ -23,8 +24,6 @@ type Punch = {
   kind: "in" | "out" | "break_start" | "break_end";
   at: string;
   break_minutes: number | null;
-  /** Minutes past the shift start, when the person's team flags late clock-ins. */
-  late_minutes: number | null;
 };
 
 type Member = { id: string; full_name: string | null; position: string | null };
@@ -114,7 +113,7 @@ function DashboardPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("time_punches")
-        .select("id, user_id, kind, at, break_minutes, late_minutes")
+        .select("id, user_id, kind, at, break_minutes")
         .eq("company_id", company!.id)
         .gte("at", dayStart.toISOString())
         .lte("at", dayEnd.toISOString())
@@ -396,7 +395,13 @@ function DashboardPage() {
         position: m.position,
         status,
         firstIn,
-        lateMinutes: punches.find((p) => p.kind === "in")?.late_minutes ?? null,
+        // Read against today's published schedule, by this person's own rules
+        // (their team may mark lateness, or give a longer grace, than the company).
+        lateMinutes: own.schedule_lateness
+          ? ([...latenessByPunch(punches, shiftsTodayQ.data ?? [], own.late_grace_minutes).values()].find(
+              (l) => l.late,
+            )?.minutesLate ?? null)
+          : null,
         lastOut,
         workedMs,
         unpaidBreakMs: unpaid,
@@ -435,7 +440,7 @@ function DashboardPage() {
         a.name.localeCompare(b.name),
     );
     return list;
-  }, [membersQ.data, punchesQ.data, dismissalsQ.data, dueToday, rulesFor, staff, now, t]);
+  }, [membersQ.data, punchesQ.data, shiftsTodayQ.data, dismissalsQ.data, dueToday, rulesFor, staff, now, t]);
 
 
   const overdueCount = rows.filter((r) => r.alerts.length > 0).length;

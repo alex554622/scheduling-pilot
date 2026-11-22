@@ -16,8 +16,10 @@ import { translate } from "@/lib/i18n";
 export type TeamRules = Partial<{
   /** false = no limit for this team, whatever the company sets. */
   early_clock_in_minutes: number | false;
-  /** false = not tracked for this team, whatever the company sets. */
-  late_after_minutes: number | false;
+  /** Mark late clock-ins against the schedule (see `@/lib/lateness`). */
+  schedule_lateness: boolean;
+  /** Minutes after the shift start that still count as on time. */
+  late_grace_minutes: number;
   require_geofence: boolean;
   require_gps: boolean;
   allow_kiosk: boolean;
@@ -40,9 +42,8 @@ export function mergeRules(company: AppRules, team?: TeamRules | null): Effectiv
   const merged: Record<string, unknown> = { ...company };
   for (const [k, v] of Object.entries(team ?? {})) {
     if (v === null || v === undefined) continue;
-    // A switched-off minutes rule reads as "none", like the company's null.
-    merged[k] =
-      v === false && (k === "early_clock_in_minutes" || k === "late_after_minutes") ? null : v;
+    // "No limit" for this team reads as the company's null.
+    merged[k] = v === false && k === "early_clock_in_minutes" ? null : v;
   }
   return merged as EffectiveRules;
 }
@@ -152,7 +153,7 @@ export function translateRuleMessage(msg: string | undefined | null): string | u
     );
   }
   for (const known of [
-    "Your team needs your GPS location to clock in or out. Turn on location and try again.",
+    "Your team needs your GPS location to clock in. Turn on location and try again.",
     "Your team can't use the shared clock-in. Clock in from the app on your own phone.",
     "A note is required when changing time for this team. Say why in the note box.",
   ]) {

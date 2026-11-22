@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useAppRules } from "@/lib/app-rules";
+import { useMemberRules } from "@/lib/team-rules";
 import {
   latenessByPunch,
   MATCH_EARLY_MS,
@@ -24,7 +24,8 @@ const NONE: ScheduleMarks = { late: new Map(), unscheduled: new Set(), shifts: [
 
 /**
  * Lateness for one person's clock-ins, read against their published shifts.
- * With the company's "connect the schedule to time cards" rule off this asks
+ * With "connect the schedule to time cards" off for this person (their
+ * team's rule, else the company's) this asks
  * the database nothing and returns an empty map, so every screen that uses it
  * looks exactly as it did before the rule existed.
  *
@@ -49,7 +50,8 @@ export function useScheduleMarks(
   /** Also fetch every shift in this span, punched or not (the timecard's period). */
   period?: { from: Date; to: Date },
 ): ScheduleMarks {
-  const rules = useAppRules();
+  // The person's team can turn the rule on or off and set its own grace.
+  const rules = useMemberRules().rulesFor(userId);
   const on = rules.schedule_lateness;
 
   // The span the clock-ins cover, widened so a shift a clock-in matches is
