@@ -26,16 +26,21 @@ type Phase =
   | { kind: "error"; message: string };
 
 /**
- * Admin enrolls one person's face from this device's camera. Only the
- * 128-number descriptors are sent (enroll_employee_face); no photo leaves the
- * device or is kept.
+ * Enrolls one person's face from this device's camera. Only the 128-number
+ * descriptors are sent; no photo leaves the device or is kept.
+ *
+ * An admin enrolling someone (enroll_employee_face) is approved at once. With
+ * `self`, the signed-in person enrolls their own face (submit_my_face), and it
+ * waits for an admin to approve it before the shared clock-in uses it.
  */
 export function FaceEnrollDialog({
   person,
+  self = false,
   onClose,
   onSaved,
 }: {
   person: { id: string; name: string } | null;
+  self?: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -124,26 +129,32 @@ export function FaceEnrollDialog({
       return;
     }
     setPhase({ kind: "saving" });
-    const { error } = await supabase.rpc("enroll_employee_face", {
-      _user: person.id,
-      _samples: r.samples,
-      _consent: consent,
-    });
+    const { error } = self
+      ? await supabase.rpc("submit_my_face", { _samples: r.samples, _consent: consent })
+      : await supabase.rpc("enroll_employee_face", {
+          _user: person.id,
+          _samples: r.samples,
+          _consent: consent,
+        });
     if (error) {
       const similar = error.message.match(/too similar to (.+) \(already enrolled\)/);
       setPhase({
         kind: "error",
-        message: similar
-          ? t(
-              "This face is too similar to {name}, who is already enrolled. Each person can only be enrolled once.",
-              { name: similar[1] },
-            )
-          : error.message.includes("do not match each other")
-            ? t(
-                "The scans didn't match each other. Make sure only {name} is in front of the camera and try again.",
-                { name: person.name },
-              )
-            : error.message,
+        message: error.message.includes("already enrolled for someone else")
+          ? t("This face is already enrolled for someone else. Ask an admin for help.")
+          : error.message.includes("must agree")
+            ? t("Tick the box to agree first.")
+            : similar
+              ? t(
+                  "This face is too similar to {name}, who is already enrolled. Each person can only be enrolled once.",
+                  { name: similar[1] },
+                )
+              : error.message.includes("do not match each other")
+                ? t(
+                    "The scans didn't match each other. Make sure only {name} is in front of the camera and try again.",
+                    { name: person.name },
+                  )
+                : error.message,
       });
       return;
     }
@@ -171,12 +182,20 @@ export function FaceEnrollDialog({
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{t("Enroll {name}'s face", { name: person?.name ?? "" })}</DialogTitle>
+          <DialogTitle>
+            {self
+              ? t("Set up face clock-in")
+              : t("Enroll {name}'s face", { name: person?.name ?? "" })}
+          </DialogTitle>
           <DialogDescription>
-            {t(
-              "Have {name} face this device's camera in good light. Only a set of numbers describing the face is saved, never a photo. They can then clock in on the shared clock-in by looking at it.",
-              { name: person?.name ?? "" },
-            )}
+            {self
+              ? t(
+                  "Face your camera in good light, with nobody else in view. Only a set of numbers describing your face is saved, never a photo. An admin has to approve it before you can clock in with it on the shared clock-in.",
+                )
+              : t(
+                  "Have {name} face this device's camera in good light. Only a set of numbers describing the face is saved, never a photo. They can then clock in on the shared clock-in by looking at it.",
+                  { name: person?.name ?? "" },
+                )}
           </DialogDescription>
         </DialogHeader>
 
@@ -188,10 +207,14 @@ export function FaceEnrollDialog({
               className="mt-0.5"
             />
             <span>
-              {t(
-                "{name} agrees to use their face to clock in. They can ask for it to be removed at any time and use their PIN instead.",
-                { name: person?.name ?? "" },
-              )}
+              {self
+                ? t(
+                    "I agree to use my face to clock in. I can remove it at any time and use my PIN instead.",
+                  )
+                : t(
+                    "{name} agrees to use their face to clock in. They can ask for it to be removed at any time and use their PIN instead.",
+                    { name: person?.name ?? "" },
+                  )}
             </span>
           </label>
         )}

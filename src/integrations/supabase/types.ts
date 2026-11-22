@@ -1850,7 +1850,7 @@ export type Database = {
         Args: { _location: string; _lat: number; _lng: number; _accuracy?: number }
         Returns: Database["public"]["Tables"]["location_moves"]["Row"]
       }
-      set_employee_clock_code: { Args: { _user: string }; Returns: string }
+      set_employee_clock_code: { Args: { _user: string; _code?: string | null }; Returns: string }
       clear_employee_clock_code: { Args: { _user: string }; Returns: undefined }
       kiosk_device_info: { Args: { _token: string }; Returns: Json }
       kiosk_display: { Args: { _token: string }; Returns: Json }
@@ -1863,8 +1863,20 @@ export type Database = {
       clear_employee_face: { Args: { _user: string }; Returns: undefined }
       face_enrollment_status: {
         Args: never
-        Returns: { user_id: string; samples: number; updated_at: string }[]
+        Returns: {
+          user_id: string
+          approved: boolean
+          samples: number | null
+          updated_at: string | null
+          pending_at: string | null
+          matches_current: boolean | null
+        }[]
       }
+      approve_employee_face: { Args: { _user: string }; Returns: undefined }
+      reject_employee_face: { Args: { _user: string }; Returns: undefined }
+      submit_my_face: { Args: { _samples: Json; _consent: boolean }; Returns: undefined }
+      my_face_status: { Args: never; Returns: Json }
+      remove_my_face: { Args: never; Returns: undefined }
       reorder_kiosk_slides: { Args: { _ids: string[] }; Returns: undefined }
       kiosk_state: { Args: { _token: string; _code: string }; Returns: Json }
       kiosk_punch: {

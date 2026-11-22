@@ -36,6 +36,7 @@ import {
   unregisterNativePush,
 } from "@/lib/native/push";
 import { DeleteAccountCard } from "@/components/delete-account";
+import { MyFaceCard } from "@/components/my-face-card";
 import { SUPPORT_EMAIL } from "@/lib/contact";
 import { useThemePref, type ThemePref } from "@/lib/theme";
 import { LANGUAGES, useLang, useT } from "@/lib/i18n";
@@ -390,6 +391,8 @@ function AccountSettings() {
           </div>
         </div>
       </div>
+
+      <MyFaceCard />
 
       <LanguageSettings />
 

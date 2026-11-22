@@ -19,6 +19,30 @@ used. This replaces the fingerprint reader, which never reached `main`.
 
 Don't use the `supabase` CLI or MCP for this. They point at the old project.
 
+## Employees enrolling their own face, and admin-chosen PINs
+
+Apply `supabase/migrations/20261130120000_face_self_enroll_and_custom_pins.sql`
+the same way, after `20261129120000_face_clock_in.sql`.
+
+- **Self-enrollment.** Settings → My account has a **Face clock-in** card. The
+  employee ticks consent and scans their face. The scan is stored in
+  `employee_face_requests` (RLS on, no policies, no grants, like
+  `employee_faces`). The shared clock-in does not use it yet.
+- **Approval.** The Shared clock-in page shows "N faces are waiting for your
+  approval" and, under each person, **Approve** or **Reject**. This applies to
+  the first face and to every change. While a change waits, the old approved
+  face keeps working. To help decide, the page says whether the new scan looks
+  like the face already approved for them. A face the admin enrolls directly
+  is approved straight away.
+- **Checks.** A scan that matches someone else's approved face is refused. The
+  employee is told only "already enrolled for someone else", never whose.
+  Approval runs the checks again.
+- **Removing.** The employee can remove their own face (approved and waiting)
+  at any time. The admin can too.
+- **PINs.** **Set code** / **Change code** lets the admin type any 4 digits.
+  The arrows button still picks a random free code. Two people in one company
+  can't have the same code. The old code stops working straight away.
+
 ## Why face-api.js (`@vladmandic/face-api`)
 
 - **It recognises who someone is.** It produces a 128-number face descriptor
@@ -146,3 +170,25 @@ employees (A and B) and a device with a front camera.
     the admin page.
 21. Android app (after a rebuild): the first scan asks for the camera; after
     you allow it, steps 9 to 14 work the same.
+
+**Self-enrollment, approval and PINs** (after the second migration)
+
+22. As employee A, open Settings → My account. The **Face clock-in** card says
+    "You haven't set up face clock-in." Press **Set up face clock-in**, tick the
+    box, scan. The card now says the scan is waiting for an admin.
+23. On the device link, A's face is not recognised yet; A's PIN still works.
+24. As admin, open Shared clock-in. It shows "1 face is waiting for your
+    approval" and, under A, "This is their first face…". Press **Approve**.
+    A now shows **Face enrolled**, and A's face works on the device.
+25. As A, press **Scan my face again** and scan. The card says the new scan is
+    waiting and the current one keeps working. On the device, A's old face
+    still works.
+26. As admin, the row says "It looks like the face already approved for
+    them." Press **Reject**. A keeps the old face.
+27. As employee B, try to enroll using A's face. B gets "This face is already
+    enrolled for someone else" and A's name is not shown.
+28. As A, press **Remove my face**. A disappears from the enrolled list and must
+    use the PIN.
+29. As admin, press **Change code** on A, type 0420, **Save**. 0420 works on the
+    device and A's old code doesn't. Typing B's code for A gives "That code is
+    already someone else's". The arrows button gives A a random code.
