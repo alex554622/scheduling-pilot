@@ -509,6 +509,38 @@ export type Database = {
         }
         Relationships: []
       }
+      department_rules: {
+        Row: {
+          company_id: string
+          department_id: string
+          rules: Json
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          company_id?: string
+          department_id: string
+          rules?: Json
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          company_id?: string
+          department_id?: string
+          rules?: Json
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "department_rules_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: true
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       departments: {
         Row: {
           location_id: string | null
@@ -1611,6 +1643,7 @@ export type Database = {
           distance_m: number | null
           id: string
           kind: string
+          late_minutes: number | null
           latitude: number | null
           location_id: string | null
           longitude: number | null
@@ -1627,6 +1660,7 @@ export type Database = {
           distance_m?: number | null
           id?: string
           kind: string
+          late_minutes?: number | null
           latitude?: number | null
           location_id?: string | null
           longitude?: number | null
@@ -1643,6 +1677,7 @@ export type Database = {
           distance_m?: number | null
           id?: string
           kind?: string
+          late_minutes?: number | null
           latitude?: number | null
           location_id?: string | null
           longitude?: number | null
@@ -1733,6 +1768,11 @@ export type Database = {
       }
     }
     Functions: {
+      my_rule_departments: { Args: never; Returns: string[] }
+      can_manage_team_rules: {
+        Args: { _department: string; _user: string }
+        Returns: boolean
+      }
       my_companies: {
         Args: never
         Returns: {

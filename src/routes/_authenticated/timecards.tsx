@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useAppRules } from "@/lib/app-rules";
+import { translateRuleMessage, useMemberRules } from "@/lib/team-rules";
 import { useScheduleMarks } from "@/lib/use-lateness";
 import { usePayRulesByMember, usePayRulesFor } from "@/lib/use-pay-rules";
 import { differentialMs } from "@/lib/pay-rules";
@@ -206,7 +207,10 @@ function TimecardsPage() {
   const t = useT("timecards");
   const qc = useQueryClient();
   const { user, profile, company, primaryRole, loading } = useAuth();
+  // Company-wide settings (the week start). Hours, rounding and overtime are
+  // per person: their team's rules over these, through rulesFor().
   const rules = useAppRules();
+  const { rulesFor } = useMemberRules();
   const staff = useStaffVisibility();
   const isSuperAdmin = primaryRole === "super_admin";
   // A supervisor reviews the cards of the people in their departments (and
@@ -425,6 +429,8 @@ function TimecardsPage() {
       : selectedUser === "me"
         ? roster[0]?.id
         : selectedUser;
+  /** The rules this card is worked out by: the person's team's, else the company's. */
+  const cardRules = rulesFor(targetUserId);
 
   /**
    * Whether the edit controls show. An admin edits any card. A supervisor
@@ -749,16 +755,22 @@ function TimecardsPage() {
   /** One line per person: their days, breaks, hours and overtime split. */
   const everyone = useMemo(() => {
     if (!viewingAll) return [];
-    const totals = totalsByPerson(
-      allQ.data ?? [],
-      rules.punch_round_minutes,
-      rules.cap_break_to_length,
-      allMovesQ.data ?? [],
-      (id) => rulesOf(id)?.paid_meal_breaks ?? false,
-    );
+    const punchesBy = new Map<string, SimplePunch[]>();
+    for (const p of allQ.data ?? []) {
+      const list = punchesBy.get(p.user_id);
+      if (list) list.push(p);
+      else punchesBy.set(p.user_id, [p]);
+    }
     return roster
       .map((m) => {
-        const tot = totals.get(m.id) ?? {
+        const own = rulesFor(m.id);
+        const tot = totalsByPerson(
+          punchesBy.get(m.id) ?? [],
+          own.punch_round_minutes,
+          own.cap_break_to_length,
+          (allMovesQ.data ?? []).filter((mv) => mv.user_id === m.id),
+          (id) => rulesOf(id)?.paid_meal_breaks ?? false,
+        ).get(m.id) ?? {
           grossMs: 0,
           workedMs: 0,
           unpaidMs: 0,
@@ -769,7 +781,7 @@ function TimecardsPage() {
           overBreakMs: 0,
           byLocation: [],
         };
-        const split = splitPeriod(tot.dayTotals, rules, period === "week");
+        const split = splitPeriod(tot.dayTotals, own, period === "week");
         return {
           id: m.id,
           name: m.full_name || t("Unnamed"),
@@ -782,7 +794,7 @@ function TimecardsPage() {
         };
       })
       .sort((a, b) => b.workedMs - a.workedMs || a.name.localeCompare(b.name));
-  }, [viewingAll, allQ.data, allMovesQ.data, roster, rules, period, t, rulesOf]);
+  }, [viewingAll, allQ.data, allMovesQ.data, roster, rulesFor, period, t, rulesOf]);
 
   /** Everyone's paid time per location, for the foot of the roster-wide table. */
   const everyoneByLocation = useMemo(() => {
@@ -860,7 +872,7 @@ function TimecardsPage() {
       void qc.invalidateQueries({ queryKey: ["timecards-all"] });
       void qc.invalidateQueries({ queryKey: ["timecards-wipe-count"] });
     },
-    onError: (e: Error) => setWipeError(e.message),
+    onError: (e: Error) => setWipeError(translateRuleMessage(e.message) ?? e.message),
   });
 
   const grouped = useMemo(() => {
@@ -901,7 +913,7 @@ function TimecardsPage() {
       // times printed on the card are the times that were paid. `list` stays
       // raw: it is what the day editor opens, and a manager correcting a punch
       // must see what the clock recorded.
-      const counted = roundPunches(list, rules.punch_round_minutes);
+      const counted = roundPunches(list, cardRules.punch_round_minutes);
       const pairs: Pair[] = [];
       let totalMs = 0;
       let dayUnpaidMs = 0;
@@ -974,7 +986,7 @@ function TimecardsPage() {
             const read = readBreak(
               new Date(p.at).getTime() - new Date(openBreak.at).getTime(),
               openBreak.break_minutes,
-              rules.cap_break_to_length,
+              cardRules.cap_break_to_length,
               paidMeals,
             );
             if (read.paid) currentPaid += read.countedMs;
@@ -1015,8 +1027,8 @@ function TimecardsPage() {
     const person = targetUserId
       ? totalsByPerson(
           punchesQ.data ?? [],
-          rules.punch_round_minutes,
-          rules.cap_break_to_length,
+          cardRules.punch_round_minutes,
+          cardRules.cap_break_to_length,
           movesQ.data ?? [],
           () => paidMeals,
         ).get(targetUserId)
@@ -1048,8 +1060,8 @@ function TimecardsPage() {
     targetUserId,
     rangeStart,
     days,
-    rules.punch_round_minutes,
-    rules.cap_break_to_length,
+    cardRules.punch_round_minutes,
+    cardRules.cap_break_to_length,
     paidMeals,
     diffRule,
   ]);
@@ -1129,8 +1141,8 @@ function TimecardsPage() {
       return r.pairs.map((p, i) => ({
         date: i === 0 ? fmtDate(r.date) : "",
         scheduled: i === 0 ? (scheduledByDay.get(toDayString(r.date)) ?? undefined) : undefined,
-        clockIn: fmtTime(p.in.at, rules.punch_round_minutes),
-        clockOut: p.out ? fmtTime(p.out.at, rules.punch_round_minutes) : "—",
+        clockIn: fmtTime(p.in.at, cardRules.punch_round_minutes),
+        clockOut: p.out ? fmtTime(p.out.at, cardRules.punch_round_minutes) : "—",
         unpaid: p.unpaidBreakMs > 0 ? fmtHours(p.unpaidBreakMs) : "—",
         paid: p.paidBreakMs > 0 ? fmtHours(p.paidBreakMs) : "—",
         hours: i === 0 ? fmtHours(r.totalMs) : "",
@@ -1155,7 +1167,7 @@ function TimecardsPage() {
 
     const { regularMs, overtimeMs, doubleTimeMs } = splitPeriod(
       grouped.rows.map((r) => r.totalMs),
-      rules,
+      cardRules,
       period === "week",
     );
     const lastDay = addDays(rangeEnd, -1);
@@ -1212,9 +1224,9 @@ function TimecardsPage() {
             decimal: dec(l.workedMs),
           }))
         : [],
-      overtimeNote: overtimeNote(rules, period === "week"),
+      overtimeNote: overtimeNote(cardRules, period === "week"),
       absences: absenceSummary.map((a) => ({ label: a.label, days: daysText(a.days) })),
-      roundNote: `${rules.punch_round_minutes > 0 ? t("Punch times and hours rounded to the nearest {n} minutes.", { n: rules.punch_round_minutes }) : t("Punch times shown as recorded.")} ${t("Unpaid break time is deducted from hours worked; paid break time is not.")}`,
+      roundNote: `${cardRules.punch_round_minutes > 0 ? t("Punch times and hours rounded to the nearest {n} minutes.", { n: cardRules.punch_round_minutes }) : t("Punch times shown as recorded.")} ${t("Unpaid break time is deducted from hours worked; paid break time is not.")}`,
       filename: `${detailed ? "detailed-timecard" : "timecard"}-${employeeName.replace(/[^\w.-]+/g, "-").replace(/^-|-$/g, "")}-${rangeStart.toISOString().slice(0, 10)}.pdf`,
     };
   }
@@ -1300,7 +1312,7 @@ function TimecardsPage() {
     },
     split: splitPeriod(
       grouped.rows.map((r) => r.totalMs),
-      rules,
+      cardRules,
       period === "week",
     ),
     differential:
@@ -1310,9 +1322,9 @@ function TimecardsPage() {
     byLocation: hasLocations
       ? grouped.byLocation.map((l) => ({ name: locationName(l.locationId), ms: l.workedMs }))
       : [],
-    overtimeNote: overtimeNote(rules, period === "week"),
-    roundMinutes: rules.punch_round_minutes,
-    formatTime: (iso) => fmtTime(iso, rules.punch_round_minutes),
+    overtimeNote: overtimeNote(cardRules, period === "week"),
+    roundMinutes: cardRules.punch_round_minutes,
+    formatTime: (iso) => fmtTime(iso, cardRules.punch_round_minutes),
     formatHours: fmtHours,
   };
 
@@ -1883,10 +1895,10 @@ function TimecardsPage() {
                                   {i === 0 ? fmtDayShort(d.date) : ""}
                                 </td>
                                 <td className="px-3 py-1.5 text-foreground">
-                                  {fmtTime(span.inAt, rules.punch_round_minutes)}
+                                  {fmtTime(span.inAt, rulesFor(r.id).punch_round_minutes)}
                                   {" – "}
                                   {span.outAt ? (
-                                    fmtTime(span.outAt, rules.punch_round_minutes)
+                                    fmtTime(span.outAt, rulesFor(r.id).punch_round_minutes)
                                   ) : (
                                     <span className="text-warning-foreground">
                                       {t("still clocked in")}
@@ -2018,11 +2030,11 @@ function TimecardsPage() {
                       {r.pairs.map((p, i) => (
                         <div key={i} className="flex items-center gap-2">
                           <span className="rounded bg-emerald-100 dark:bg-emerald-500/15 px-1.5 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">
-                            {t("IN")} {fmtTime(p.in.at, rules.punch_round_minutes)}
+                            {t("IN")} {fmtTime(p.in.at, cardRules.punch_round_minutes)}
                           </span>
                           {p.out ? (
                             <span className="rounded bg-blue-100 dark:bg-blue-500/15 px-1.5 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">
-                              {t("OUT")} {fmtTime(p.out.at, rules.punch_round_minutes)}
+                              {t("OUT")} {fmtTime(p.out.at, cardRules.punch_round_minutes)}
                             </span>
                           ) : (
                             <span className="rounded bg-amber-100 dark:bg-amber-500/15 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
@@ -2055,7 +2067,7 @@ function TimecardsPage() {
                                   })
                                 }
                                 aria-label={t("Location for the shift starting {time}", {
-                                  time: fmtTime(p.in.at, rules.punch_round_minutes),
+                                  time: fmtTime(p.in.at, cardRules.punch_round_minutes),
                                 })}
                               >
                                 <option value="">{t("No location")}</option>
@@ -2194,7 +2206,7 @@ function TimecardsPage() {
               {(() => {
                 const split = splitPeriod(
                   grouped.rows.map((r) => r.totalMs),
-                  rules,
+                  cardRules,
                   period === "week",
                 );
                 const isOT = split.overtimeMs > 0 || split.doubleTimeMs > 0;

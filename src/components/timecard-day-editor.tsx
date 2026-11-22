@@ -3,7 +3,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Coffee, Loader2, LogIn, LogOut, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { useAppRules } from "@/lib/app-rules";
+import { useAuth } from "@/lib/auth";
+import { translateRuleMessage, useMemberRules } from "@/lib/team-rules";
 import { localeTag, useT } from "@/lib/i18n";
 import {
   diffDay,
@@ -97,7 +98,11 @@ export function TimecardDayEditor({
 }) {
   const t = useT("timecards");
   const qc = useQueryClient();
-  const rules = useAppRules();
+  const { user } = useAuth();
+  // This employee's team rules, over the company's.
+  const rules = useMemberRules().rulesFor(employeeId);
+  // The database refuses an unexplained change for such a team; say so up front.
+  const noteRequired = rules.require_edit_note && employeeId !== user?.id;
   const [shifts, setShifts] = useState<DraftShift[]>(() => toShifts(punches));
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -167,7 +172,7 @@ export function TimecardDayEditor({
     },
     onError: (e: Error) => {
       setError(
-        `${e.message} — ${t("some changes may not have been saved; the day has been reloaded.")}`,
+        `${translateRuleMessage(e.message)} — ${t("some changes may not have been saved; the day has been reloaded.")}`,
       );
       reloadRef.current = true;
       refresh();
@@ -401,7 +406,9 @@ export function TimecardDayEditor({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="correction-reason">{t("Note (optional)")}</Label>
+            <Label htmlFor="correction-reason">
+              {noteRequired ? t("Note (required for this team)") : t("Note (optional)")}
+            </Label>
             <Input
               id="correction-reason"
               placeholder={t("e.g. Forgot to clock out — confirmed with supervisor")}
@@ -439,7 +446,12 @@ export function TimecardDayEditor({
                 setError(null);
                 saveMut.mutate();
               }}
-              disabled={!dirty || problems.size > 0 || saveMut.isPending}
+              disabled={
+                !dirty ||
+                problems.size > 0 ||
+                saveMut.isPending ||
+                (noteRequired && reason.trim() === "")
+              }
             >
               {saveMut.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
               {t("Save")}

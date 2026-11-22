@@ -11,6 +11,7 @@ import {
 } from "@/components/kiosk-slideshow";
 import { noindexSeo } from "@/lib/seo";
 import { translate, useLocaleTag, useT } from "@/lib/i18n";
+import { translateRuleMessage } from "@/lib/team-rules";
 
 /**
  * The shared clock-in screen: a tablet by the door that belongs to nobody.
@@ -219,7 +220,7 @@ function SharedClockInPage() {
     void callKiosk("kiosk_state", { _token: token, _code: code }).then((reply) => {
       setBusy(false);
       if (!reply.ok || !reply.name || !reply.state) {
-        setError(reply.message ?? t("That code was not recognised."));
+        setError(translateRuleMessage(reply.message) ?? t("That code was not recognised."));
         setCode("");
         return;
       }
@@ -256,7 +257,7 @@ function SharedClockInPage() {
     });
     setBusy(false);
     if (!reply.ok) {
-      setError(reply.message ?? t("That didn't go through. Try again."));
+      setError(translateRuleMessage(reply.message) ?? t("That didn't go through. Try again."));
       return;
     }
     const at = reply.at ? new Date(reply.at) : new Date();

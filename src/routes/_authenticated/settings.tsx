@@ -1,6 +1,8 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { z } from "zod";
 import { AppRulesPanel } from "@/components/app-rules-panel";
+import { TeamRulesPanel } from "@/components/team-rules-panel";
+import { useMyRuleDepartments } from "@/lib/team-rules";
 import { OrganizationPanel } from "@/components/organization-panel";
 import { MyCompaniesPanel } from "@/components/my-companies-panel";
 import { useCapabilities } from "@/lib/capabilities";
@@ -55,9 +57,12 @@ import {
   unsubscribeFromPush,
 } from "@/lib/push-subscription";
 
-/** `?tab=companies` opens My companies; `organization` and `rules` are admin tabs. */
+/**
+ * `?tab=companies` opens My companies; `organization` and `rules` are admin tabs.
+ * `teams` (Team rules) is for admins and for supervisors of a whole department.
+ */
 const searchSchema = z.object({
-  tab: z.enum(["account", "companies", "organization", "rules"]).optional(),
+  tab: z.enum(["account", "companies", "organization", "rules", "teams"]).optional(),
 });
 
 export const Route = createFileRoute("/_authenticated/settings")({
@@ -79,9 +84,12 @@ function SettingsPage() {
   // Organization is a plan feature, as it was when it had its own menu item.
   const { capabilities } = useCapabilities();
   const hasOrg = capabilities.org_structure;
+  // Supervisors aren't admins, but may set rules for the teams they run.
+  const ruleTeamsQ = useMyRuleDepartments();
+  const canTeamRules = isAdmin || (ruleTeamsQ.data?.length ?? 0) > 0;
   const current =
     !tab ||
-    (!isAdmin && tab !== "companies") ||
+    (tab === "teams" ? !canTeamRules : !isAdmin && tab !== "companies") ||
     (tab === "organization" && !hasOrg)
       ? "account"
       : tab;
@@ -98,9 +106,13 @@ function SettingsPage() {
               ["companies", t("My companies")],
               ["organization", t("Organization")],
               ["rules", t("App rules")],
+              ["teams", t("Team rules")],
             ] as const
           )
-            .filter(([key]) => isAdmin || key === "account" || key === "companies")
+            .filter(
+              ([key]) =>
+                isAdmin || key === "account" || key === "companies" || (key === "teams" && canTeamRules),
+            )
             .filter(([key]) => key !== "organization" || hasOrg)
             .map(([key, label]) => {
             const active = key === current;
@@ -128,6 +140,8 @@ function SettingsPage() {
         <MyCompaniesPanel />
       ) : current === "rules" ? (
         <AppRulesPanel />
+      ) : current === "teams" ? (
+        <TeamRulesPanel />
       ) : current === "organization" ? (
         <OrganizationPanel />
       ) : (

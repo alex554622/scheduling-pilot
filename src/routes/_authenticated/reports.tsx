@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useManagedScope } from "@/lib/supervisor-scope";
+import { useMemberRules } from "@/lib/team-rules";
 import { Button } from "@/components/ui/button";
 import { useT, useLocaleTag } from "@/lib/i18n";
 import { BarChart3, Download, Clock, Users, CalendarOff, AlertTriangle } from "lucide-react";
@@ -80,6 +81,14 @@ function ReportsPage() {
 
   const [rangeKey, setRangeKey] = useState<RangeKey>("this_week");
   const range = useMemo(() => rangeFor(rangeKey), [rangeKey]);
+  // Each person's weekly overtime threshold (their team's, else the company's),
+  // stretched to the length of the range.
+  const { rulesFor } = useMemberRules();
+  const rangeWeeks = (range.end.getTime() - range.start.getTime()) / (7 * 86_400_000);
+  const overAt = (id: string) => {
+    const weekly = rulesFor(id).overtime_threshold_hours;
+    return weekly > 0 ? weekly * rangeWeeks : Infinity;
+  };
 
   const membersQ = useQuery({
     queryKey: ["report-members", companyId],
@@ -262,6 +271,8 @@ function ReportsPage() {
           <div className="space-y-2">
             {perEmployee.map((e) => {
               const hours = e.minutes / 60;
+              const limit = overAt(e.id);
+              const over = hours > limit;
               const pct = (e.minutes / maxMinutes) * 100;
               return (
                 <div key={e.id} className="grid grid-cols-[1fr_auto] items-center gap-3">
@@ -274,8 +285,8 @@ function ReportsPage() {
                       <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${pct}%` }} />
                     </div>
                   </div>
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${hours > 40 ? "bg-warning/20 text-warning-foreground" : "bg-muted text-muted-foreground"}`}>
-                    {hours > 40 ? t("Over 40h") : `${hours.toFixed(0)}h`}
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${over ? "bg-warning/20 text-warning-foreground" : "bg-muted text-muted-foreground"}`}>
+                    {over ? t("Over {n}h", { n: Math.round(limit) }) : `${hours.toFixed(0)}h`}
                   </span>
                 </div>
               );

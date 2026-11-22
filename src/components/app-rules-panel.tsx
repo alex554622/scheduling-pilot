@@ -112,6 +112,13 @@ export function AppRulesPanel() {
             { company: company?.name ?? t("your company") },
           )}
         </p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {t("A team can change its own clock-in and timesheet rules in")}{" "}
+          <Link to="/settings" search={{ tab: "teams" }} className="text-primary underline">
+            {t("Team rules")}
+          </Link>
+          .
+        </p>
       </div>
 
       {settingsQ.isLoading ? (
@@ -218,6 +225,14 @@ export function AppRulesPanel() {
                 />
               </Field>
             </div>
+            <div className="mt-4">
+              <ToggleRow
+                label="Require a note when someone edits time"
+                description="Admins and supervisors must say why when they add, change or delete someone's punch."
+                checked={rules.require_edit_note}
+                onChange={(v) => set("require_edit_note", v)}
+              />
+            </div>
           </section>
 
           {/* Clock-in rules */}
@@ -251,6 +266,45 @@ export function AppRulesPanel() {
                     detail="Punches go through from anywhere, and you see where each one was made."
                   />
                 </div>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Earliest clock-in (minutes before the shift)">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={720}
+                    placeholder={t("No limit")}
+                    value={rules.early_clock_in_minutes ?? ""}
+                    onChange={(e) => set("early_clock_in_minutes", minutesOrNull(e.target.value, 720))}
+                  />
+                </Field>
+                <Field label="Late after (minutes past the shift start)">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={240}
+                    placeholder={t("Not tracked")}
+                    value={rules.late_after_minutes ?? ""}
+                    onChange={(e) => set("late_after_minutes", minutesOrNull(e.target.value, 240))}
+                  />
+                </Field>
+              </div>
+              <p className="-mt-2 text-xs text-muted-foreground">
+                {t("Both only count on a day the person has a published shift. Leave empty to switch off. A late clock-in is flagged on the timecard and the admins and supervisors are told.")}
+              </p>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <ToggleRow
+                  label="Require GPS to clock in or out"
+                  description="Off: someone with location turned off can still clock in, and the admins are told."
+                  checked={rules.require_gps}
+                  onChange={(v) => set("require_gps", v)}
+                />
+                <ToggleRow
+                  label="Allow the shared clock-in"
+                  description="Off: the shared clock-in tablet turns everyone away; they clock in from their own phone."
+                  checked={rules.allow_kiosk}
+                  onChange={(v) => set("allow_kiosk", v)}
+                />
               </div>
               <div className="grid gap-4 sm:grid-cols-3">
                 <ToggleRow
@@ -508,6 +562,13 @@ export function AppRulesPanel() {
       )}
     </div>
   );
+}
+
+/** An empty box switches a minutes rule off; anything else is clamped to the range. */
+function minutesOrNull(raw: string, max: number): number | null {
+  if (raw.trim() === "") return null;
+  const n = Math.round(Number(raw));
+  return Number.isFinite(n) ? Math.max(0, Math.min(max, n)) : null;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
-import { useAppRules } from "@/lib/app-rules";
+import { translateRuleMessage, useMyRules } from "@/lib/team-rules";
 import { readBreak } from "@/lib/timecard-totals";
 import { useLateness } from "@/lib/use-lateness";
 import { usePayRulesFor } from "@/lib/use-pay-rules";
@@ -136,7 +136,8 @@ function TimeclockPage() {
   const t = useT("time");
   const tag = useLocaleTag();
   const { user, company, primaryRole, loading } = useAuth();
-  const rules = useAppRules();
+  // The company's App rules with this person's team rules over them.
+  const rules = useMyRules();
   const capBreaks = rules.cap_break_to_length;
   // A position with paid lunch: a 30 or a 60 doesn't come off this shift.
   const paidMeals = usePayRulesFor(user?.id)?.paid_meal_breaks ?? false;
@@ -438,6 +439,9 @@ function TimeclockPage() {
       : Math.max(0, Math.ceil((graceDeadline - Date.now()) / DAY_MS));
   const graceExpired = gpsOffUnderFence && graceDeadline != null && Date.now() >= graceDeadline;
   const clockInBlockedNoGps = graceExpired && nextKind === "in";
+  // A team that requires GPS gets no grace period: Clock IN waits for location.
+  // Clock OUT is never held up, so nobody is left on the clock.
+  const gpsBlocks = noGps && rules.require_gps && nextKind === "in";
 
   const [settingsHelp, setSettingsHelp] = useState(false);
   const goToLocationSettings = async () => {
@@ -517,7 +521,7 @@ function TimeclockPage() {
         qc.invalidateQueries({ queryKey: ["my-gps-grace"] });
         setFlash({ kind: "err", msg: t(GPS_BLOCKED_MSG) });
       } else {
-        setFlash({ kind: "err", msg: msg || t("Failed to punch") });
+        setFlash({ kind: "err", msg: translateRuleMessage(msg) || t("Failed to punch") });
       }
     },
     onSettled: () => setSubmitting(false),
@@ -804,7 +808,12 @@ function TimeclockPage() {
             {geoErr && (
               <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
                 {geoErr}
-                {gpsOffUnderFence && (
+                {gpsBlocks && (
+                  <p className="mt-2 font-medium">
+                    {t("Your team needs your GPS location to clock in. Turn on location and try again.")}
+                  </p>
+                )}
+                {gpsOffUnderFence && !gpsBlocks && (
                   <div className="mt-2 space-y-2">
                     <p className="font-medium">
                       {graceExpired
@@ -908,6 +917,7 @@ function TimeclockPage() {
                 punchMut.isPending ||
                 fenceBlocks ||
                 clockInBlockedNoGps ||
+                gpsBlocks ||
                 status === "on_break"
               }
               onClick={() => {
@@ -952,6 +962,14 @@ function TimeclockPage() {
               )}
             </Button>
 
+            {status === "off" && rules.early_clock_in_minutes != null && (
+              <p className="mt-2 text-center text-xs text-muted-foreground">
+                {t("Your team can clock in up to {n} minutes before a scheduled shift.", {
+                  n: rules.early_clock_in_minutes,
+                })}
+              </p>
+            )}
+
             {status !== "off" && status !== "on_break" && allowedBreaks.length > 0 && (
               <div className="mt-2 space-y-2">
                 <p className="text-xs text-muted-foreground">
@@ -980,7 +998,7 @@ function TimeclockPage() {
             )}
             {status !== "off" && status !== "on_break" && allowedBreaks.length === 0 && (
               <p className="mt-3 text-center text-xs text-muted-foreground">
-                {t("Breaks are disabled by your company's App rules.")}
+                {t("Breaks are turned off for your team.")}
               </p>
             )}
             {status === "on_break" && (

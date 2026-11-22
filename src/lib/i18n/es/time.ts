@@ -375,4 +375,12 @@ export const time: Record<string, string> = {
     "Entrada {n} min después del inicio del turno de las {time}",
   "You clocked in {n} min late for your {time} shift.":
     "Registraste tu entrada {n} min tarde para tu turno de las {time}.",
+  // Team rules
+  "Your team needs your GPS location to clock in or out. Turn on location and try again.": "Tu equipo necesita tu ubicación GPS para registrar entrada o salida. Activa la ubicación e inténtalo de nuevo.",
+  "Your team can clock in up to {n} minutes before a scheduled shift.": "Tu equipo puede registrar su entrada hasta {n} minutos antes de un turno programado.",
+  "Breaks are turned off for your team.": "Los descansos están desactivados para tu equipo.",
+  "Too early to clock in: your shift starts at {start}. You can clock in from {from}.": "Aún es temprano para registrar tu entrada: tu turno empieza a las {start}. Puedes registrarla desde las {from}.",
+  "Your team can't use the shared clock-in. Clock in from the app on your own phone.": "Tu equipo no puede usar el registro compartido. Registra tu entrada desde la app en tu propio teléfono.",
+  "A note is required when changing time for this team. Say why in the note box.": "Se requiere una nota al cambiar el tiempo de este equipo. Explica el motivo en el cuadro de nota.",
+  "{name} clocked in {n} min after their shift started.": "{name} registró su entrada {n} min después del inicio de su turno.",
 };

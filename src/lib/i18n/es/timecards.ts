@@ -333,4 +333,7 @@ export const timecards: Record<string, string> = {
   "e.g. Called in sick at 7am": "p. ej. Avisó que estaba enfermo a las 7am",
   "It is approved right away and shows on the Time off page too. Any upcoming shifts on these days become open shifts.":
     "Se aprueba de inmediato y también aparece en la página de Tiempo libre. Los próximos turnos en esos días quedan abiertos.",
+  // Team rules
+  "Note (required for this team)": "Nota (obligatoria para este equipo)",
+  "Late {n} min": "Retardo de {n} min",
 };

@@ -376,4 +376,9 @@ export const shell: Record<string, string> = {
   "Set from Employees → Edit member, like everyone's.": "Se cambia en Empleados → Editar miembro, como el de todos.",
   "Your admin sets this.": "Lo asigna tu administrador.",
   "No position set": "Sin puesto asignado",
+  // Team rules
+  "Team rules": "Reglas del equipo",
+  "Late clock-in": "Entrada con retardo",
+  "Clock-in without GPS": "Entrada sin GPS",
+  "Clock-out without GPS": "Salida sin GPS",
 };

@@ -9,6 +9,7 @@ import { showAppNotification, useNotificationPrefs } from "@/lib/notification-pr
 import { playChime } from "@/lib/notify-sound";
 import { readCutoff } from "@/lib/notification-retention";
 import { translate, useT, useLocaleTag } from "@/lib/i18n";
+import { translateRuleMessage } from "@/lib/team-rules";
 
 interface Notification {
   id: string;
@@ -225,10 +226,10 @@ export function NotificationsBell() {
                       className={`mt-1 h-2 w-2 flex-shrink-0 rounded-full ${n.read_at ? "bg-transparent" : "bg-primary"}`}
                     />
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-foreground">{n.title}</p>
+                      <p className="truncate text-sm font-medium text-foreground">{t(n.title)}</p>
                       {n.body && (
                         <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
-                          {n.body}
+                          {translateRuleMessage(n.body)}
                         </p>
                       )}
                       <p className="mt-1 text-[11px] text-muted-foreground">

@@ -57,6 +57,17 @@ export type AppRules = {
   supervisors_approve_time_off: boolean;
   /** Supervisors may fix their people's punches and write notes on their cards. */
   supervisors_edit_timecards: boolean;
+  /**
+   * How many minutes before a published shift (that day) someone may clock in.
+   * null = any time. Enforced by clock_punch and kiosk_punch.
+   */
+  early_clock_in_minutes: number | null;
+  /** Refuse a clock-in/out made with GPS off, instead of letting it through and telling the admins. */
+  require_gps: boolean;
+  /** Whether the shared clock-in tablet takes this person's code. */
+  allow_kiosk: boolean;
+  /** An admin or supervisor changing someone's punches must give a reason. */
+  require_edit_note: boolean;
 };
 
 export const DEFAULT_APP_RULES: AppRules = {
@@ -84,6 +95,10 @@ export const DEFAULT_APP_RULES: AppRules = {
   late_grace_minutes: 5,
   supervisors_approve_time_off: true,
   supervisors_edit_timecards: true,
+  early_clock_in_minutes: null,
+  require_gps: false,
+  allow_kiosk: true,
+  require_edit_note: false,
 };
 
 export function useAppRules() {

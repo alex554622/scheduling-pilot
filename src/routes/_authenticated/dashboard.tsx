@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useAppRules } from "@/lib/app-rules";
+import { useMemberRules } from "@/lib/team-rules";
 import { useStaffVisibility } from "@/lib/staff-visibility";
 import { PAID_BREAK_MINUTES, readBreak, roundPunches } from "@/lib/timecard-totals";
 import { toDayString } from "@/lib/day-string";
@@ -22,6 +23,8 @@ type Punch = {
   kind: "in" | "out" | "break_start" | "break_end";
   at: string;
   break_minutes: number | null;
+  /** Minutes past the shift start, when the person's team flags late clock-ins. */
+  late_minutes: number | null;
 };
 
 type Member = { id: string; full_name: string | null; position: string | null };
@@ -82,6 +85,8 @@ function DashboardPage() {
   const tag = useLocaleTag();
   const { company, primaryRole, loading, user } = useAuth();
   const rules = useAppRules();
+  // Rounding and break counting follow each person's team rules.
+  const { rulesFor } = useMemberRules();
   const staff = useStaffVisibility();
   const isManager = primaryRole === "company_admin" || primaryRole === "super_admin";
   const qc = useQueryClient();
@@ -109,7 +114,7 @@ function DashboardPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("time_punches")
-        .select("id, user_id, kind, at, break_minutes")
+        .select("id, user_id, kind, at, break_minutes, late_minutes")
         .eq("company_id", company!.id)
         .gte("at", dayStart.toISOString())
         .lte("at", dayEnd.toISOString())
@@ -259,6 +264,8 @@ function DashboardPage() {
       position: string | null;
       status: Status;
       firstIn: string | null;
+      /** How late today's first clock-in was, when their team tracks it. */
+      lateMinutes: number | null;
       lastOut: string | null;
       workedMs: number;
       unpaidBreakMs: number;
@@ -291,7 +298,8 @@ function DashboardPage() {
       // Hours follow the rounding rule so this roster and the timecard agree.
       // The break reminders below keep the raw punches: how long someone has
       // really been on their feet is not a payroll question.
-      const counted = roundPunches(punches, rules.punch_round_minutes);
+      const own = rulesFor(m.id);
+      const counted = roundPunches(punches, own.punch_round_minutes);
       let openIn: Punch | null = null;
       let openBreak: Punch | null = null;
       let workedMs = 0;
@@ -330,7 +338,7 @@ function DashboardPage() {
             const read = readBreak(
               new Date(p.at).getTime() - new Date(openBreak.at).getTime(),
               openBreak.break_minutes,
-              rules.cap_break_to_length,
+              own.cap_break_to_length,
             );
             if (read.paid) currentPaid += read.countedMs;
             else currentUnpaid += read.countedMs;
@@ -355,7 +363,7 @@ function DashboardPage() {
         const live = readBreak(
           now - new Date(openBreak.at).getTime(),
           openBreak.break_minutes,
-          rules.cap_break_to_length,
+          own.cap_break_to_length,
         );
         const liveBreak = live.countedMs;
         if (live.paid) currentPaid += liveBreak;
@@ -388,6 +396,7 @@ function DashboardPage() {
         position: m.position,
         status,
         firstIn,
+        lateMinutes: punches.find((p) => p.kind === "in")?.late_minutes ?? null,
         lastOut,
         workedMs,
         unpaidBreakMs: unpaid,
@@ -402,7 +411,7 @@ function DashboardPage() {
         workedLive:
           status === "working" ||
           (status === "on_break" && rawBreakStart?.break_minutes === PAID_BREAK_MINUTES),
-        alerts: breakAlertsFor(punches, rules, dismissalsQ.data?.filter((d) => d.user_id === m.id) ?? [], now),
+        alerts: breakAlertsFor(punches, own, dismissalsQ.data?.filter((d) => d.user_id === m.id) ?? [], now),
         due: dueToday.get(m.id) ?? null,
       };
     });
@@ -426,7 +435,7 @@ function DashboardPage() {
         a.name.localeCompare(b.name),
     );
     return list;
-  }, [membersQ.data, punchesQ.data, dismissalsQ.data, dueToday, rules, staff, now, t]);
+  }, [membersQ.data, punchesQ.data, dismissalsQ.data, dueToday, rulesFor, staff, now, t]);
 
 
   const overdueCount = rows.filter((r) => r.alerts.length > 0).length;
@@ -804,6 +813,9 @@ function DashboardPage() {
                 </div>
               )}
               {r.firstIn ? <>{t("In {time}", { time: fmtTime(r.firstIn) })}</> : r.due ? t("Not in yet") : "—"}
+              {r.lateMinutes != null && (
+                <span className="text-amber-700 dark:text-amber-300"> · {t("Late {n} min", { n: r.lateMinutes })}</span>
+              )}
               {r.lastOut && <><br />{t("Out {time}", { time: fmtTime(r.lastOut) })}</>}
             </div>
             <div className="text-right text-xs">
