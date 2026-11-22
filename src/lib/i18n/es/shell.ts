@@ -265,6 +265,7 @@ export const shell: Record<string, string> = {
   "My account": "Mi cuenta",
   "Super Admin": "Superadministrador",
   "Company Admin": "Administrador de empresa",
+  Supervisor: "Supervisor",
   "Employee": "Empleado",
   "Member": "Miembro",
   "New schedule published": "Nuevo horario publicado",

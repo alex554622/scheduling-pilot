@@ -53,6 +53,10 @@ export type AppRules = {
   schedule_lateness: boolean;
   /** Minutes after the shift start that still count as on time. */
   late_grace_minutes: number;
+  /** Supervisors may approve or deny their people's time off and record absences. */
+  supervisors_approve_time_off: boolean;
+  /** Supervisors may fix their people's punches and write notes on their cards. */
+  supervisors_edit_timecards: boolean;
 };
 
 export const DEFAULT_APP_RULES: AppRules = {
@@ -78,6 +82,8 @@ export const DEFAULT_APP_RULES: AppRules = {
   staff_see_coworkers: true,
   schedule_lateness: false,
   late_grace_minutes: 5,
+  supervisors_approve_time_off: true,
+  supervisors_edit_timecards: true,
 };
 
 export function useAppRules() {

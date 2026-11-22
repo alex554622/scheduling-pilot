@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth, type AppRole } from "@/lib/auth";
 import { useStaffVisibility } from "@/lib/staff-visibility";
+import { useManagedScope } from "@/lib/supervisor-scope";
 import {
   Dialog,
   DialogContent,
@@ -111,6 +112,8 @@ interface ShiftRow {
   position_id: string | null;
   color: string;
   published: boolean;
+  /** The department an open shift is posted under, if any. */
+  department_id?: string | null;
 }
 
 interface MemberRow {
@@ -411,7 +414,10 @@ function CompanyDashboard({ role }: { role: AppRole }) {
   // Classic screens or the weekly grid — each person's own choice.
   const { layout, setLayout, saving: layoutSaving } = useScheduleLayout();
   const companyId = profile?.company_id;
-  const canEdit = role === "company_admin";
+  const canEdit = role === "company_admin" || role === "supervisor";
+  // A supervisor builds the schedule for their own departments only. The
+  // database enforces it (shifts_manage); this keeps everyone else off the grid.
+  const scope = useManagedScope();
   /** Who gets the grid of everyone. An employee gets their own week instead. */
   const isBuilder = role !== "employee";
 
@@ -591,9 +597,16 @@ function CompanyDashboard({ role }: { role: AppRole }) {
   // applied. An admin is either somebody you put on a schedule or they are not,
   // and that cannot depend on who is looking at it. Their own row stays —
   // nobody is hidden from themselves.
-  const members = staff.visible(membersQ.data ?? [], (m) => m.id, "schedule");
-  const teams = teamsQ.data ?? [];
-  const shifts = shiftsQ.data ?? [];
+  const members = scope.narrow(
+    staff.visible(membersQ.data ?? [], (m) => m.id, "schedule"),
+    (m) => m.id,
+  );
+  const teams = (teamsQ.data ?? []).filter((d) => scope.managesDepartment(d.id));
+  const shifts = scope.isSupervisor
+    ? (shiftsQ.data ?? []).filter((s) =>
+        s.employee_id ? scope.manages(s.employee_id) : scope.managesDepartment(s.department_id),
+      )
+    : (shiftsQ.data ?? []);
 
   if (role === "employee") {
     // `shifts` is already only this person's — the query asked for nothing else.

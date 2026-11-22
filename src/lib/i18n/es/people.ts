@@ -424,4 +424,33 @@ export const people: Record<string, string> = {
   "No shifts scheduled in this range.": "No hay turnos programados en este rango.",
   "Showing 50 of {n}. Export CSV for the full list.":
     "Mostrando 50 de {n}. Exporta el CSV para ver la lista completa.",
+
+  // Supervisors and their departments
+  Supervisor: "Supervisor",
+  Supervisors: "Supervisores",
+  "What supervisors can do": "Lo que pueden hacer los supervisores",
+  "Supervisors can approve time off": "Los supervisores pueden aprobar tiempo libre",
+  "On: a supervisor approves or denies time off for the people in their departments, and can record sick days, vacation and family leave on their cards. Off: only admins can.":
+    "Activado: un supervisor aprueba o rechaza el tiempo libre de las personas de sus departamentos y puede registrar días de enfermedad, vacaciones y permisos familiares en sus tarjetas. Desactivado: solo los administradores pueden.",
+  "Supervisors can edit timecards": "Los supervisores pueden editar tarjetas de tiempo",
+  "On: a supervisor can fix missed or wrong punches and write notes on the cards of the people in their departments. Off: they can review the cards but not change them.":
+    "Activado: un supervisor puede corregir marcajes olvidados o erróneos y escribir notas en las tarjetas de las personas de sus departamentos. Desactivado: puede revisar las tarjetas pero no cambiarlas.",
+  "To make someone a supervisor, invite them as an employee, then change their role on the roster.":
+    "Para hacer a alguien supervisor, invítalo como empleado y luego cambia su rol en la lista.",
+  "Supervises: no departments yet": "Supervisa: aún sin departamentos",
+  "Supervises: {list}": "Supervisa: {list}",
+  "{name} (some people)": "{name} (algunas personas)",
+  "{name}'s departments": "Departamentos de {name}",
+  "A supervisor sees and manages only the people in these departments: their schedules, timecards, time off and reports. Company settings stay with admins.":
+    "Un supervisor ve y gestiona solo a las personas de estos departamentos: sus horarios, tarjetas de tiempo, tiempo libre e informes. La configuración de la empresa queda en manos de los administradores.",
+  "No departments yet — add them on Settings → Organization → Departments.":
+    "Aún no hay departamentos: agrégalos en Configuración → Organización → Departamentos.",
+  "1 person": "1 persona",
+  "{n} people": "{n} personas",
+  "Everyone in it": "Todos los de este departamento",
+  "Only some people": "Solo algunas personas",
+  "Nobody is in this department yet.": "Aún no hay nadie en este departamento.",
+  "No supervisor": "Sin supervisor",
+  "Supervised by {names}": "Supervisado por {names}",
+  "You can't change your own role.": "No puedes cambiar tu propio rol.",
 };

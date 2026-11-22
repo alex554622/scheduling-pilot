@@ -19,6 +19,7 @@ import {
   CalendarClock,
   ShieldAlert,
   EyeOff,
+  UserCheck,
 } from "lucide-react";
 
 /**
@@ -463,6 +464,26 @@ export function AppRulesPanel() {
               description="On: the dashboard shows each employee who else is working, on a break or due in today. Off: employees see only themselves — their own status and their own shift. Admins always see everyone."
               checked={rules.staff_see_coworkers}
               onChange={(v) => set("staff_see_coworkers", v)}
+            />
+          </section>
+
+          {/* What supervisors may do */}
+          <section className="rounded-xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
+            <div className="mb-4 flex items-center gap-2">
+              <UserCheck className="h-5 w-5 text-primary" />
+              <h3 className="font-semibold text-foreground">{t("What supervisors can do")}</h3>
+            </div>
+            <ToggleRow
+              label="Supervisors can approve time off"
+              description="On: a supervisor approves or denies time off for the people in their departments, and can record sick days, vacation and family leave on their cards. Off: only admins can."
+              checked={rules.supervisors_approve_time_off}
+              onChange={(v) => set("supervisors_approve_time_off", v)}
+            />
+            <ToggleRow
+              label="Supervisors can edit timecards"
+              description="On: a supervisor can fix missed or wrong punches and write notes on the cards of the people in their departments. Off: they can review the cards but not change them."
+              checked={rules.supervisors_edit_timecards}
+              onChange={(v) => set("supervisors_edit_timecards", v)}
             />
           </section>
 

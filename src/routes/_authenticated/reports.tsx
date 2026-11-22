@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { useManagedScope } from "@/lib/supervisor-scope";
 import { Button } from "@/components/ui/button";
 import { useT, useLocaleTag } from "@/lib/i18n";
 import { BarChart3, Download, Clock, Users, CalendarOff, AlertTriangle } from "lucide-react";
@@ -68,7 +69,10 @@ function ReportsPage() {
   const { primaryRole, profile, loading } = useAuth();
   const navigate = useNavigate();
   const companyId = profile?.company_id ?? null;
-  const canView = primaryRole === "company_admin" || primaryRole === "super_admin";
+  // A supervisor gets the same reports, about their own departments' people.
+  const scope = useManagedScope();
+  const canView =
+    primaryRole === "company_admin" || primaryRole === "super_admin" || primaryRole === "supervisor";
 
   useEffect(() => {
     if (!loading && primaryRole && !canView) navigate({ to: "/dashboard" });
@@ -120,9 +124,18 @@ function ReportsPage() {
     },
   });
 
-  const members = membersQ.data ?? [];
-  const shifts = shiftsQ.data ?? [];
-  const timeOff = timeOffQ.data ?? [];
+  const members = useMemo(
+    () => scope.narrow(membersQ.data ?? [], (m) => m.id),
+    [membersQ.data, scope],
+  );
+  const shifts = useMemo(
+    () => scope.narrow(shiftsQ.data ?? [], (s) => s.employee_id),
+    [shiftsQ.data, scope],
+  );
+  const timeOff = useMemo(
+    () => scope.narrow(timeOffQ.data ?? [], (r) => r.employee_id),
+    [timeOffQ.data, scope],
+  );
   const nameOf = useMemo(() => {
     const m = new Map<string, string>();
     members.forEach((p) => m.set(p.id, p.full_name || t("Unnamed")));

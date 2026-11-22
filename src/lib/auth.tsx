@@ -18,7 +18,7 @@ import { translate } from "@/lib/i18n";
 import { clearSignupIntent, readSignupIntent, saveSignupIntentError } from "@/lib/signup-intent";
 import { readRememberedCompany, rememberCompany, setActiveCompanyId } from "@/lib/active-company";
 
-export type AppRole = "super_admin" | "company_admin" | "employee";
+export type AppRole = "super_admin" | "company_admin" | "supervisor" | "employee";
 
 export interface Profile {
   id: string;
@@ -96,7 +96,7 @@ interface AuthCtx {
   switchCompany: (companyId: string) => Promise<void>;
   /** Roles in the selected company (plus super admin, which is platform-wide). */
   roles: AppRole[];
-  /** Highest-priority role for routing/UX — super_admin > company_admin > employee. */
+  /** Highest-priority role for routing/UX — super_admin > company_admin > supervisor > employee. */
   primaryRole: AppRole | null;
   /** The company a super admin is ghosting, or null. */
   ghost: GhostSession | null;
@@ -116,17 +116,20 @@ interface AuthCtx {
 
 const Ctx = createContext<AuthCtx | null>(null);
 
-const ROLE_PRIORITY: AppRole[] = ["super_admin", "company_admin", "employee"];
+const ROLE_PRIORITY: AppRole[] = ["super_admin", "company_admin", "supervisor", "employee"];
 
 /**
- * Supervisor was folded into company_admin — the two roles now do the same job.
- * The enum label still exists in the database, so any row that predates the
- * merge (or an environment where it hasn't run yet) reads as a company admin
- * instead of leaving that user with no role at all.
+ * A role value read from the database. A supervisor manages only the
+ * departments an admin assigns them (20261121120000_supervisor_departments.sql);
+ * anything this build does not know reads as no role.
  */
 function normalizeRole(role: string): AppRole | null {
-  if (role === "supervisor") return "company_admin";
   return ROLE_PRIORITY.includes(role as AppRole) ? (role as AppRole) : null;
+}
+
+/** Runs some part of the company: an admin everywhere, a supervisor for their people. */
+export function isManagerRole(role: AppRole | null | undefined): boolean {
+  return role === "company_admin" || role === "super_admin" || role === "supervisor";
 }
 
 async function runSignupIntent(email: string | null | undefined): Promise<boolean> {
@@ -589,9 +592,8 @@ export function useAuth() {
 }
 
 /**
- * Label for a role value read straight from the database, where the retired
- * "supervisor" can still appear on rows written before the merge (invitations,
- * most of all). Indexing ROLE_LABEL directly with one of those renders nothing.
+ * Label for a role value read straight from the database. Indexing ROLE_LABEL
+ * directly with a value this build does not know renders nothing.
  */
 export function roleLabel(role: string): string {
   const normalized = normalizeRole(role);
@@ -601,5 +603,6 @@ export function roleLabel(role: string): string {
 export const ROLE_LABEL: Record<AppRole, string> = {
   super_admin: "Super Admin",
   company_admin: "Company Admin",
+  supervisor: "Supervisor",
   employee: "Employee",
 };

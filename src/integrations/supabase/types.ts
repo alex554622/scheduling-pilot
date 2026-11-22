@@ -1387,6 +1387,51 @@ export type Database = {
         }
         Relationships: []
       }
+      supervisor_assignments: {
+        Row: {
+          company_id: string
+          created_at: string
+          created_by: string | null
+          department_id: string
+          employee_id: string | null
+          id: string
+          supervisor_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          department_id: string
+          employee_id?: string | null
+          id?: string
+          supervisor_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          department_id?: string
+          employee_id?: string | null
+          id?: string
+          supervisor_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supervisor_assignments_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supervisor_assignments_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       time_off_requests: {
         Row: {
           company_id: string
@@ -1978,6 +2023,15 @@ export type Database = {
       }
       is_company_manager: {
         Args: { _company: string; _user: string }
+        Returns: boolean
+      }
+      is_supervisor: {
+        Args: { _company: string; _user: string }
+        Returns: boolean
+      }
+      managed_employee_ids: { Args: Record<PropertyKey, never>; Returns: string[] }
+      supervises: {
+        Args: { _employee: string; _user: string }
         Returns: boolean
       }
       join_company: { Args: { _company: string }; Returns: undefined }
