@@ -48,8 +48,8 @@ export type AppRules = {
   /**
    * Each department as its own group: an employee sees only the people,
    * shifts, time off and trades of their own department (plus people with no
-   * department, their supervisors and anyone they supervise), and can post on
-   * Messages only to their department. Enforced by the database —
+   * department, their supervisors and anyone they supervise). Enforced by the
+   * database —
    * 20261129120000_department_separation.sql. Admins always see everything.
    */
   departments_separate: boolean;

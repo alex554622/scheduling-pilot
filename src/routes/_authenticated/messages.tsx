@@ -4,7 +4,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Building2, Loader2, Megaphone, MessageSquare, Send, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
-import { useAppRules } from "@/lib/app-rules";
 import { useManagedScope } from "@/lib/supervisor-scope";
 import { useOrgStructure } from "@/lib/use-org-structure";
 import { Button } from "@/components/ui/button";
@@ -20,9 +19,10 @@ import { translate, useT } from "@/lib/i18n";
  * history to scroll back through. The page drops an expired post off the screen
  * at the minute it expires, so what is shown matches what could be read.
  *
- * A post is for the whole company or for chosen departments
- * (`department_ids`). Who may read and post to what is the database's call
- * too — 20261129120000_department_separation.sql; the picker below only
+ * An announcement is for the whole company; every other post is for
+ * departments (`department_ids`) and only their people and supervisors read
+ * it. Who may read and post to what is the database's call
+ * too — 20261130120000_department_only_messages.sql; the picker below only
  * offers what it will accept.
  */
 export const Route = createFileRoute("/_authenticated/messages")({
@@ -67,7 +67,6 @@ function MessagesPage() {
   const qc = useQueryClient();
   const companyId = profile?.company_id ?? null;
   const isAdmin = primaryRole === "company_admin";
-  const rules = useAppRules();
   const scope = useManagedScope();
   const org = useOrgStructure(companyId);
 
@@ -95,8 +94,9 @@ function MessagesPage() {
     [departments],
   );
 
-  // Departments this person may post to, and whether "everyone" is allowed.
-  // Mirrors can_post_to() in the database.
+  // Departments this person may post a message to. Mirrors can_post_to() in
+  // the database: announcements go to everyone and only admins post them;
+  // every other message goes to departments.
   const postable = useMemo(() => {
     if (isAdmin) return departments.filter((d) => d.is_active).map((d) => d.id);
     const ids = new Set<string>();
@@ -106,16 +106,18 @@ function MessagesPage() {
     }
     return [...ids];
   }, [isAdmin, departments, myDept, scope]);
-  const canPostToAll = isAdmin || !rules.departments_separate;
-  const defaultAudience: Audience = canPostToAll || postable.length === 0 ? "all" : [postable[0]];
+  const defaultDepartments = useMemo(
+    () => (myDept && postable.includes(myDept) ? [myDept] : postable.slice(0, 1)),
+    [myDept, postable],
+  );
 
   const [draft, setDraft] = useState("");
   const [announce, setAnnounce] = useState(false);
-  const [audience, setAudience] = useState<Audience | null>(null);
-  const chosen: Audience = audience ?? defaultAudience;
-  const canPost = canPostToAll || postable.length > 0;
-  // Supervisors announce to the departments they post to; admins to anyone.
-  const canAnnounce = isAdmin || (scope.isSupervisor && chosen !== "all");
+  const [picked, setPicked] = useState<string[] | null>(null);
+  const canAnnounce = isAdmin;
+  const announcing = canAnnounce && announce;
+  const chosen: Audience = announcing ? "all" : (picked ?? defaultDepartments);
+  const canPost = canAnnounce || postable.length > 0;
   const [now, setNow] = useState(() => Date.now());
 
   // Once a minute: enough to keep "3h ago" honest and to drop a post off the
@@ -185,9 +187,9 @@ function MessagesPage() {
         company_id: companyId!,
         author_id: user!.id,
         body,
-        // The database refuses an announcement from anyone but an admin, or a
-        // supervisor posting to their departments.
-        is_announcement: canAnnounce && announce,
+        // The database refuses an announcement from anyone but an admin, and
+        // any message that is not for departments the poster belongs to or runs.
+        is_announcement: announcing,
         department_ids: chosen === "all" ? null : chosen,
       });
       if (error) throw error;
@@ -195,7 +197,7 @@ function MessagesPage() {
     onSuccess: () => {
       setDraft("");
       setAnnounce(false);
-      setAudience(null);
+      setPicked(null);
       void qc.invalidateQueries({ queryKey: ["company-messages", companyId] });
     },
   });
@@ -291,7 +293,7 @@ function MessagesPage() {
       <div>
         <h1 className="text-2xl font-semibold text-foreground">{t("Messages")}</h1>
         <p className="text-sm text-muted-foreground">
-          {t("Today's board for your company and your department. Everything posted here disappears after 24 hours.")}
+          {t("Announcements go to everyone. Messages stay inside your department. Everything posted here disappears after 24 hours.")}
         </p>
       </div>
 
@@ -309,9 +311,9 @@ function MessagesPage() {
           placeholder={
             !canPost
               ? t("You can post once an admin puts you in a department.")
-              : canAnnounce && announce
-                ? t("Write an announcement…")
-                : t("Write a message for the team…")
+              : announcing
+                ? t("Write an announcement for everyone…")
+                : t("Write a message for your department…")
           }
           disabled={!canPost}
           rows={3}
@@ -324,14 +326,11 @@ function MessagesPage() {
             }
           }}
         />
-        {canPost && (canPostToAll ? postable.length > 0 : postable.length > 1) && (
+        {/* A message goes to departments; only someone who can reach more
+            than one gets to choose. An announcement always goes to everyone. */}
+        {!announcing && postable.length > 1 && (
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-xs font-medium text-muted-foreground">{t("Post to:")}</span>
-            {canPostToAll && (
-              <AudienceChip active={chosen === "all"} onClick={() => setAudience("all")}>
-                {t("Everyone")}
-              </AudienceChip>
-            )}
             {postable.map((id) => {
               const on = chosen !== "all" && chosen.includes(id);
               return (
@@ -342,7 +341,7 @@ function MessagesPage() {
                     const current = chosen === "all" ? [] : chosen;
                     const next = on ? current.filter((x) => x !== id) : [...current, id];
                     // Nothing picked means nobody; fall back to the default.
-                    setAudience(next.length ? next : null);
+                    setPicked(next.length ? next : null);
                   }}
                 >
                   {deptName.get(id) ?? t("Department")}
@@ -365,9 +364,7 @@ function MessagesPage() {
                 <Megaphone className="h-4 w-4 text-primary" />
                 {t("Announcement")}
                 <span className="hidden text-xs text-muted-foreground sm:inline">
-                  {chosen === "all"
-                    ? t("— pinned, and everyone is notified")
-                    : t("— pinned, and those departments are notified")}
+                  {t("— goes to everyone, pinned, and everyone is notified")}
                 </span>
               </label>
             )}
@@ -378,7 +375,7 @@ function MessagesPage() {
             >
               {draft.length}/{MAX_LEN}
             </span>
-            <Button type="submit" size="sm" disabled={!canPost || !draft.trim() || tooLong || post.isPending}>
+            <Button type="submit" size="sm" disabled={!canPost || (!announcing && chosen.length === 0) || !draft.trim() || tooLong || post.isPending}>
               {post.isPending ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
@@ -424,7 +421,7 @@ function MessagesPage() {
           {notes.length > 0 && (
             <section className="space-y-2">
               <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                {t("Today")}
+                {t("Department messages")}
               </h2>
               <ul className="space-y-2">{notes.map(renderMessage)}</ul>
             </section>

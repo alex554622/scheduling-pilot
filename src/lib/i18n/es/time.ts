@@ -422,14 +422,16 @@ export const time: Record<string, string> = {
   "Approved. It is still waiting on another supervisor.":
     "Aprobado. Todavía espera la respuesta de otro supervisor.",
   // Department messages.
-  "Today's board for your company and your department. Everything posted here disappears after 24 hours.":
-    "El tablero del día para tu empresa y tu departamento. Todo lo que se publica aquí desaparece después de 24 horas.",
-  "Write an announcement…": "Escribe un anuncio…",
   "You can post once an admin puts you in a department.":
     "Podrás publicar cuando un administrador te asigne a un departamento.",
   "Post to:": "Publicar en:",
   "Everyone": "Todos",
   "Department": "Departamento",
   "mine": "el mío",
-  "— pinned, and those departments are notified": "— fijado, y se avisa a esos departamentos",
+  "Announcements go to everyone. Messages stay inside your department. Everything posted here disappears after 24 hours.":
+    "Los anuncios llegan a todos. Los mensajes se quedan dentro de tu departamento. Todo lo que se publica aquí desaparece después de 24 horas.",
+  "Write an announcement for everyone…": "Escribe un anuncio para todos…",
+  "Write a message for your department…": "Escribe un mensaje para tu departamento…",
+  "— goes to everyone, pinned, and everyone is notified": "— llega a todos, queda fijado y se avisa a todos",
+  "Department messages": "Mensajes del departamento",
 };
