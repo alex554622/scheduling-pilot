@@ -196,7 +196,8 @@ function SharedClockInPage() {
   }, [token, t]);
 
   // A fingerprint reader through the Pilot Clock app (Android app only). The
-  // keypad stays: a scan only fills in the code, so anyone can still type theirs.
+  // keypad comes first; the reader is an optional button under it, and a scan
+  // only fills in the code, so anyone can still type theirs.
   const [canScan, setCanScan] = useState(false);
   useEffect(() => {
     void fingerprintAvailable().then(setCanScan);
@@ -398,14 +399,6 @@ function SharedClockInPage() {
         </div>
       ) : (
         <div className="mt-8 w-full">
-          {canScan && (
-            <div className="mb-8">
-              <BigButton onClick={() => void scan()} disabled={busy} tone="go">
-                <Fingerprint className="h-8 w-8" /> {t("Use fingerprint")}
-              </BigButton>
-              <p className="mt-6 text-center text-base text-muted-foreground">{t("or")}</p>
-            </div>
-          )}
           <p className="text-center text-lg text-muted-foreground">{t("Enter your 4-digit code")}</p>
 
           <div
@@ -450,6 +443,22 @@ function SharedClockInPage() {
               <Delete className="h-7 w-7" />
             </KeypadKey>
           </div>
+
+          {/* The code is the main way in; the reader is there for whoever
+              prefers it, and fills in the same code. */}
+          {canScan && (
+            <div className="mx-auto mt-6 max-w-xs">
+              <p className="mb-3 text-center text-sm text-muted-foreground">{t("or")}</p>
+              <button
+                type="button"
+                onClick={() => void scan()}
+                disabled={busy}
+                className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl border border-border bg-card text-lg font-medium text-foreground shadow-sm transition-colors hover:bg-accent active:bg-accent disabled:opacity-50"
+              >
+                <Fingerprint className="h-6 w-6 text-primary" /> {t("Use fingerprint instead")}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
