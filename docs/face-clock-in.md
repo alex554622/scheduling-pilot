@@ -85,9 +85,10 @@ closer than that.
   a bar fills up. It says "Come a little closer", "Look straight at the
   camera" or "Only one person" when needed. Blurry frames are dropped and
   taken again instead of failing. No blink is asked for.
-- **Clock-in needs no blink.** It takes two scans of the face about a quarter
-  of a second apart and matches as soon as they agree, so it is quick even on
-  slow tablets. An earlier version asked for a blink; it was removed because
+- **Clock-in needs no blink and is quick.** It sends one scan, taken as soon
+  as the face has been steady for one frame (~0.1 s here, under a second on a
+  slow tablet); a miss scans again after 0.8 s. The camera stays on for 20 s
+  between people, so the next person doesn't wait for it to open. An earlier version asked for a blink; it was removed because
   people found it slow and hard to trigger. Human's own anti-spoof and
   liveness scores were tried and left off: on genuine faces they ranged from
   0.3 to 1.0, too unreliable to gate on.

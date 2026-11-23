@@ -134,19 +134,50 @@ export function cameraSupported(): boolean {
   );
 }
 
-/** Front camera into the given <video>. Returns a stop function. */
-export async function startCamera(video: HTMLVideoElement): Promise<() => void> {
-  const stream = await navigator.mediaDevices.getUserMedia({
+/** A camera left on for a moment after use, so the next scan starts at once. */
+let warm: { stream: MediaStream; timer: ReturnType<typeof setTimeout> } | null = null;
+
+const stopStream = (stream: MediaStream) => {
+  for (const track of stream.getTracks()) track.stop();
+};
+
+/**
+ * Front camera into the given <video>. Returns a stop function. With
+ * `keepWarmMs`, stopping leaves the camera on that long, and a scan started
+ * in the meantime reuses it: opening a camera takes up to 1-2 s on a tablet.
+ */
+export async function startCamera(video: HTMLVideoElement, keepWarmMs = 0): Promise<() => void> {
+  let stream: MediaStream | null = null;
+  if (warm) {
+    clearTimeout(warm.timer);
+    if (warm.stream.getVideoTracks().some((t) => t.readyState === "live")) stream = warm.stream;
+    else stopStream(warm.stream);
+    warm = null;
+  }
+  stream ??= await navigator.mediaDevices.getUserMedia({
     audio: false,
     video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
   });
-  video.srcObject = stream;
+  const own = stream;
+  video.srcObject = own;
   video.muted = true;
   video.playsInline = true;
   await video.play().catch(() => undefined);
   return () => {
-    for (const track of stream.getTracks()) track.stop();
-    if (video.srcObject === stream) video.srcObject = null;
+    if (video.srcObject === own) video.srcObject = null;
+    if (keepWarmMs <= 0) {
+      stopStream(own);
+      return;
+    }
+    if (warm) {
+      clearTimeout(warm.timer);
+      if (warm.stream !== own) stopStream(warm.stream);
+    }
+    const timer = setTimeout(() => {
+      stopStream(own);
+      if (warm?.stream === own) warm = null;
+    }, keepWarmMs);
+    warm = { stream: own, timer };
   };
 }
 
@@ -264,15 +295,11 @@ export type ScanDebug = {
   error: string;
 };
 
-/** Time between the two clock-in scans. */
-const GAP_MS = 250;
-
 /**
- * Clock-in: two descriptors of the same face, about `GAP_MS` apart, averaged.
- * No blink or other movement is asked for: it matches as soon as a face is
- * steady in front of the camera. If a scan doesn't agree with the one before
- * (blur, a turn, someone else stepping in) it keeps the newer one and tries
- * again. Gives up after `timeoutMs`.
+ * Clock-in: one descriptor, as soon as a face has been steady for one frame
+ * (so it isn't taken mid-step while someone walks up). No blink or other
+ * movement is asked for. The server decides; a miss just scans again. Gives up
+ * after `timeoutMs`.
  */
 export async function scanLiveFace(
   human: FaceEngine,
@@ -284,40 +311,31 @@ export async function scanLiveFace(
     onDebug?: (d: ScanDebug) => void;
   },
 ): Promise<ScanOutcome> {
-  let samples: number[][] = [];
   const deadline = Date.now() + opts.timeoutMs;
-  let lastHeavy = 0;
   const backend = human.tf.getBackend();
+  let steady = 0;
   let error = "";
   opts.onStatus("look");
   while (Date.now() < deadline) {
     if (opts.signal.aborted) return { ok: false, reason: "cancelled" };
-    const wantDescriptor = Date.now() - lastHeavy >= GAP_MS;
     const started = performance.now();
     let r: FrameResult;
     try {
-      r = await readFrame(human, video, wantDescriptor, KIOSK_FACE_SHARE);
+      r = await readFrame(human, video, steady > 0, KIOSK_FACE_SHARE);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
       r = { kind: "none" };
     }
     if (opts.signal.aborted) return { ok: false, reason: "cancelled" };
     const hint = statusFor(r);
-    // Lost the face, or two people in view: start over.
-    if (r.kind !== "face") samples = [];
-    if (hint) opts.onStatus(hint);
-    else if (r.kind === "face") {
+    if (hint) {
+      steady = 0;
+      opts.onStatus(hint);
+    } else if (r.kind === "face") {
+      steady += 1;
       if (r.descriptor) {
-        lastHeavy = Date.now();
-        const prev = samples[samples.length - 1];
-        samples =
-          prev && distance(prev, r.descriptor) <= SAME_SESSION
-            ? [prev, r.descriptor]
-            : [r.descriptor];
-      }
-      if (samples.length >= 2) {
         opts.onStatus("checking");
-        return { ok: true, descriptor: meanDescriptor(samples) };
+        return { ok: true, descriptor: r.descriptor };
       }
       opts.onStatus("hold");
     }
@@ -326,7 +344,7 @@ export async function scanLiveFace(
       backend,
       share: r.kind === "face" ? r.share : 0,
       score: r.kind === "face" ? r.score : 0,
-      samples: samples.length,
+      samples: steady,
       ms: Math.round(performance.now() - started),
       video: `${video.videoWidth}x${video.videoHeight}`,
       error,

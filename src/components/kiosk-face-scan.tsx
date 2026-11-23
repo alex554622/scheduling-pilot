@@ -13,6 +13,8 @@ import { translate, useT } from "@/lib/i18n";
 
 /** How long one scan watches for a live face before it stops and waits for a tap. */
 const SCAN_MS = 20_000;
+/** Keep the camera on this long between people, so the next scan starts at once. */
+const KEEP_CAMERA_MS = 20_000;
 /** Scans in a row before it stops and waits for a tap (each one is a server match). */
 const AUTO_RETRIES = 3;
 
@@ -71,7 +73,10 @@ export function KioskFaceScan({
       try {
         const video = videoRef.current;
         if (!video) return;
-        const [api, stopCam] = await Promise.all([loadFaceEngine(), startCamera(video)]);
+        const [api, stopCam] = await Promise.all([
+          loadFaceEngine(),
+          startCamera(video, KEEP_CAMERA_MS),
+        ]);
         stop = stopCam;
         if (cancelled) {
           stopCam();
@@ -154,7 +159,7 @@ export function KioskFaceScan({
         // Show the message for a moment, then look again.
         setTimeout(() => {
           if (!ctrl.signal.aborted) setRun((n) => n + 1);
-        }, 1500);
+        }, 800);
       } else {
         setPhase({ kind: "paused", message });
       }
@@ -204,7 +209,7 @@ export function KioskFaceScan({
           <pre className="pointer-events-none absolute left-1 top-1 rounded bg-black/70 px-2 py-1 text-left text-[11px] leading-tight text-emerald-300">
             {`${debug.frame}  ${debug.ms}ms  ${debug.backend}
 size ${debug.share.toFixed(2)}  score ${debug.score.toFixed(2)}
-samples ${debug.samples}  video ${debug.video}${
+steady ${debug.samples}  video ${debug.video}${
               debug.error
                 ? `
 error ${debug.error.slice(0, 80)}`
