@@ -3,7 +3,7 @@
  *
  * Uses Human (@vladmandic/human 3.3, MIT), the maintained successor of
  * face-api.js by the same author: the BlazeFace detector, a 478-point face
- * mesh with iris refinement, and the "faceres" recognition model, which turns
+ * mesh, and the "faceres" recognition model, which turns
  * a face into 1024 numbers. We scale those to length 1, so the distance
  * between two faces is between 0 (identical) and 2.
  *
@@ -19,10 +19,9 @@
  * anyone's face data. The library and models (~13 MB, public/vendor/human and
  * public/models/human) load only on the screens that use them.
  *
- * Liveness, on the clock-in only: a scan counts after the person blinks. The
- * blink is measured against that person's own eye openness, so it works for
- * every eye shape and on slow tablets. Adding a face doesn't ask for a blink:
- * an admin is there, or an admin approves it afterwards.
+ * No liveness check: the clock-in matches any steady face, without a blink.
+ * That keeps it fast on slow tablets, but a good photo of an enrolled person
+ * held up to the camera could clock them in. The PIN still works as before.
  */
 
 /** The parts of a Human detection result we use. */
@@ -64,7 +63,7 @@ const CONFIG = {
     enabled: true,
     detector: { rotation: true, maxDetected: 2, minConfidence: 0.5, skipFrames: 10, skipTime: 500 },
     mesh: { enabled: true },
-    iris: { enabled: true },
+    iris: { enabled: false },
     // Turned on per frame when we want a descriptor; never reused across frames.
     description: { enabled: true, skipFrames: 0, skipTime: 0 },
     emotion: { enabled: false },
@@ -136,18 +135,7 @@ export type FrameResult =
   | { kind: "many" }
   | { kind: "far" }
   | { kind: "turned" }
-  | { kind: "face"; eyes: number; score: number; share: number; descriptor: number[] | null };
-
-type Pt = [number, number, number?];
-const gap = (a: Pt, b: Pt) => Math.hypot(a[0] - b[0], a[1] - b[1]);
-
-/** Eye openness from the mesh: lid gap over eye width, both eyes averaged. */
-function eyeOpenness(mesh: Pt[]): number {
-  if (mesh.length < 400) return 0;
-  const left = gap(mesh[159], mesh[145]) / (gap(mesh[33], mesh[133]) || 1);
-  const right = gap(mesh[386], mesh[374]) / (gap(mesh[362], mesh[263]) || 1);
-  return (left + right) / 2;
-}
+  | { kind: "face"; score: number; share: number; descriptor: number[] | null };
 
 /**
  * A face must be at least this share of the frame width. Adding a face wants
@@ -188,7 +176,7 @@ export async function readFrame(
     withDescriptor && f.embedding && f.embedding.length === 1024 && f.score >= MIN_DESCRIPTOR_SCORE
       ? unit(f.embedding)
       : null;
-  return { kind: "face", eyes: eyeOpenness(f.mesh), score: f.score, share, descriptor };
+  return { kind: "face", score: f.score, share, descriptor };
 }
 
 export function distance(a: ArrayLike<number>, b: ArrayLike<number>): number {
@@ -225,50 +213,7 @@ export function steadySamples(list: number[][], max = SAME_SESSION): number[][] 
   return best;
 }
 
-/**
- * Notices a blink relative to the person's own eyes. "Open" is the typical
- * openness of the last ~1.5 s (70th percentile, so one noisy frame can't
- * move it). A blink is a drop below 75% of that and back above 88%. Works for
- * any eye shape, and a partial close counts, so a slow tablet that misses the
- * frame with the eyes fully shut still sees it.
- */
-export class BlinkTracker {
-  private recent: number[] = [];
-  private closed = false;
-  blinked = false;
-  /** Typical open-eye level, or 0 until there are enough frames. */
-  get open(): number {
-    if (this.recent.length < 4) return 0;
-    const sorted = [...this.recent].sort((a, b) => a - b);
-    return sorted[Math.floor(sorted.length * 0.7)];
-  }
-  push(eyes: number) {
-    if (eyes <= 0) return;
-    const open = this.open;
-    if (open > 0 && eyes < open * 0.75) this.closed = true;
-    else if (this.closed && open > 0 && eyes > open * 0.88) this.blinked = true;
-    // Closed-eye frames don't count towards "open".
-    if (!(open > 0 && eyes < open * 0.75)) {
-      this.recent.push(eyes);
-      if (this.recent.length > 20) this.recent.shift();
-    }
-  }
-  /** Not in the middle of a blink: a good frame to take a descriptor from. */
-  isOpen(eyes: number) {
-    const open = this.open;
-    return open === 0 || eyes >= open * 0.8;
-  }
-}
-
-export type ScanStatus =
-  | "starting"
-  | "look"
-  | "closer"
-  | "one"
-  | "straight"
-  | "blink"
-  | "hold"
-  | "checking";
+export type ScanStatus = "starting" | "look" | "closer" | "one" | "straight" | "hold" | "checking";
 
 export type ScanOutcome =
   | { ok: true; descriptor: number[] }
@@ -290,23 +235,19 @@ export type ScanDebug = {
   backend: string;
   share: number;
   score: number;
-  eyes: number;
-  open: number;
   samples: number;
-  blinked: boolean;
   ms: number;
 };
 
+/** Time between the two clock-in scans. */
+const GAP_MS = 250;
+
 /**
- * Clock-in: a live (blinking) face and two matching descriptors, averaged.
- *
- * Built for slow tablets, where a descriptor frame can take half a second: a
- * blink (100-300 ms) would fall between two such frames and never be seen.
- * So it takes ONE descriptor as soon as a face is steady, then runs only the
- * fast eye frames until the blink, then takes the second descriptor right
- * after it. The face that blinked is the face that gets matched: if the two
- * descriptors disagree (someone swapped in), it starts over. Gives up after
- * `timeoutMs`.
+ * Clock-in: two descriptors of the same face, about `GAP_MS` apart, averaged.
+ * No blink or other movement is asked for: it matches as soon as a face is
+ * steady in front of the camera. If a scan doesn't agree with the one before
+ * (blur, a turn, someone else stepping in) it keeps the newer one and tries
+ * again. Gives up after `timeoutMs`.
  */
 export async function scanLiveFace(
   human: FaceEngine,
@@ -318,7 +259,6 @@ export async function scanLiveFace(
     onDebug?: (d: ScanDebug) => void;
   },
 ): Promise<ScanOutcome> {
-  let blink = new BlinkTracker();
   let samples: number[][] = [];
   const deadline = Date.now() + opts.timeoutMs;
   let lastHeavy = 0;
@@ -326,10 +266,7 @@ export async function scanLiveFace(
   opts.onStatus("look");
   while (Date.now() < deadline) {
     if (opts.signal.aborted) return { ok: false, reason: "cancelled" };
-    const now = Date.now();
-    const wantDescriptor = blink.blinked
-      ? samples.length < 2 && now - lastHeavy > 100
-      : samples.length === 0 && now - lastHeavy > 600;
+    const wantDescriptor = Date.now() - lastHeavy >= GAP_MS;
     const started = performance.now();
     let r: FrameResult;
     try {
@@ -338,40 +275,31 @@ export async function scanLiveFace(
       r = { kind: "none" };
     }
     if (opts.signal.aborted) return { ok: false, reason: "cancelled" };
-    if (wantDescriptor) lastHeavy = Date.now();
     const hint = statusFor(r);
-    if (r.kind === "many") {
-      // Two people in view: start over.
-      samples = [];
-      blink = new BlinkTracker();
-    }
+    // Lost the face, or two people in view: start over.
+    if (r.kind !== "face") samples = [];
     if (hint) opts.onStatus(hint);
     else if (r.kind === "face") {
-      blink.push(r.eyes);
-      if (r.descriptor && blink.isOpen(r.eyes)) {
-        if (samples.length > 0 && distance(samples[0], r.descriptor) > SAME_SESSION) {
-          // Not the same face as before the blink: start over.
-          samples = [r.descriptor];
-          blink = new BlinkTracker();
-        } else {
-          samples.push(r.descriptor);
-        }
+      if (r.descriptor) {
+        lastHeavy = Date.now();
+        const prev = samples[samples.length - 1];
+        samples =
+          prev && distance(prev, r.descriptor) <= SAME_SESSION
+            ? [prev, r.descriptor]
+            : [r.descriptor];
       }
-      if (blink.blinked && samples.length >= 2) {
+      if (samples.length >= 2) {
         opts.onStatus("checking");
         return { ok: true, descriptor: meanDescriptor(samples) };
       }
-      opts.onStatus(blink.blinked ? "hold" : "blink");
+      opts.onStatus("hold");
     }
     opts.onDebug?.({
       frame: r.kind,
       backend,
       share: r.kind === "face" ? r.share : 0,
       score: r.kind === "face" ? r.score : 0,
-      eyes: r.kind === "face" ? r.eyes : 0,
-      open: blink.open,
       samples: samples.length,
-      blinked: blink.blinked,
       ms: Math.round(performance.now() - started),
     });
     // Yield to the page (and the camera) between frames.

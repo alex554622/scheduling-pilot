@@ -391,7 +391,7 @@ export const time: Record<string, string> = {
   "Too many faces not recognised. Use your PIN or try again in a minute.": "Demasiados rostros no reconocidos. Usa tu PIN o inténtalo de nuevo en un minuto.",
   "Face scan expired. Scan again.": "El escaneo del rostro caducó. Escanea de nuevo.",
   "Come a little closer": "Acércate un poco más",
-  "Look at the camera and blink": "Mira a la cámara y parpadea",
+  "Look at the camera": "Mira a la cámara",
   "Now blink": "Ahora parpadea",
   "Only one person in front of the camera, please.": "Solo una persona frente a la cámara, por favor.",
   "Starting the camera…": "Iniciando la cámara…",
@@ -460,5 +460,4 @@ export const time: Record<string, string> = {
   "Face saved": "Rostro guardado",
   "Close": "Cerrar",
   "Try again": "Intentar de nuevo",
-  "Blink slowly": "Parpadea despacio",
 };

@@ -68,21 +68,22 @@ different photos. At the tablet, scans come from one camera and are much
 closer than that.
 
 - **Library and models are static files**: `public/vendor/human/human.esm.js`
-  (2 MB) and `public/models/human` (BlazeFace, face mesh, iris, faceres,
-  about 12 MB). They load only on the clock-in screen and the enroll dialog.
+  (2 MB) and `public/models/human` (BlazeFace, face mesh, faceres,
+  about 11 MB). They load only on the clock-in screen and the enroll dialog.
   Bundling the library ran the production build out of memory, so it is
   loaded by URL. To upgrade, copy a newer `dist/human.esm.js` (without its
-  `sourceMappingURL` line) and the four models.
+  `sourceMappingURL` line) and the three models.
 - **Adding a face is automatic**: after the consent tick and **Start camera**
   it scans by itself, the oval turns green while it is taking good scans, and
   a bar fills up. It says "Come a little closer", "Look straight at the
   camera" or "Only one person" when needed. Blurry frames are dropped and
   taken again instead of failing. No blink is asked for.
-- **Clock-in still needs a blink**, so a photo held up to the camera doesn't
-  work. The blink is measured against each person's own eye openness (a 30%
-  drop and back), so it works for every eye shape and on slow tablets.
-  Human's own anti-spoof and liveness scores were tried and left off: on
-  genuine faces they ranged from 0.3 to 1.0, too unreliable to gate on.
+- **Clock-in needs no blink.** It takes two scans of the face about a quarter
+  of a second apart and matches as soon as they agree, so it is quick even on
+  slow tablets. An earlier version asked for a blink; it was removed because
+  people found it slow and hard to trigger. Human's own anti-spoof and
+  liveness scores were tried and left off: on genuine faces they ranged from
+  0.3 to 1.0, too unreliable to gate on.
 
 ## Security and privacy
 
@@ -106,9 +107,9 @@ closer than that.
 - **One face, one account.** Enrollment refuses a face that is within 0.80 of
   someone already enrolled. It also refuses a set of scans that don't match
   each other (someone else stepped in).
-- **Liveness.** A scan only counts after the person blinks, so a printed photo
-  or a still on a phone doesn't work. A video of the person could still beat
-  it. See "Known limits".
+- **No liveness check.** Any steady face is matched, so a clear photo of an
+  enrolled person held up to the camera could clock them in. See "Known
+  limits".
 - **Lockout.** 10 failed matches in a row lock face matching on that device for
   1 minute. The PIN has its own lockout (5 wrong codes) and keeps working.
 - **Tickets.** A match returns `face:<uuid>`, valid for 90 seconds and only on
@@ -119,7 +120,8 @@ closer than that.
 
 ## Known limits
 
-- Blink liveness can be fooled by a video of the person. To make cheating
+- There is no liveness check, so a photo or video of an enrolled person can
+  clock them in. To make cheating
   traceable, a later step could store a small snapshot with each face punch
   for admins to review. It isn't done, because photos weren't wanted.
 - The limits 0.80 / 0.06 are set in `kiosk_face_match`. If honest people are
@@ -129,10 +131,8 @@ closer than that.
 - To tune the clock-in on a real tablet, open the device link with
   `?debug=face` at the end. Live numbers show over the camera: face size
   (share of the frame width; under 0.12 asks to come closer), detection score
-  (a descriptor needs 0.6), eye openness against the person's normal open
-  level (a blink is under 75% and back), samples taken, and ms per frame.
-- The blink limit (75% of normal openness) can't be loosened safely: on a
-  still photo with camera-like jitter the openness wobbles down to 79%.
+  (a descriptor needs 0.6), samples taken (2 agreeing scans make a match),
+  and ms per frame.
 - Faces are per company. Someone in two companies is enrolled once in each.
 - Enroll from a device with a decent front camera, ideally the tablet itself.
 
@@ -174,16 +174,16 @@ employees (A and B) and a device with a front camera.
 **Clock-in (device link)**
 
 9. Open the device link. It shows the camera with an oval and "Look at the
-   camera and blink". The keypad is not shown.
-10. A looks and blinks. A's name and status appear, and Clock in works. The
+   camera". The keypad is not shown.
+10. A looks at the camera. A's name and status appear, and Clock in works. The
     confirmation shows, then the screen goes back to the camera.
 11. A clocks out the same way. Break buttons and the break lock work as
     with the PIN.
-12. Someone who isn't enrolled looks and blinks. After about 2 seconds they
+12. Someone who isn't enrolled looks at the camera. After about 2 seconds they
     see "Face not recognised. Try again or use your PIN." It retries twice,
     then shows **Tap to scan your face**.
-13. Hold up a photo of A on a phone (a still image). Nothing happens, because
-    it never blinks. After 20 seconds it shows **Tap to scan your face**.
+13. (Known limit) A clear photo of A held up to the camera is matched as A,
+    because there is no blink check.
 14. **Use PIN instead** shows the keypad, and A's PIN still works. **Use face
     instead** goes back to the camera. After any punch or Cancel, the next
     person starts on the camera again.
