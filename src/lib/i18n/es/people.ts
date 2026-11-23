@@ -332,8 +332,8 @@ export const people: Record<string, string> = {
   "The default for admins: they drop off the dashboard roster, the schedule grid, the timecard table and the list of people a shift can be traded with — on everyone's screen, including their own. They can still open their own timecard. To treat one person differently, use “Shows up on” in their Edit member dialog.":
     "Lo predeterminado para los administradores: desaparecen de la lista del panel, la cuadrícula del horario, la tabla de tarjetas de tiempo y la lista de personas con quienes se puede intercambiar un turno, en la pantalla de todos, incluida la suya. Aún pueden abrir su propia tarjeta de tiempo. Para tratar a una persona de otra forma, usa “Aparece en” en su diálogo Editar miembro.",
   "Keep departments separate": "Mantener los departamentos separados",
-  "On: each employee sees only their own department — its people, schedule, open shifts, time off and shift trades — plus people with no department, their own supervisors and anyone they supervise. Admins always see everything; someone with no department sees only the office until you assign one. Off: everyone sees the whole company.":
-    "Activado: cada empleado ve solo su propio departamento (su personal, horario, turnos abiertos, tiempo libre e intercambios de turnos), además de las personas sin departamento, sus propios supervisores y a quienes supervisa. Los administradores siempre ven todo; quien no tenga departamento solo ve a la oficina hasta que le asignes uno. Desactivado: todos ven toda la empresa.",
+  "On: each employee sees only their own department — its people, schedule, open shifts, time off and shift trades — plus people with no department, their own supervisors and anyone they supervise. Admins always see everything; someone with no department sees only the office until you assign one. Off: everyone sees the whole company. To have one team see only themselves, use Team rules.":
+    "Activado: cada empleado ve solo su propio departamento (su personal, horario, turnos abiertos, tiempo libre e intercambios de turnos), además de las personas sin departamento, sus propios supervisores y a quienes supervisa. Los administradores siempre ven todo; quien no tenga departamento solo ve a la oficina hasta que le asignes uno. Desactivado: todos ven toda la empresa. Para que un equipo solo se vea a sí mismo, usa Reglas del equipo.",
   "Employees can see coworkers on the dashboard": "Los empleados pueden ver a sus compañeros en el panel",
   "On: the dashboard shows each employee who else is working, on a break or due in today. Off: employees see only themselves — their own status and their own shift. Admins always see everyone.":
     "Activado: el panel muestra a cada empleado quién más está trabajando, en descanso o por entrar hoy. Desactivado: los empleados solo se ven a sí mismos — su propio estado y su propio turno. Los administradores siempre ven a todos.",
@@ -500,7 +500,7 @@ export const people: Record<string, string> = {
   "Replace their clock-in locations with:": "Reemplazar sus ubicaciones para registrar entrada con:",
   // Team rules
   "Team rules": "Reglas del equipo",
-  "Clock-in and timesheet rules for one team. Anything you leave on the company setting follows the App rules.": "Reglas de entrada y de hojas de horas para un equipo. Lo que dejes con el ajuste de la empresa sigue las Reglas de la app.",
+  "Clock-in, timesheet and visibility rules for one team. Anything you leave on the company setting follows the App rules.": "Reglas de entrada, de hojas de horas y de visibilidad para un equipo. Lo que dejes con el ajuste de la empresa sigue las Reglas de la app.",
   "No teams to set rules for": "No hay equipos para los que puedas fijar reglas",
   "Team rules apply to departments. Add departments under Organization first.": "Las reglas del equipo se aplican a departamentos. Primero agrega departamentos en Organización.",
   "Only company admins, and supervisors of a whole department, can set team rules.": "Solo los administradores de la empresa y los supervisores de un departamento completo pueden fijar reglas del equipo.",
@@ -520,6 +520,10 @@ export const people: Record<string, string> = {
   "{name} — company rules": "{name} — reglas de la empresa",
   "Company: {n}": "Empresa: {n}",
   "Timesheet rules": "Reglas de hojas de horas",
+  "Who they can see": "Qué pueden ver",
+  "Employees see only themselves": "Los empleados solo se ven a sí mismos",
+  "On: employees in this team see only their own shifts on the schedule and only themselves on the dashboard. Open shifts still show so they can pick one up. Admins and supervisors still see everyone.":
+    "Activado: los empleados de este equipo solo ven sus propios turnos en el horario y solo a sí mismos en el panel. Los turnos abiertos se siguen mostrando para que puedan tomar uno. Los administradores y supervisores siguen viendo a todos.",
   "Round punches to": "Redondear registros a",
   "{n} min": "{n} min",
   "No rounding": "Sin redondeo",

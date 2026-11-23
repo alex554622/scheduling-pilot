@@ -511,7 +511,7 @@ export function AppRulesPanel() {
             />
             <ToggleRow
               label="Keep departments separate"
-              description="On: each employee sees only their own department — its people, schedule, open shifts, time off and shift trades — plus people with no department, their own supervisors and anyone they supervise. Admins always see everything; someone with no department sees only the office until you assign one. Off: everyone sees the whole company."
+              description="On: each employee sees only their own department — its people, schedule, open shifts, time off and shift trades — plus people with no department, their own supervisors and anyone they supervise. Admins always see everything; someone with no department sees only the office until you assign one. Off: everyone sees the whole company. To have one team see only themselves, use Team rules."
               checked={rules.departments_separate}
               onChange={(v) => set("departments_separate", v)}
             />

@@ -31,6 +31,8 @@ export type TeamRules = Partial<{
   daily_double_time_hours: number;
   overtime_threshold_hours: number;
   require_edit_note: boolean;
+  /** Employees in this team see only their own shifts and status. */
+  staff_see_only_self: boolean;
 }>;
 
 export type TeamRuleKey = keyof TeamRules;

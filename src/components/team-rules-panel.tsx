@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useT } from "@/lib/i18n";
-import { Check, Clock, FileClock, Loader2, ShieldAlert, Users } from "lucide-react";
+import { Check, Clock, Eye, FileClock, Loader2, ShieldAlert, Users } from "lucide-react";
 
 const BOOL_RULES: { key: TeamRuleKey; label: string; detail?: string }[] = [
   {
@@ -52,6 +52,15 @@ const TIMESHEET_BOOLS: { key: TeamRuleKey; label: string; detail?: string }[] = 
     label: "Require a note when someone edits this team's time",
     detail:
       "Admins and supervisors must say why when they add, change or delete a punch for this team.",
+  },
+];
+
+const VISIBILITY_BOOLS: { key: TeamRuleKey; label: string; detail?: string }[] = [
+  {
+    key: "staff_see_only_self",
+    label: "Employees see only themselves",
+    detail:
+      "On: employees in this team see only their own shifts on the schedule and only themselves on the dashboard. Open shifts still show so they can pick one up. Admins and supervisors still see everyone.",
   },
 ];
 
@@ -258,7 +267,7 @@ export function TeamRulesPanel() {
         <h2 className="text-2xl font-semibold text-foreground">{t("Team rules")}</h2>
         <p className="text-sm text-muted-foreground">
           {t(
-            "Clock-in and timesheet rules for one team. Anything you leave on the company setting follows the App rules.",
+            "Clock-in, timesheet and visibility rules for one team. Anything you leave on the company setting follows the App rules.",
           )}
         </p>
       </div>
@@ -408,6 +417,14 @@ export function TeamRulesPanel() {
             </div>
           )}
         </div>
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
+        <div className="mb-4 flex items-center gap-2">
+          <Eye className="h-5 w-5 text-primary" />
+          <h3 className="font-semibold text-foreground">{t("Who they can see")}</h3>
+        </div>
+        <div className="space-y-3">{VISIBILITY_BOOLS.map(boolRow)}</div>
       </section>
 
       <p className="text-xs text-muted-foreground">
