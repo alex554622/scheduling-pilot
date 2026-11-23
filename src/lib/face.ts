@@ -35,7 +35,7 @@ type HumanFace = {
 type HumanResult = { face: HumanFace[] };
 type HumanInstance = {
   load(): Promise<void>;
-  warmup(): Promise<unknown>;
+  warmup(config?: unknown): Promise<HumanResult | undefined>;
   detect(input: HTMLVideoElement, config?: unknown): Promise<HumanResult>;
   tf: { getBackend(): string };
 };
@@ -50,10 +50,11 @@ export type FaceEngine = HumanInstance;
  * (drop its sourceMappingURL line) and the face models into /models/human.
  */
 const HUMAN_URL = "/vendor/human/human.esm.js";
+/** TensorFlow.js 4.22 WASM files (Apache-2.0), served next to the library. */
+const WASM_URL = "/vendor/tfjs-wasm/";
 
 const CONFIG = {
   modelBasePath: "/models/human/",
-  backend: "webgl",
   debug: false,
   // Reuse the face box between video frames: much faster, the mesh still
   // runs every frame.
@@ -87,21 +88,41 @@ export function loadFaceEngine(): Promise<FaceEngine> {
     // public files. Works the same in the build and in the mobile apps.
     const url = new URL(HUMAN_URL, window.location.origin).href;
     const mod = (await import(/* @vite-ignore */ url)) as HumanModule;
-    let human = new mod.Human(CONFIG);
-    try {
-      await human.load();
-    } catch {
-      // No WebGL: the CPU backend is slow but works.
-      human = new mod.Human({ ...CONFIG, backend: "cpu" });
-      await human.load();
+    // WASM first: fast, and the same on every device. WebGL depends on the
+    // graphics driver, and some Android tablets run it but get wrong numbers
+    // back, so no face is ever found. Each one must find Human's built-in
+    // test face before it is used; the CPU is the slow last resort.
+    const wasmPath = new URL(WASM_URL, window.location.origin).href;
+    for (const backend of ["wasm", "webgl"]) {
+      try {
+        const human = new mod.Human({ ...CONFIG, backend, wasmPath });
+        await human.load();
+        if (await selfTest(human)) return human;
+        console.warn(`[face] ${backend} can't find the test face here`);
+      } catch (e) {
+        console.warn(`[face] ${backend} unavailable`, e);
+      }
     }
-    await human.warmup();
+    const human = new mod.Human({ ...CONFIG, backend: "cpu" });
+    await human.load();
+    await human.warmup({ warmup: "face" });
     return human;
   })().catch((e: unknown) => {
     enginePromise = null;
     throw e;
   });
   return enginePromise;
+}
+
+/** Finds Human's own sample face, with a usable descriptor. */
+async function selfTest(human: HumanInstance): Promise<boolean> {
+  try {
+    const r = await human.warmup({ warmup: "face" });
+    const f = r?.face?.[0];
+    return !!f && f.score >= 0.5 && f.embedding?.length === 1024;
+  } catch {
+    return false;
+  }
 }
 
 /** Whether this browser can open a camera at all (secure context + API). */
@@ -237,6 +258,10 @@ export type ScanDebug = {
   score: number;
   samples: number;
   ms: number;
+  /** Camera picture size, e.g. 640x480 (0x0 = no picture yet). */
+  video: string;
+  /** The last detector error, if any. */
+  error: string;
 };
 
 /** Time between the two clock-in scans. */
@@ -263,6 +288,7 @@ export async function scanLiveFace(
   const deadline = Date.now() + opts.timeoutMs;
   let lastHeavy = 0;
   const backend = human.tf.getBackend();
+  let error = "";
   opts.onStatus("look");
   while (Date.now() < deadline) {
     if (opts.signal.aborted) return { ok: false, reason: "cancelled" };
@@ -271,7 +297,8 @@ export async function scanLiveFace(
     let r: FrameResult;
     try {
       r = await readFrame(human, video, wantDescriptor, KIOSK_FACE_SHARE);
-    } catch {
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
       r = { kind: "none" };
     }
     if (opts.signal.aborted) return { ok: false, reason: "cancelled" };
@@ -301,6 +328,8 @@ export async function scanLiveFace(
       score: r.kind === "face" ? r.score : 0,
       samples: samples.length,
       ms: Math.round(performance.now() - started),
+      video: `${video.videoWidth}x${video.videoHeight}`,
+      error,
     });
     // Yield to the page (and the camera) between frames.
     await pause(0);

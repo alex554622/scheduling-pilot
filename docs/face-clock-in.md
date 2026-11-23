@@ -73,6 +73,13 @@ closer than that.
   Bundling the library ran the production build out of memory, so it is
   loaded by URL. To upgrade, copy a newer `dist/human.esm.js` (without its
   `sourceMappingURL` line) and the three models.
+- **How it runs (backend)**: WASM first (`public/vendor/tfjs-wasm`, the
+  TensorFlow.js 4.22 files that match Human), then WebGL, then the CPU. Each
+  must find Human's built-in test face before it is used. WebGL alone failed
+  on some Android tablets: it ran, but never found a face ("Look at the
+  camera" forever, and the server never got a scan). WASM doesn't depend on
+  the graphics driver and was as fast here (~20 ms a frame). The `?debug=face`
+  overlay shows which one is in use, the camera size and any detector error.
 - **Adding a face is automatic**: after the consent tick and **Start camera**
   it scans by itself, the oval turns green while it is taking good scans, and
   a bar fills up. It says "Come a little closer", "Look straight at the

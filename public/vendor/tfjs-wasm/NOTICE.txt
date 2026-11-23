@@ -1,0 +1,5 @@
+tfjs-backend-wasm-simd.wasm and tfjs-backend-wasm.wasm are from
+@tensorflow/tfjs-backend-wasm 4.22.0 (npm), the TensorFlow.js version bundled
+in ../human/human.esm.js. Licensed under the Apache License 2.0:
+https://www.apache.org/licenses/LICENSE-2.0
+Copyright 2019-2024 Google LLC.

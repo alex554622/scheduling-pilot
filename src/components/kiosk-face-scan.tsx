@@ -204,7 +204,12 @@ export function KioskFaceScan({
           <pre className="pointer-events-none absolute left-1 top-1 rounded bg-black/70 px-2 py-1 text-left text-[11px] leading-tight text-emerald-300">
             {`${debug.frame}  ${debug.ms}ms  ${debug.backend}
 size ${debug.share.toFixed(2)}  score ${debug.score.toFixed(2)}
-samples ${debug.samples}`}
+samples ${debug.samples}  video ${debug.video}${
+              debug.error
+                ? `
+error ${debug.error.slice(0, 80)}`
+                : ""
+            }`}
           </pre>
         )}
         {(phase.kind === "loading" || phase.kind === "matching") && (
