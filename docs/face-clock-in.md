@@ -126,6 +126,13 @@ closer than that.
   often refused in poor light, raise `max_dist` slightly (e.g. 0.85, still
   under the 0.88 closest pair of different people measured). Re-enrolling in
   the tablet's own light usually helps more.
+- To tune the clock-in on a real tablet, open the device link with
+  `?debug=face` at the end. Live numbers show over the camera: face size
+  (share of the frame width; under 0.12 asks to come closer), detection score
+  (a descriptor needs 0.6), eye openness against the person's normal open
+  level (a blink is under 75% and back), samples taken, and ms per frame.
+- The blink limit (75% of normal openness) can't be loosened safely: on a
+  still photo with camera-like jitter the openness wobbles down to 79%.
 - Faces are per company. Someone in two companies is enrolled once in each.
 - Enroll from a device with a decent front camera, ideally the tablet itself.
 

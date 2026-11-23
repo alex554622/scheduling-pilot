@@ -136,7 +136,7 @@ export type FrameResult =
   | { kind: "many" }
   | { kind: "far" }
   | { kind: "turned" }
-  | { kind: "face"; eyes: number; descriptor: number[] | null };
+  | { kind: "face"; eyes: number; score: number; share: number; descriptor: number[] | null };
 
 type Pt = [number, number, number?];
 const gap = (a: Pt, b: Pt) => Math.hypot(a[0] - b[0], a[1] - b[1]);
@@ -149,8 +149,14 @@ function eyeOpenness(mesh: Pt[]): number {
   return (left + right) / 2;
 }
 
-/** A face must be at least this share of the frame width (close enough). */
-const MIN_FACE_SHARE = 0.2;
+/**
+ * A face must be at least this share of the frame width. Adding a face wants
+ * it close; the clock-in accepts people standing further back.
+ */
+export const ENROLL_FACE_SHARE = 0.2;
+export const KIOSK_FACE_SHARE = 0.12;
+/** Detection confidence a descriptor needs (Human's face score, 0 to 1). */
+const MIN_DESCRIPTOR_SCORE = 0.6;
 /** Head turned further than this (radians, ~20°) gives a poorer descriptor. */
 const MAX_TURN = 0.35;
 
@@ -164,6 +170,7 @@ export async function readFrame(
   human: FaceEngine,
   video: HTMLVideoElement,
   withDescriptor: boolean,
+  minShare = ENROLL_FACE_SHARE,
 ): Promise<FrameResult> {
   if (video.readyState < 2 || !video.videoWidth) return { kind: "none" };
   // Human keeps per-call settings, so say both ways every time.
@@ -172,15 +179,16 @@ export async function readFrame(
   if (faces.length === 0) return { kind: "none" };
   if (faces.length > 1) return { kind: "many" };
   const f = faces[0];
-  if (f.box[2] < video.videoWidth * MIN_FACE_SHARE) return { kind: "far" };
+  const share = f.box[2] / video.videoWidth;
+  if (share < minShare) return { kind: "far" };
   const angle = f.rotation?.angle;
   const turned = !!angle && (Math.abs(angle.yaw) > MAX_TURN || Math.abs(angle.pitch) > MAX_TURN);
   if (turned) return { kind: "turned" };
   const descriptor =
-    withDescriptor && f.embedding && f.embedding.length === 1024 && f.score >= 0.7
+    withDescriptor && f.embedding && f.embedding.length === 1024 && f.score >= MIN_DESCRIPTOR_SCORE
       ? unit(f.embedding)
       : null;
-  return { kind: "face", eyes: eyeOpenness(f.mesh), descriptor };
+  return { kind: "face", eyes: eyeOpenness(f.mesh), score: f.score, share, descriptor };
 }
 
 export function distance(a: ArrayLike<number>, b: ArrayLike<number>): number {
@@ -218,25 +226,37 @@ export function steadySamples(list: number[][], max = SAME_SESSION): number[][] 
 }
 
 /**
- * Notices a blink relative to the person's own eyes: openness drops below
- * 70% of what it usually is, then comes back above 85%. Works for any eye
- * shape, and a partial close counts, so a slow tablet that misses the frame
- * with the eyes fully shut still sees it.
+ * Notices a blink relative to the person's own eyes. "Open" is the typical
+ * openness of the last ~1.5 s (70th percentile, so one noisy frame can't
+ * move it). A blink is a drop below 75% of that and back above 88%. Works for
+ * any eye shape, and a partial close counts, so a slow tablet that misses the
+ * frame with the eyes fully shut still sees it.
  */
 export class BlinkTracker {
-  private open = 0;
+  private recent: number[] = [];
   private closed = false;
   blinked = false;
+  /** Typical open-eye level, or 0 until there are enough frames. */
+  get open(): number {
+    if (this.recent.length < 4) return 0;
+    const sorted = [...this.recent].sort((a, b) => a - b);
+    return sorted[Math.floor(sorted.length * 0.7)];
+  }
   push(eyes: number) {
     if (eyes <= 0) return;
-    // Running "eyes open" level: rises quickly, falls slowly.
-    this.open = this.open === 0 ? eyes : Math.max(eyes, this.open * 0.98 + eyes * 0.02);
-    if (eyes < this.open * 0.7) this.closed = true;
-    else if (this.closed && eyes > this.open * 0.85) this.blinked = true;
+    const open = this.open;
+    if (open > 0 && eyes < open * 0.75) this.closed = true;
+    else if (this.closed && open > 0 && eyes > open * 0.88) this.blinked = true;
+    // Closed-eye frames don't count towards "open".
+    if (!(open > 0 && eyes < open * 0.75)) {
+      this.recent.push(eyes);
+      if (this.recent.length > 20) this.recent.shift();
+    }
   }
-  /** Eyes open now: a good frame to take a descriptor from. */
+  /** Not in the middle of a blink: a good frame to take a descriptor from. */
   isOpen(eyes: number) {
-    return this.open > 0 && eyes >= this.open * 0.8;
+    const open = this.open;
+    return open === 0 || eyes >= open * 0.8;
   }
 }
 
@@ -264,15 +284,33 @@ function statusFor(r: FrameResult): ScanStatus | null {
   return null;
 }
 
+/** Live numbers for the ?debug=face overlay on the clock-in. */
+export type ScanDebug = {
+  frame: FrameResult["kind"];
+  share: number;
+  score: number;
+  eyes: number;
+  open: number;
+  samples: number;
+  blinked: boolean;
+  ms: number;
+};
+
 /**
- * Clock-in: watches the camera until it has a live (blinking) face and three
- * matching descriptors from open-eye frames, then returns their average.
- * Gives up after `timeoutMs`.
+ * Clock-in: watches the camera until it has a live (blinking) face and two
+ * matching descriptors, then returns their average. Descriptors are taken
+ * while the person looks at the camera, before and after the blink, so the
+ * blink is usually the last thing needed. Gives up after `timeoutMs`.
  */
 export async function scanLiveFace(
   human: FaceEngine,
   video: HTMLVideoElement,
-  opts: { timeoutMs: number; signal: AbortSignal; onStatus: (s: ScanStatus) => void },
+  opts: {
+    timeoutMs: number;
+    signal: AbortSignal;
+    onStatus: (s: ScanStatus) => void;
+    onDebug?: (d: ScanDebug) => void;
+  },
 ): Promise<ScanOutcome> {
   const blink = new BlinkTracker();
   let samples: number[][] = [];
@@ -281,11 +319,12 @@ export async function scanLiveFace(
   opts.onStatus("look");
   while (Date.now() < deadline) {
     if (opts.signal.aborted) return { ok: false, reason: "cancelled" };
-    // A descriptor at most every 250 ms; the mesh (for the blink) every frame.
-    const wantDescriptor = samples.length < 5 && Date.now() - lastSample > 250;
+    // A descriptor at most every 200 ms; the mesh (for the blink) every frame.
+    const wantDescriptor = samples.length < 4 && Date.now() - lastSample > 200;
+    const started = performance.now();
     let r: FrameResult;
     try {
-      r = await readFrame(human, video, wantDescriptor);
+      r = await readFrame(human, video, wantDescriptor, KIOSK_FACE_SHARE);
     } catch {
       r = { kind: "none" };
     }
@@ -296,17 +335,26 @@ export async function scanLiveFace(
     else if (r.kind === "face") {
       blink.push(r.eyes);
       if (r.descriptor && blink.isOpen(r.eyes)) {
-        samples.push(r.descriptor);
+        samples = steadySamples([...samples, r.descriptor]);
         lastSample = Date.now();
-        samples = steadySamples(samples);
       }
-      if (blink.blinked && samples.length >= 3) {
+      if (blink.blinked && samples.length >= 2) {
         opts.onStatus("checking");
         return { ok: true, descriptor: meanDescriptor(samples) };
       }
       opts.onStatus(blink.blinked ? "hold" : "blink");
     }
-    await pause(15);
+    opts.onDebug?.({
+      frame: r.kind,
+      share: r.kind === "face" ? r.share : 0,
+      score: r.kind === "face" ? r.score : 0,
+      eyes: r.kind === "face" ? r.eyes : 0,
+      open: blink.open,
+      samples: samples.length,
+      blinked: blink.blinked,
+      ms: Math.round(performance.now() - started),
+    });
+    await pause(5);
   }
   return { ok: false, reason: "timeout" };
 }

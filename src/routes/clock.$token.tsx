@@ -4,7 +4,7 @@ import { Coffee, Delete, KeyRound, LogIn, LogOut, Loader2, CheckCircle2, ScanFac
 import { supabase } from "@/integrations/supabase/client";
 import { BrandLogo } from "@/components/brand";
 import { KioskFaceScan } from "@/components/kiosk-face-scan";
-import { cameraSupported } from "@/lib/face";
+import { cameraSupported, loadFaceEngine } from "@/lib/face";
 import {
   KioskSlideshow,
   playableSlides,
@@ -241,6 +241,11 @@ function SharedClockInPage() {
   const [faceBroken, setFaceBroken] = useState<string | null>(null);
   const [usePin, setUsePin] = useState(false);
   const faceMode = faceAvailable && !faceBroken && !usePin;
+  // Load the face models as soon as face clock-in is on, even behind the
+  // slideshow, so the first person in front of the camera doesn't wait.
+  useEffect(() => {
+    if (faceAvailable) void loadFaceEngine().catch(() => undefined);
+  }, [faceAvailable]);
   // A new key restarts the face scan (camera stays off while it isn't shown).
   const [scanKey, setScanKey] = useState(0);
 

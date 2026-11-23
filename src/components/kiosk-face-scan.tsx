@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, ScanFace } from "lucide-react";
+import { Eye, Loader2, ScanFace } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import {
   loadFaceEngine,
   scanLiveFace,
   startCamera,
   type FaceEngine,
+  type ScanDebug,
   type ScanStatus,
 } from "@/lib/face";
 import { translate, useT } from "@/lib/i18n";
@@ -49,6 +50,11 @@ export function KioskFaceScan({
   const [run, setRun] = useState(0);
   const apiRef = useRef<FaceEngine | null>(null);
   const failures = useRef(0);
+  // ?debug=face on the device link shows live numbers over the camera.
+  const [debugOn] = useState(
+    () => typeof window !== "undefined" && /[?&]debug=face/.test(window.location.search),
+  );
+  const [debug, setDebug] = useState<ScanDebug | null>(null);
 
   // Keep the latest callbacks without restarting the camera when they change.
   const cb = useRef({ onTicket, onUnavailable, onActivity });
@@ -105,6 +111,7 @@ export function KioskFaceScan({
       const outcome = await scanLiveFace(api, video, {
         timeoutMs: SCAN_MS,
         signal: ctrl.signal,
+        onDebug: debugOn ? (d) => !ctrl.signal.aborted && setDebug(d) : undefined,
         onStatus: (status) => {
           if (ctrl.signal.aborted) return;
           if (status !== "look") cb.current.onActivity();
@@ -153,7 +160,7 @@ export function KioskFaceScan({
       }
     })();
     return () => ctrl.abort();
-  }, [ready, run, token, t]);
+  }, [ready, run, token, t, debugOn]);
 
   const again = useCallback(() => {
     failures.current = 0;
@@ -173,7 +180,7 @@ export function KioskFaceScan({
               : phase.status === "straight"
                 ? t("Look straight at the camera")
                 : phase.status === "blink"
-                  ? t("Now blink")
+                  ? t("Look at the camera and blink")
                   : phase.status === "hold"
                     ? t("Great, hold still…")
                     : phase.status === "checking"
@@ -195,6 +202,20 @@ export function KioskFaceScan({
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div className="h-[78%] w-[52%] rounded-[50%] border-4 border-white/70" />
         </div>
+        {phase.kind === "scanning" && phase.status === "blink" && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center gap-3 bg-gradient-to-t from-black/80 to-transparent px-4 pb-5 pt-10 text-white">
+            <Eye className="h-9 w-9 animate-pulse" />
+            <span className="text-2xl font-bold">{t("Blink your eyes")}</span>
+          </div>
+        )}
+        {debugOn && debug && (
+          <pre className="pointer-events-none absolute left-1 top-1 rounded bg-black/70 px-2 py-1 text-left text-[11px] leading-tight text-emerald-300">
+            {`${debug.frame}  ${debug.ms}ms
+size ${debug.share.toFixed(2)}  score ${debug.score.toFixed(2)}
+eyes ${debug.eyes.toFixed(3)} / open ${debug.open.toFixed(3)}
+samples ${debug.samples}  blinked ${debug.blinked ? "yes" : "no"}`}
+          </pre>
+        )}
         {(phase.kind === "loading" || phase.kind === "matching") && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/40">
             <Loader2 className="h-10 w-10 animate-spin text-white" />
