@@ -19,8 +19,9 @@ import { translateRuleMessage } from "@/lib/team-rules";
  * The shared clock-in screen: a tablet by the door that belongs to nobody.
  *
  * It is deliberately outside `_authenticated` and holds no session. Staff are
- * identified by their face (the default, once an admin has enrolled faces) or
- * by a 4-digit PIN. A face match on the server gives a short-lived ticket that
+ * identified by a 4-digit PIN (the default) or, once an admin has enrolled
+ * faces, by their face from a "Use face" button. A face match on the server
+ * gives a short-lived ticket that
  * stands in for the PIN, so both paths punch through the same kiosk_state /
  * kiosk_punch rules. Every action goes through a kiosk_* RPC
  * that authenticates the *device* by the token in this URL. There is nothing
@@ -236,13 +237,14 @@ function SharedClockInPage() {
     });
   }, [token, t]);
 
-  // Face is the default way in; the PIN keypad is the second option.
+  // The PIN keypad is the default way in; face is the second option, a button
+  // under the keypad that opens the camera.
   const faceAvailable = useFaceAvailable(token);
   const [faceBroken, setFaceBroken] = useState<string | null>(null);
-  const [usePin, setUsePin] = useState(false);
-  const faceMode = faceAvailable && !faceBroken && !usePin;
+  const [useFace, setUseFace] = useState(false);
+  const faceMode = faceAvailable && !faceBroken && useFace;
   // Load the face models as soon as face clock-in is on, even behind the
-  // slideshow, so the first person in front of the camera doesn't wait.
+  // slideshow, so whoever taps "Use face" doesn't wait.
   useEffect(() => {
     if (faceAvailable) void loadFaceEngine().catch(() => undefined);
   }, [faceAvailable]);
@@ -253,8 +255,8 @@ function SharedClockInPage() {
     setCode("");
     setPerson(null);
     setError(null);
-    // The next person starts on the face scan again.
-    setUsePin(false);
+    // The next person starts on the keypad again.
+    setUseFace(false);
     setScanKey((k) => k + 1);
   }, []);
 
@@ -462,7 +464,7 @@ function SharedClockInPage() {
             type="button"
             onClick={() => {
               setError(null);
-              setUsePin(true);
+              setUseFace(false);
             }}
             disabled={busy}
             className="mx-auto mt-6 flex items-center gap-2 rounded-xl border border-border bg-card px-6 py-4 text-lg font-medium text-foreground shadow-sm hover:bg-accent disabled:opacity-50"
@@ -529,14 +531,22 @@ function SharedClockInPage() {
             </KeypadKey>
           </div>
           {faceAvailable && !faceBroken && (
-            <button
-              type="button"
-              onClick={reset}
-              disabled={busy}
-              className="mx-auto mt-6 flex items-center gap-2 px-4 py-3 text-base font-medium text-muted-foreground hover:text-foreground disabled:opacity-50"
-            >
-              <ScanFace className="h-5 w-5" /> {t("Use face instead")}
-            </button>
+            <div className="mx-auto mt-6 max-w-xs">
+              <p className="mb-3 text-center text-sm text-muted-foreground">{t("or")}</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setCode("");
+                  setError(null);
+                  setScanKey((k) => k + 1);
+                  setUseFace(true);
+                }}
+                disabled={busy}
+                className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl border border-border bg-card text-lg font-medium text-foreground shadow-sm transition-colors hover:bg-accent active:bg-accent disabled:opacity-50"
+              >
+                <ScanFace className="h-6 w-6 text-primary" /> {t("Use face instead")}
+              </button>
+            </div>
           )}
         </div>
       )}

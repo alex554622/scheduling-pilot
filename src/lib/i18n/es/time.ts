@@ -402,7 +402,7 @@ export const time: Record<string, string> = {
   "This device has no camera. Use your PIN.": "Este dispositivo no tiene cámara. Usa tu PIN.",
   "Face clock-in can't start on this device. Use your PIN.": "El registro con rostro no puede iniciar en este dispositivo. Usa tu PIN.",
   "Face and PIN": "Rostro y PIN",
-  "On the shared device people clock in by looking at the camera. Enroll each person's face here, from a device with a camera, with them in front of it. Their 4-digit PIN is the backup: give someone a new PIN any time and the old one stops working straight away.": "En el dispositivo compartido, las personas registran su entrada mirando a la cámara. Registra aquí el rostro de cada persona, desde un dispositivo con cámara y con la persona frente a ella. Su PIN de 4 dígitos es la alternativa: dale a alguien un PIN nuevo cuando quieras y el anterior deja de funcionar de inmediato.",
+  "On the shared device people clock in with their 4-digit PIN, or tap “Use face instead” and look at the camera. Enroll each person's face here, from a device with a camera, with them in front of it. Give someone a new PIN any time and the old one stops working straight away.": "En el dispositivo compartido, las personas registran su entrada con su PIN de 4 dígitos, o tocan “Usar rostro” y miran a la cámara. Registra aquí el rostro de cada persona, desde un dispositivo con cámara y con la persona frente a ella. Dale a alguien un PIN nuevo cuando quieras y el anterior deja de funcionar de inmediato.",
   "No photos are kept: only a set of numbers describing the face, which can't be turned back into a picture and which only the clock-in can use. Remove someone's face at any time.": "No se guardan fotos: solo un conjunto de números que describe el rostro, que no se puede convertir de nuevo en una imagen y que solo el registro de entrada puede usar. Puedes eliminar el rostro de alguien en cualquier momento.",
   "Face enrolled": "Rostro registrado",
   "Enroll face": "Registrar rostro",
@@ -460,4 +460,5 @@ export const time: Record<string, string> = {
   "Face saved": "Rostro guardado",
   "Close": "Cerrar",
   "Try again": "Intentar de nuevo",
+  "or": "o",
 };

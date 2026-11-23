@@ -307,7 +307,7 @@ function SharedClockInAdminPage() {
         <h2 className="text-lg font-semibold text-foreground">{t("Face and PIN")}</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           {t(
-            "On the shared device people clock in by looking at the camera. Enroll each person's face here, from a device with a camera, with them in front of it. Their 4-digit PIN is the backup: give someone a new PIN any time and the old one stops working straight away.",
+            "On the shared device people clock in with their 4-digit PIN, or tap “Use face instead” and look at the camera. Enroll each person's face here, from a device with a camera, with them in front of it. Give someone a new PIN any time and the old one stops working straight away.",
           )}
         </p>
         <p className="mt-2 text-xs text-muted-foreground">
