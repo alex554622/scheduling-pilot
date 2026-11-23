@@ -331,6 +331,9 @@ export const people: Record<string, string> = {
   "Hide admins from the rosters": "Ocultar a los administradores de las listas",
   "The default for admins: they drop off the dashboard roster, the schedule grid, the timecard table and the list of people a shift can be traded with — on everyone's screen, including their own. They can still open their own timecard. To treat one person differently, use “Shows up on” in their Edit member dialog.":
     "Lo predeterminado para los administradores: desaparecen de la lista del panel, la cuadrícula del horario, la tabla de tarjetas de tiempo y la lista de personas con quienes se puede intercambiar un turno, en la pantalla de todos, incluida la suya. Aún pueden abrir su propia tarjeta de tiempo. Para tratar a una persona de otra forma, usa “Aparece en” en su diálogo Editar miembro.",
+  "Keep departments separate": "Mantener los departamentos separados",
+  "On: each employee sees only their own department — its people, schedule, open shifts, time off and shift trades — plus people with no department, their own supervisors and anyone they supervise. Admins always see everything; someone with no department sees only the office until you assign one. Off: everyone sees the whole company.":
+    "Activado: cada empleado ve solo su propio departamento (su personal, horario, turnos abiertos, tiempo libre e intercambios de turnos), además de las personas sin departamento, sus propios supervisores y a quienes supervisa. Los administradores siempre ven todo; quien no tenga departamento solo ve a la oficina hasta que le asignes uno. Desactivado: todos ven toda la empresa.",
   "Employees can see coworkers on the dashboard": "Los empleados pueden ver a sus compañeros en el panel",
   "On: the dashboard shows each employee who else is working, on a break or due in today. Off: employees see only themselves — their own status and their own shift. Admins always see everyone.":
     "Activado: el panel muestra a cada empleado quién más está trabajando, en descanso o por entrar hoy. Desactivado: los empleados solo se ven a sí mismos — su propio estado y su propio turno. Los administradores siempre ven a todos.",
@@ -429,9 +432,9 @@ export const people: Record<string, string> = {
   Supervisor: "Supervisor",
   Supervisors: "Supervisores",
   "What supervisors can do": "Lo que pueden hacer los supervisores",
-  "Supervisors can approve time off": "Los supervisores pueden aprobar tiempo libre",
-  "On: a supervisor approves or denies time off for the people in their departments, and can record sick days, vacation and family leave on their cards. Off: only admins can.":
-    "Activado: un supervisor aprueba o rechaza el tiempo libre de las personas de sus departamentos y puede registrar días de enfermedad, vacaciones y permisos familiares en sus tarjetas. Desactivado: solo los administradores pueden.",
+  "Supervisors can record absences": "Los supervisores pueden registrar ausencias",
+  "On: a supervisor can record sick days, vacation and family leave on the cards of the people in their departments. Off: only admins can. (Time-off requests and shift trades always go to the department's supervisors first, then to an admin for the final answer.)":
+    "Activado: un supervisor puede registrar días de enfermedad, vacaciones y permisos familiares en las tarjetas de las personas de sus departamentos. Desactivado: solo los administradores pueden. (Las solicitudes de tiempo libre y los intercambios de turnos siempre pasan primero por los supervisores del departamento y luego por un administrador para la respuesta final.)",
   "Supervisors can edit timecards": "Los supervisores pueden editar tarjetas de tiempo",
   "On: a supervisor can fix missed or wrong punches and write notes on the cards of the people in their departments. Off: they can review the cards but not change them.":
     "Activado: un supervisor puede corregir marcajes olvidados o erróneos y escribir notas en las tarjetas de las personas de sus departamentos. Desactivado: puede revisar las tarjetas pero no cambiarlas.",

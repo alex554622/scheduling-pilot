@@ -1,10 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Check,
   Clock,
   Copy,
+  Fingerprint,
   Loader2,
   Pencil,
   RefreshCw,
@@ -20,6 +21,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useLocaleTag, useT } from "@/lib/i18n";
 import { shareableOrigin } from "@/lib/native/platform";
+import {
+  fingerprintStatus,
+  registerFingerprint,
+  removeFingerprint,
+  updateFingerprintCode,
+  type FingerprintStatus,
+} from "@/lib/native/fingerprint";
 import { KioskDisplaySettings } from "@/components/kiosk-display-settings";
 import { FaceEnrollDialog } from "@/components/face-enroll-dialog";
 
@@ -113,18 +121,62 @@ function SharedClockInAdminPage() {
     onError: (e: Error) => setError(e.message),
   });
 
+  // Fingerprints, on the Android app with Pilot Clock (the reader's driver)
+  // installed. They live on this tablet only, so the controls only appear here.
+  const [fp, setFp] = useState<FingerprintStatus | null>(null);
+  const [fpBusy, setFpBusy] = useState<string | null>(null);
+  const refreshFp = useCallback(() => {
+    void fingerprintStatus().then(setFp);
+  }, []);
+  useEffect(() => {
+    if (!isAdmin) return;
+    refreshFp();
+    // Coming back to the app (e.g. after plugging the reader in) re-checks.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refreshFp();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [isAdmin, refreshFp]);
+  const hasFingerprint = (userId: string) => fp?.enrolled.includes(userId) ?? false;
+
+  async function register(p: { id: string; name: string; code: string }) {
+    setFpBusy(p.id);
+    setError(null);
+    const r = await registerFingerprint(p.id, p.name, p.code);
+    setFpBusy(null);
+    if (!r.ok && r.error && r.error !== "Cancelled") setError(t(r.error));
+    refreshFp();
+  }
+
+  async function unregister(userId: string) {
+    setFpBusy(userId);
+    setError(null);
+    const r = await removeFingerprint(userId);
+    setFpBusy(null);
+    if (!r.ok && r.error) setError(t(r.error));
+    refreshFp();
+  }
+
   // No code: the server picks a random free one. A code: exactly that one.
   const setCode = useMutation({
     mutationFn: async ({ userId, code }: { userId: string; code?: string }) => {
-      const { error } = await supabase.rpc("set_employee_clock_code", {
+      const { data, error } = await supabase.rpc("set_employee_clock_code", {
         _user: userId,
         ...(code ? { _code: code } : {}),
       });
       if (error) throw error;
+      return { userId, code: data };
     },
-    onSuccess: () => {
+    onSuccess: async ({ userId, code }) => {
       setError(null);
       setEditing(null);
+      // A registered fingerprint follows the person to their new code, so the
+      // old code stops working by fingerprint too.
+      if (hasFingerprint(userId)) {
+        const r = await updateFingerprintCode(userId, code);
+        if (!r.ok) setError(t("The new code is saved, but the fingerprint could not be updated. Register the fingerprint again."));
+      }
       void qc.invalidateQueries({ queryKey: ["clock-codes"] });
     },
     onError: (e: Error) =>
@@ -143,8 +195,13 @@ function SharedClockInAdminPage() {
     mutationFn: async (userId: string) => {
       const { error } = await supabase.rpc("clear_employee_clock_code", { _user: userId });
       if (error) throw error;
+      return userId;
     },
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["clock-codes"] }),
+    onSuccess: async (userId) => {
+      // Without a code a fingerprint has nothing to clock in with.
+      if (hasFingerprint(userId)) await unregister(userId);
+      void qc.invalidateQueries({ queryKey: ["clock-codes"] });
+    },
     onError: (e: Error) => setError(e.message),
   });
 
@@ -329,6 +386,25 @@ function SharedClockInAdminPage() {
           </p>
         )}
 
+        {fp?.installed && (
+          <div
+            className={`mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-3 text-sm ${
+              fp.readerAttached ? "bg-primary-soft text-primary" : "bg-secondary text-muted-foreground"
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <Fingerprint className="h-5 w-5" />
+              {fp.readerAttached
+                ? t("Fingerprint reader connected. Register a fingerprint for each person who has a code; they can then clock in with it on this tablet's shared clock-in.")
+                : t("No fingerprint reader found. Plug it into this tablet to register fingerprints.")}
+            </span>
+            <Button variant="outline" size="sm" onClick={refreshFp}>
+              <RefreshCw className="mr-2 h-4 w-4" /> {t("Check again")}
+            </Button>
+          </div>
+        )}
+        {fp?.error && <p className="mt-2 text-sm text-destructive">{t(fp.error)}</p>}
+
         <div className="mt-5 divide-y divide-border">
           {staffQ.isLoading && <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
           {staffQ.data?.map((p) => {
@@ -461,6 +537,42 @@ function SharedClockInAdminPage() {
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     )}
+                    {fp?.installed &&
+                      (hasFingerprint(p.id) ? (
+                        <span className="flex items-center gap-1">
+                          <span className="flex items-center gap-1 rounded-md bg-emerald-600/10 px-2 py-1 text-sm font-medium text-emerald-700">
+                            <Fingerprint className="h-4 w-4" /> {t("Fingerprint")}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => void unregister(p.id)}
+                            disabled={fpBusy !== null}
+                            aria-label={t("Remove {name}'s fingerprint", { name: p.name })}
+                          >
+                            {fpBusy === p.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </span>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => p.code && void register({ id: p.id, name: p.name, code: p.code })}
+                          disabled={!p.code || !fp.readerAttached || fpBusy !== null}
+                          title={!p.code ? t("Give a code first") : undefined}
+                        >
+                          {fpBusy === p.id ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          ) : (
+                            <Fingerprint className="mr-2 h-4 w-4" />
+                          )}
+                          {t("Register fingerprint")}
+                        </Button>
+                      ))}
                   </div>
                 </div>
                 {face?.pending_at && (

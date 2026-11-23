@@ -81,6 +81,23 @@
         </provider>
     </application>
 
+    <!--
+      Fingerprint clock-in on the shared tablet goes through the separate Pilot
+      Clock app, which drives the USB reader (FingerprintPlugin.java). Android 11+
+      hides other apps unless they are declared here.
+    -->
+    <queries>
+        <intent>
+            <action android:name="com.schedpilot.fingerprint.IDENTIFY" />
+        </intent>
+        <intent>
+            <action android:name="com.schedpilot.fingerprint.ENROLL" />
+        </intent>
+        <intent>
+            <action android:name="com.schedpilot.fingerprint.API" />
+        </intent>
+    </queries>
+
     <!-- Permissions. Each one is used by an existing feature; nothing else is requested. -->
 
     <!-- Talking to Supabase and the website. -->

@@ -10,6 +10,7 @@ public class MainActivity extends BridgeActivity {
         // The app's own plugin (not an npm package), registered before the bridge starts.
         registerPlugin(PushSetupPlugin.class);
         registerPlugin(AppSettingsPlugin.class);
+        registerPlugin(FingerprintPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

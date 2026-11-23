@@ -46,6 +46,14 @@ export type AppRules = {
    */
   staff_see_coworkers: boolean;
   /**
+   * Each department as its own group: an employee sees only the people,
+   * shifts, time off and trades of their own department (plus people with no
+   * department, their supervisors and anyone they supervise). Enforced by the
+   * database —
+   * 20261129120000_department_separation.sql. Admins always see everything.
+   */
+  departments_separate: boolean;
+  /**
    * Read clock-ins against the published schedule and mark anyone who arrives
    * after their shift start as late, on the time clock and the timecard. Off,
    * the schedule and the clock know nothing of each other. See `@/lib/lateness`.
@@ -53,7 +61,10 @@ export type AppRules = {
   schedule_lateness: boolean;
   /** Minutes after the shift start that still count as on time. */
   late_grace_minutes: number;
-  /** Supervisors may approve or deny their people's time off and record absences. */
+  /**
+   * Supervisors may record absences on their people's cards. (Time-off
+   * requests always go through supervisors, then an admin.)
+   */
   supervisors_approve_time_off: boolean;
   /** Supervisors may fix their people's punches and write notes on their cards. */
   supervisors_edit_timecards: boolean;
@@ -91,6 +102,7 @@ export const DEFAULT_APP_RULES: AppRules = {
   schedule_menu: "builder",
   hide_admins_from_staff: true,
   staff_see_coworkers: true,
+  departments_separate: false,
   schedule_lateness: false,
   late_grace_minutes: 5,
   supervisors_approve_time_off: true,

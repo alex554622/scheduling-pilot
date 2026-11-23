@@ -14,6 +14,9 @@ import {
 } from "@/components/ui/dialog";
 import { CalendarOff, Plus, Loader2, Check, X, Clock } from "lucide-react";
 import { localeTag, useT } from "@/lib/i18n";
+import {
+  ApprovalTrail, DecisionDialog, awaitsMe, useRequestApprovals,
+} from "@/components/request-approvals";
 
 export const Route = createFileRoute("/_authenticated/time-off")({
   component: TimeOffPage,
@@ -29,6 +32,8 @@ interface RequestRow {
   end_date: string;
   kind: string;
   status: string;
+  /** While pending: 'supervisors' or 'admin', whose answer it is waiting on. */
+  approval_stage: "supervisors" | "admin" | null;
   note: string | null;
   created_at: string;
 }
@@ -60,14 +65,18 @@ function TimeOffPage() {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const companyId = profile?.company_id ?? null;
-  // A supervisor reviews their own people's requests. Whether they may answer
-  // them is a company rule; decide_time_off checks the same thing.
+  // Every supervisor of the employee approves first, then an admin gives the
+  // final answer. The database decides who is on each request; see
+  // 20261128120000_request_approval_chain.sql.
   const scope = useManagedScope();
-  const canManage =
-    primaryRole === "company_admin" || primaryRole === "super_admin" || scope.isSupervisor;
-  const canDecide = (employeeId: string) =>
-    !scope.isSupervisor ||
-    (scope.canApproveTimeOff && employeeId !== user?.id && scope.manages(employeeId));
+  const isAdmin = primaryRole === "company_admin" || primaryRole === "super_admin";
+  const canManage = isAdmin || scope.isSupervisor;
+  const approvalsQ = useRequestApprovals("time_off", companyId);
+  const approvalsOf = (id: string) => approvalsQ.data?.get(id);
+  /** Whether this viewer has a button to press on this request right now. */
+  const canAct = (r: RequestRow) =>
+    r.status === "pending" &&
+    (isAdmin || (r.approval_stage === "supervisors" && awaitsMe(approvalsOf(r.id), user?.id)));
 
   const reqQ = useQuery({
     queryKey: ["time-off", companyId],
@@ -130,26 +139,47 @@ function TimeOffPage() {
 
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // The request and answer the comment box is open for.
+  const [deciding, setDeciding] = useState<{ r: RequestRow; approve: boolean } | null>(null);
 
   function refresh() {
-    for (const key of ["time-off", "time-off-shifts", "shifts", "schedule-time-off"]) {
+    for (const key of ["time-off", "time-off-shifts", "shifts", "schedule-time-off", "request-approvals"]) {
       qc.invalidateQueries({ queryKey: [key] });
     }
   }
 
   /**
-   * Goes through decide_time_off so approval and taking the person off their
-   * shifts happen together — a bare status update left them on the roster.
+   * A supervisor's answer goes to supervisor_decide, which moves the request on
+   * to an admin once every supervisor has approved. An admin's is final and
+   * goes through decide_time_off, so approval and taking the person off their
+   * shifts happen together.
    */
   const decideMut = useMutation({
-    mutationFn: async ({ id, approve }: { id: string; approve: boolean }) => {
-      const { data, error } = await supabase.rpc("decide_time_off", { _request: id, _approve: approve });
+    mutationFn: async ({ r, approve, comment }: { r: RequestRow; approve: boolean; comment: string }) => {
+      const asSupervisor = !isAdmin;
+      if (asSupervisor) {
+        const { data, error } = await supabase.rpc("supervisor_decide", {
+          _type: "time_off", _request: r.id, _approve: approve, _comment: comment || null,
+        });
+        if (error) throw error;
+        return { approve, final: false, stage: data as string, opened: 0 };
+      }
+      const { data, error } = await supabase.rpc("decide_time_off", {
+        _request: r.id, _approve: approve, _comment: comment || null,
+      });
       if (error) throw error;
-      return { approve, opened: (data as number | null) ?? 0 };
+      return { approve, final: true, stage: "", opened: (data as number | null) ?? 0 };
     },
     onMutate: () => { setActionError(null); setNotice(null); },
-    onSuccess: ({ approve, opened }) => {
-      if (approve && opened > 0) {
+    onSuccess: ({ approve, final, stage, opened }) => {
+      setDeciding(null);
+      if (!final && approve) {
+        setNotice(
+          stage === "admin"
+            ? t("Approved. Every supervisor has approved, so it has gone to an admin for the final answer.")
+            : t("Approved. It is still waiting on another supervisor."),
+        );
+      } else if (final && approve && opened > 0) {
         setNotice(
           opened === 1
             ? t("Approved. 1 shift is now open on the schedule for someone to pick up.")
@@ -177,11 +207,17 @@ function TimeOffPage() {
   if (!companyId) return <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">{t("Join a company to use time off.")}</div>;
 
   const all = (reqQ.data ?? []).filter(
-    (r) => !scope.isSupervisor || r.employee_id === user?.id || scope.manages(r.employee_id),
+    (r) =>
+      !scope.isSupervisor ||
+      r.employee_id === user?.id ||
+      scope.manages(r.employee_id) ||
+      !!approvalsOf(r.id)?.some((a) => a.approver_id === user?.id),
   );
   const mine = all.filter((r) => r.employee_id === user?.id);
-  const pending = all.filter((r) => r.status === "pending" && canDecide(r.employee_id));
+  // Waiting on this viewer: an admin counts only what the supervisors are done with.
+  const pending = all.filter((r) => canAct(r) && (!isAdmin || r.approval_stage === "admin"));
   const visible = canManage ? all : mine;
+  const nameFor = (id: string) => nameOf.get(id) ?? t("Admin");
 
   return (
     <div className="space-y-6">
@@ -230,7 +266,8 @@ function TimeOffPage() {
                     {fmtDate(r.start_date)} – {fmtDate(r.end_date)} · {days(r.start_date, r.end_date) === 1 ? t("1 day") : t("{n} days", { n: days(r.start_date, r.end_date) })}
                   </p>
                   {r.note && <p className="mt-1 text-xs text-muted-foreground italic">"{r.note}"</p>}
-                  {canManage && canDecide(r.employee_id) && r.status === "pending" && shiftsCovered(r).length > 0 && (
+                  <ApprovalTrail approvals={approvalsOf(r.id)} nameOf={nameFor} pending={r.status === "pending"} />
+                  {canAct(r) && shiftsCovered(r).length > 0 && (
                     <p className="mt-1 text-xs text-warning-foreground">
                       {t(
                         shiftsCovered(r).length === 1
@@ -244,13 +281,16 @@ function TimeOffPage() {
                     </p>
                   )}
                 </div>
-                <StatusBadge status={r.status} />
-                {canManage && canDecide(r.employee_id) && r.status === "pending" && (
+                <StatusBadge status={r.status} stage={r.approval_stage} />
+                {canAct(r) && (
                   <div className="flex gap-1">
-                    <Button size="sm" variant="outline" onClick={() => decideMut.mutate({ id: r.id, approve: true })} disabled={busy}>
-                      <Check className="h-4 w-4" /> {t("Approve")}
-                    </Button>
-                    <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => decideMut.mutate({ id: r.id, approve: false })} disabled={busy}>
+                    {/* An admin's approval is the last step, so it waits for the supervisors. */}
+                    {(!isAdmin || r.approval_stage === "admin") && (
+                      <Button size="sm" variant="outline" onClick={() => setDeciding({ r, approve: true })} disabled={busy}>
+                        <Check className="h-4 w-4" /> {t("Approve")}
+                      </Button>
+                    )}
+                    <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setDeciding({ r, approve: false })} disabled={busy}>
                       <X className="h-4 w-4" /> {t("Deny")}
                     </Button>
                   </div>
@@ -263,6 +303,32 @@ function TimeOffPage() {
           </ul>
         )}
       </div>
+
+      <DecisionDialog
+        open={!!deciding}
+        approve={deciding?.approve ?? true}
+        title={
+          deciding
+            ? deciding.approve
+              ? isAdmin ? t("Give final approval") : t("Approve as supervisor")
+              : t("Deny this request")
+            : ""
+        }
+        description={
+          deciding
+            ? `${nameFor(deciding.r.employee_id)} · ${fmtDate(deciding.r.start_date)} – ${fmtDate(deciding.r.end_date)}. ` +
+              (deciding.approve
+                ? isAdmin
+                  ? t("This is the final answer. The employee and their supervisors are told.")
+                  : t("Once every supervisor has approved, it goes to an admin for the final answer.")
+                : t("A denied request goes no further. The employee is told, with your comment."))
+            : undefined
+        }
+        busy={decideMut.isPending}
+        error={actionError}
+        onCancel={() => { setDeciding(null); setActionError(null); }}
+        onConfirm={(comment) => deciding && decideMut.mutate({ r: deciding.r, approve: deciding.approve, comment })}
+      />
 
       <NewRequestDialog
         open={open}
@@ -288,7 +354,7 @@ function Stat({ label, value, tone }: { label: string; value: number; tone: "suc
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status, stage }: { status: string; stage: RequestRow["approval_stage"] }) {
   const t = useT("time");
   const styles: Record<string, string> = {
     pending: "bg-warning/20 text-warning-foreground",
@@ -296,7 +362,13 @@ function StatusBadge({ status }: { status: string }) {
     denied: "bg-destructive/15 text-destructive",
     cancelled: "bg-muted text-muted-foreground",
   };
-  return <span className={`rounded-full px-2.5 py-1 text-xs font-medium capitalize ${styles[status] ?? "bg-muted text-muted-foreground"}`}>{t(STATUS_WORD[status] ?? status)}</span>;
+  const word =
+    status === "pending" && stage === "supervisors"
+      ? "Awaiting supervisors"
+      : status === "pending" && stage === "admin"
+        ? "Awaiting admin"
+        : STATUS_WORD[status] ?? status;
+  return <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${styles[status] ?? "bg-muted text-muted-foreground"}`}>{t(word)}</span>;
 }
 
 /**
@@ -362,7 +434,7 @@ function NewRequestDialog({ open, onClose, userId, companyId, onSaved }: { open:
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t("Request time off")}</DialogTitle>
-          <DialogDescription>{t("Pick the days you need off. A company admin will review and respond.")}</DialogDescription>
+          <DialogDescription>{t("Pick the days you need off. Your supervisors review it first, then a company admin gives the final answer.")}</DialogDescription>
         </DialogHeader>
         <div className="max-h-[70vh] space-y-4 overflow-y-auto py-2">
           <div className="space-y-2">

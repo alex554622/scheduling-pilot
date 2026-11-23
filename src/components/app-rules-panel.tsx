@@ -509,6 +509,12 @@ export function AppRulesPanel() {
               checked={rules.staff_see_coworkers}
               onChange={(v) => set("staff_see_coworkers", v)}
             />
+            <ToggleRow
+              label="Keep departments separate"
+              description="On: each employee sees only their own department — its people, schedule, open shifts, time off and shift trades — plus people with no department, their own supervisors and anyone they supervise. Admins always see everything; someone with no department sees only the office until you assign one. Off: everyone sees the whole company."
+              checked={rules.departments_separate}
+              onChange={(v) => set("departments_separate", v)}
+            />
           </section>
 
           {/* What supervisors may do */}
@@ -518,8 +524,8 @@ export function AppRulesPanel() {
               <h3 className="font-semibold text-foreground">{t("What supervisors can do")}</h3>
             </div>
             <ToggleRow
-              label="Supervisors can approve time off"
-              description="On: a supervisor approves or denies time off for the people in their departments, and can record sick days, vacation and family leave on their cards. Off: only admins can."
+              label="Supervisors can record absences"
+              description="On: a supervisor can record sick days, vacation and family leave on the cards of the people in their departments. Off: only admins can. (Time-off requests and shift trades always go to the department's supervisors first, then to an admin for the final answer.)"
               checked={rules.supervisors_approve_time_off}
               onChange={(v) => set("supervisors_approve_time_off", v)}
             />

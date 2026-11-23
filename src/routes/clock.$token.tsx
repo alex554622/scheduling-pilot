@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Coffee, Delete, KeyRound, LogIn, LogOut, Loader2, CheckCircle2, ScanFace } from "lucide-react";
+import { Coffee, Delete, Fingerprint, KeyRound, LogIn, LogOut, Loader2, CheckCircle2, ScanFace } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { fingerprintAvailable, scanFingerprint } from "@/lib/native/fingerprint";
 import { BrandLogo } from "@/components/brand";
 import { KioskFaceScan } from "@/components/kiosk-face-scan";
 import { cameraSupported, loadFaceEngine } from "@/lib/face";
@@ -250,6 +251,27 @@ function SharedClockInPage() {
   }, [faceAvailable]);
   // A new key restarts the face scan (camera stays off while it isn't shown).
   const [scanKey, setScanKey] = useState(0);
+
+  // A fingerprint reader through the Pilot Clock app (Android app only). The
+  // keypad comes first; the reader is an optional button under it, and a scan
+  // only fills in the code, so anyone can still type theirs.
+  const [canScan, setCanScan] = useState(false);
+  useEffect(() => {
+    void fingerprintAvailable().then(setCanScan);
+  }, []);
+
+  async function scan() {
+    setBusy(true);
+    setError(null);
+    const result = await scanFingerprint(t("Clock in"));
+    setBusy(false);
+    if ("code" in result) {
+      // The lookup effect below takes it from here, as for a typed code.
+      setCode(result.code);
+    } else if (!result.cancelled) {
+      setError(t(result.error));
+    }
+  }
 
   const reset = useCallback(() => {
     setCode("");
@@ -530,22 +552,37 @@ function SharedClockInPage() {
               <Delete className="h-7 w-7" />
             </KeypadKey>
           </div>
-          {faceAvailable && !faceBroken && (
-            <div className="mx-auto mt-6 max-w-xs">
-              <p className="mb-3 text-center text-sm text-muted-foreground">{t("or")}</p>
-              <button
-                type="button"
-                onClick={() => {
-                  setCode("");
-                  setError(null);
-                  setScanKey((k) => k + 1);
-                  setUseFace(true);
-                }}
-                disabled={busy}
-                className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl border border-border bg-card text-lg font-medium text-foreground shadow-sm transition-colors hover:bg-accent active:bg-accent disabled:opacity-50"
-              >
-                <ScanFace className="h-6 w-6 text-primary" /> {t("Use face instead")}
-              </button>
+
+          {/* The code is the main way in. Face (a camera) and the fingerprint
+              reader (Android with Pilot Clock) are optional buttons under it. */}
+          {((faceAvailable && !faceBroken) || canScan) && (
+            <div className="mx-auto mt-6 max-w-xs space-y-3">
+              <p className="text-center text-sm text-muted-foreground">{t("or")}</p>
+              {faceAvailable && !faceBroken && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCode("");
+                    setError(null);
+                    setScanKey((k) => k + 1);
+                    setUseFace(true);
+                  }}
+                  disabled={busy}
+                  className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl border border-border bg-card text-lg font-medium text-foreground shadow-sm transition-colors hover:bg-accent active:bg-accent disabled:opacity-50"
+                >
+                  <ScanFace className="h-6 w-6 text-primary" /> {t("Use face instead")}
+                </button>
+              )}
+              {canScan && (
+                <button
+                  type="button"
+                  onClick={() => void scan()}
+                  disabled={busy}
+                  className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl border border-border bg-card text-lg font-medium text-foreground shadow-sm transition-colors hover:bg-accent active:bg-accent disabled:opacity-50"
+                >
+                  <Fingerprint className="h-6 w-6 text-primary" /> {t("Use fingerprint instead")}
+                </button>
+              )}
             </div>
           )}
         </div>
