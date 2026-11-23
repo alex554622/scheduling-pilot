@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, ScanFace } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { loadFaceApi, scanLiveFace, startCamera, type ScanStatus } from "@/lib/face";
+import {
+  loadFaceEngine,
+  scanLiveFace,
+  startCamera,
+  type FaceEngine,
+  type ScanStatus,
+} from "@/lib/face";
 import { translate, useT } from "@/lib/i18n";
 
 /** How long one scan watches for a live face before it stops and waits for a tap. */
@@ -41,7 +47,7 @@ export function KioskFaceScan({
   const videoRef = useRef<HTMLVideoElement>(null);
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
   const [run, setRun] = useState(0);
-  const apiRef = useRef<Awaited<ReturnType<typeof loadFaceApi>> | null>(null);
+  const apiRef = useRef<FaceEngine | null>(null);
   const failures = useRef(0);
 
   // Keep the latest callbacks without restarting the camera when they change.
@@ -59,7 +65,7 @@ export function KioskFaceScan({
       try {
         const video = videoRef.current;
         if (!video) return;
-        const [api, stopCam] = await Promise.all([loadFaceApi(), startCamera(video)]);
+        const [api, stopCam] = await Promise.all([loadFaceEngine(), startCamera(video)]);
         stop = stopCam;
         if (cancelled) {
           stopCam();
@@ -109,14 +115,7 @@ export function KioskFaceScan({
       });
       if (ctrl.signal.aborted) return;
       if (!outcome.ok) {
-        if (outcome.reason === "unsteady") {
-          setPhase({
-            kind: "paused",
-            message: t("Only one person in front of the camera, please."),
-          });
-        } else {
-          setPhase({ kind: "paused", message: null });
-        }
+        setPhase({ kind: "paused", message: null });
         return;
       }
       setPhase({ kind: "matching" });
@@ -171,11 +170,15 @@ export function KioskFaceScan({
             ? t("Come a little closer")
             : phase.status === "one"
               ? t("Only one person in front of the camera, please.")
-              : phase.status === "blink"
-                ? t("Now blink")
-                : phase.status === "checking"
-                  ? t("Checking…")
-                  : t("Look at the camera and blink")
+              : phase.status === "straight"
+                ? t("Look straight at the camera")
+                : phase.status === "blink"
+                  ? t("Now blink")
+                  : phase.status === "hold"
+                    ? t("Great, hold still…")
+                    : phase.status === "checking"
+                      ? t("Checking…")
+                      : t("Look at the camera and blink")
           : null;
 
   return (

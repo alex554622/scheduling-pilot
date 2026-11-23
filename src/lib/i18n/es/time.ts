@@ -451,4 +451,13 @@ export const time: Record<string, string> = {
   "This is their first face. Check with {name} that they did the scan themselves.": "Es su primer rostro. Confirma con {name} que hizo el escaneo él o ella misma.",
   "Reject": "Rechazar",
   "there is no face waiting for approval": "no hay ningún rostro esperando aprobación",
+  "Couldn't see the face clearly enough. Face the camera with light on your face (not behind you) and try again.": "No se pudo ver el rostro con suficiente claridad. Mira a la cámara con la luz de frente (no detrás de ti) e inténtalo de nuevo.",
+  "Look straight at the camera": "Mira de frente a la cámara",
+  "Great, hold still…": "Muy bien, no te muevas…",
+  "Put your face inside the oval": "Coloca tu rostro dentro del óvalo",
+  "Saving…": "Guardando…",
+  "Sent for approval": "Enviado para aprobación",
+  "Face saved": "Rostro guardado",
+  "Close": "Cerrar",
+  "Try again": "Intentar de nuevo",
 };

@@ -43,23 +43,46 @@ the same way, after `20261129120000_face_clock_in.sql`.
   The arrows button still picks a random free code. Two people in one company
   can't have the same code. The old code stops working straight away.
 
-## Why face-api.js (`@vladmandic/face-api`)
+## The face model: Human (`@vladmandic/human` 3.3)
 
-- **It recognises who someone is.** It produces a 128-number face descriptor
-  (a ResNet-34 face embedding). MediaPipe Face Detection and Face Landmarker
-  only find faces and landmarks. They can't tell two people apart, so they'd
-  need a second model anyway.
-- **It runs on the tablet, in the browser or Capacitor WebView.** It uses
-  TensorFlow.js on WebGL. There's no native plugin, no extra app and no
-  vendor SDK licence, which the fingerprint approach needed. The same code
-  works in Chrome on a tablet and in the Android/iOS app.
-- **Small enough.** The models are about 7 MB, served from `public/models/face`.
-  The library is a separate 340 KB (gzipped) chunk. Both load only on the
-  clock-in screen and in the enrollment dialog.
-- **Fast enough.** About 35 ms per frame on a laptop with WebGL. Tablets are
-  slower but still fine for a few frames per second.
-- `@vladmandic/face-api` is the maintained fork of face-api.js, which is no
-  longer developed.
+Apply `supabase/migrations/20261201120000_face_model_human.sql` after the two
+migrations above. **It deletes every saved face**: faces from the first
+version (face-api.js, 128 numbers) can't be compared with the new model, so
+everyone adds their face again. PINs are untouched.
+
+Why the switch. The first version used face-api.js. Adding a face kept
+failing: its small detector missed many faces, and its same-person distances
+(median 0.49) were above the 0.45 limit, so honest scans were refused.
+Human is the maintained successor by the same author (MIT, free, runs in the
+browser and the Capacitor app on WebGL):
+
+| Measured on 40 photos of 8 people | face-api.js | Human |
+|---|---|---|
+| Faces not found | 15 | 1 |
+| Equal error rate | ~10% | ~4% |
+| Same person, median distance | 0.49 | 0.81 (of a gap to ≥ 0.88 for others) |
+
+With the new limits (0.80 / 0.06), nobody was ever taken for someone else,
+colleague or stranger, and 11 of 15 were recognised from completely
+different photos. At the tablet, scans come from one camera and are much
+closer than that.
+
+- **Library and models are static files**: `public/vendor/human/human.esm.js`
+  (2 MB) and `public/models/human` (BlazeFace, face mesh, iris, faceres,
+  about 12 MB). They load only on the clock-in screen and the enroll dialog.
+  Bundling the library ran the production build out of memory, so it is
+  loaded by URL. To upgrade, copy a newer `dist/human.esm.js` (without its
+  `sourceMappingURL` line) and the four models.
+- **Adding a face is automatic**: after the consent tick and **Start camera**
+  it scans by itself, the oval turns green while it is taking good scans, and
+  a bar fills up. It says "Come a little closer", "Look straight at the
+  camera" or "Only one person" when needed. Blurry frames are dropped and
+  taken again instead of failing. No blink is asked for.
+- **Clock-in still needs a blink**, so a photo held up to the camera doesn't
+  work. The blink is measured against each person's own eye openness (a 30%
+  drop and back), so it works for every eye shape and on slow tablets.
+  Human's own anti-spoof and liveness scores were tried and left off: on
+  genuine faces they ranged from 0.3 to 1.0, too unreliable to gate on.
 
 ## Security and privacy
 
@@ -75,12 +98,12 @@ the same way, after `20261129120000_face_clock_in.sql`.
   turning this on in those places.
 - **Matching happens on the server** (`kiosk_face_match`). The tablet never
   downloads anyone's face data or PIN. A match needs both of these:
-  - distance ≤ 0.45 to the person's closest enrolled sample;
-  - at least 0.08 closer than any other enrolled person.
+  - distance ≤ 0.80 to the person's closest enrolled sample;
+  - at least 0.06 closer than any other enrolled person.
 
   An ambiguous face is refused, so a look-alike is told "not recognised"
   rather than being clocked in as someone else.
-- **One face, one account.** Enrollment refuses a face that is within 0.5 of
+- **One face, one account.** Enrollment refuses a face that is within 0.80 of
   someone already enrolled. It also refuses a set of scans that don't match
   each other (someone else stepped in).
 - **Liveness.** A scan only counts after the person blinks, so a printed photo
@@ -99,9 +122,10 @@ the same way, after `20261129120000_face_clock_in.sql`.
 - Blink liveness can be fooled by a video of the person. To make cheating
   traceable, a later step could store a small snapshot with each face punch
   for admins to review. It isn't done, because photos weren't wanted.
-- The limits 0.45 / 0.08 are set in `kiosk_face_match`. If honest people are
-  often refused in poor light, raise `max_dist` slightly (e.g. 0.5). Re-enrolling
-  in the tablet's own light usually helps more.
+- The limits 0.80 / 0.06 are set in `kiosk_face_match`. If honest people are
+  often refused in poor light, raise `max_dist` slightly (e.g. 0.85, still
+  under the 0.88 closest pair of different people measured). Re-enrolling in
+  the tablet's own light usually helps more.
 - Faces are per company. Someone in two companies is enrolled once in each.
 - Enroll from a device with a decent front camera, ideally the tablet itself.
 
@@ -126,9 +150,11 @@ employees (A and B) and a device with a front camera.
    next to their PIN controls.
 2. Press **Enroll face** for A. **Start camera** stays disabled until the
    consent box is ticked.
-3. Tick it and press **Start camera**. Allow the camera. Press **Scan face**
-   with A in front of it. The progress shows "1 of 5" up to "5 of 5", then
-   "Now blink". Once A blinks, the dialog closes and A shows **Face enrolled**.
+3. Tick it and press **Start camera**. Allow the camera. With A in front of
+   it, scanning starts by itself: the oval turns green and the bar fills in a
+   few seconds, with no blink. "Face saved" shows, the dialog closes and A
+   shows **Face enrolled**. Try it far away (it asks to come closer) and with
+   the head turned (it asks to look straight).
 4. Try to enroll B using A's face. You get "This face is too similar to A…",
    and nothing is saved.
 5. Enroll B properly.

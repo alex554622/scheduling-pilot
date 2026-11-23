@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Loader2, ScanFace } from "lucide-react";
+import { CheckCircle2, Loader2, ScanFace } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -11,23 +11,35 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { captureSamples, loadFaceApi, startCamera, type ScanStatus } from "@/lib/face";
+import {
+  captureSamples,
+  loadFaceEngine,
+  startCamera,
+  type FaceEngine,
+  type ScanStatus,
+} from "@/lib/face";
 import { useT } from "@/lib/i18n";
 
 /** Descriptors saved per person. More cover more angles; the server takes 3 to 10. */
 const SAMPLES = 5;
+/** How long it keeps trying before it asks to try again. */
+const CAPTURE_MS = 45_000;
 
 type Phase =
   | { kind: "consent" }
   | { kind: "loading" }
-  | { kind: "ready" }
   | { kind: "capturing"; status: ScanStatus; got: number }
   | { kind: "saving" }
-  | { kind: "error"; message: string };
+  | { kind: "done" }
+  | { kind: "error"; message: string; camera: boolean };
 
 /**
- * Enrolls one person's face from this device's camera. Only the 128-number
- * descriptors are sent; no photo leaves the device or is kept.
+ * Enrolls one person's face from this device's camera. Only descriptors are
+ * sent; no photo leaves the device or is kept.
+ *
+ * Made to be easy: once the camera is on it scans by itself, tells the person
+ * what to do (closer, look straight, one person only), drops blurry frames
+ * instead of failing, and doesn't ask for a blink.
  *
  * An admin enrolling someone (enroll_employee_face) is approved at once. With
  * `self`, the signed-in person enrolls their own face (submit_my_face), and it
@@ -49,17 +61,17 @@ export function FaceEnrollDialog({
   const [consent, setConsent] = useState(false);
   const [phase, setPhase] = useState<Phase>({ kind: "consent" });
   const videoRef = useRef<HTMLVideoElement>(null);
-  const apiRef = useRef<Awaited<ReturnType<typeof loadFaceApi>> | null>(null);
+  const engineRef = useRef<FaceEngine | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const [camOn, setCamOn] = useState(false);
 
   // Fresh state each time the dialog opens; camera off when it closes.
   useEffect(() => {
     if (!open) return;
     setConsent(false);
-    setCamOn(false);
     setPhase({ kind: "consent" });
+    // Start loading the models while they read the consent text.
+    void loadFaceEngine().catch(() => undefined);
     return () => {
       abortRef.current?.abort();
       stopRef.current?.();
@@ -74,16 +86,16 @@ export function FaceEnrollDialog({
       await new Promise((r) => requestAnimationFrame(() => r(null)));
       const video = videoRef.current;
       if (!video) throw new Error("no video element");
-      const [api, stop] = await Promise.all([loadFaceApi(), startCamera(video)]);
-      apiRef.current = api;
+      const [engine, stop] = await Promise.all([loadFaceEngine(), startCamera(video)]);
+      engineRef.current = engine;
       stopRef.current = stop;
-      setCamOn(true);
-      setPhase({ kind: "ready" });
+      void capture();
     } catch (e) {
       console.warn("[face enroll]", e);
       const name = e instanceof DOMException ? e.name : "";
       setPhase({
         kind: "error",
+        camera: false,
         message:
           name === "NotAllowedError" || name === "SecurityError"
             ? t("The camera is blocked. Allow the camera for this site and try again.")
@@ -95,36 +107,39 @@ export function FaceEnrollDialog({
   }
 
   async function capture() {
-    const api = apiRef.current;
+    const engine = engineRef.current;
     const video = videoRef.current;
-    if (!api || !video || !person) return;
+    if (!engine || !video || !person) return;
+    abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
-    setPhase({ kind: "capturing", status: "look", got: 0 });
     let got = 0;
-    const r = await captureSamples(api, video, {
+    let status: ScanStatus = "look";
+    setPhase({ kind: "capturing", status, got });
+    const r = await captureSamples(engine, video, {
       count: SAMPLES,
-      gapMs: 400,
-      timeoutMs: 30_000,
+      gapMs: 350,
+      timeoutMs: CAPTURE_MS,
       signal: ctrl.signal,
-      onStatus: (status) => !ctrl.signal.aborted && setPhase({ kind: "capturing", status, got }),
+      onStatus: (s) => {
+        if (ctrl.signal.aborted || s === status) return;
+        status = s;
+        setPhase({ kind: "capturing", status, got });
+      },
       onProgress: (n) => {
+        if (ctrl.signal.aborted || n === got) return;
         got = n;
+        setPhase({ kind: "capturing", status, got });
       },
     });
     if (ctrl.signal.aborted) return;
     if (!r.ok) {
       setPhase({
         kind: "error",
-        message:
-          r.reason === "unsteady"
-            ? t(
-                "The scans didn't match each other. Make sure only {name} is in front of the camera and try again.",
-                { name: person.name },
-              )
-            : t(
-                "Couldn't get a clear face in time. Face the camera in good light, blink once, and try again.",
-              ),
+        camera: true,
+        message: t(
+          "Couldn't see the face clearly enough. Face the camera with light on your face (not behind you) and try again.",
+        ),
       });
       return;
     }
@@ -136,10 +151,12 @@ export function FaceEnrollDialog({
           _samples: r.samples,
           _consent: consent,
         });
+    if (ctrl.signal.aborted) return;
     if (error) {
       const similar = error.message.match(/too similar to (.+) \(already enrolled\)/);
       setPhase({
         kind: "error",
+        camera: true,
         message: error.message.includes("already enrolled for someone else")
           ? t("This face is already enrolled for someone else. Ask an admin for help.")
           : error.message.includes("must agree")
@@ -158,25 +175,33 @@ export function FaceEnrollDialog({
       });
       return;
     }
+    stopRef.current?.();
+    stopRef.current = null;
+    setPhase({ kind: "done" });
     onSaved();
-    onClose();
+    setTimeout(onClose, 1200);
   }
 
-  const statusText =
-    phase.kind === "capturing"
-      ? phase.status === "closer"
-        ? t("Come a little closer")
-        : phase.status === "one"
-          ? t("Only one person in front of the camera, please.")
-          : phase.status === "blink"
-            ? t("Now blink")
-            : t("Hold still and look at the camera… {n} of {total}", {
-                n: phase.got,
-                total: SAMPLES,
-              })
-      : null;
+  const capturing = phase.kind === "capturing" ? phase : null;
+  const good = capturing?.status === "hold";
+  const statusText = capturing
+    ? capturing.status === "closer"
+      ? t("Come a little closer")
+      : capturing.status === "one"
+        ? t("Only one person in front of the camera, please.")
+        : capturing.status === "straight"
+          ? t("Look straight at the camera")
+          : capturing.status === "hold"
+            ? t("Great, hold still…")
+            : t("Put your face inside the oval")
+    : phase.kind === "loading"
+      ? t("Starting the camera…")
+      : phase.kind === "saving"
+        ? t("Saving…")
+        : null;
 
   const cameraShown = phase.kind !== "consent";
+  const progress = capturing ? capturing.got / SAMPLES : phase.kind === "consent" ? 0 : 1;
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -228,19 +253,41 @@ export function FaceEnrollDialog({
               playsInline
               autoPlay
             />
+            {/* The oval turns green while it is taking good scans. */}
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-              <div className="h-[78%] w-[52%] rounded-[50%] border-4 border-white/70" />
+              <div
+                className={`h-[78%] w-[52%] rounded-[50%] border-4 transition-colors ${
+                  phase.kind === "done" || good ? "border-emerald-400" : "border-white/70"
+                }`}
+              />
             </div>
             {(phase.kind === "loading" || phase.kind === "saving") && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/40">
                 <Loader2 className="h-8 w-8 animate-spin text-white" />
               </div>
             )}
+            {phase.kind === "done" && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/50 text-white">
+                <CheckCircle2 className="h-14 w-14 text-emerald-400" />
+                <span className="text-lg font-semibold">
+                  {self ? t("Sent for approval") : t("Face saved")}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {cameraShown && phase.kind !== "error" && (
+          <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+            <div
+              className="h-full rounded-full bg-emerald-500 transition-all"
+              style={{ width: `${Math.round(progress * 100)}%` }}
+            />
           </div>
         )}
 
         {statusText && (
-          <p className="text-center text-sm font-medium" aria-live="polite">
+          <p className="text-center text-base font-medium" aria-live="polite">
             {statusText}
           </p>
         )}
@@ -252,21 +299,17 @@ export function FaceEnrollDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
-            {t("Cancel")}
+            {phase.kind === "done" ? t("Close") : t("Cancel")}
           </Button>
           {phase.kind === "consent" && (
             <Button onClick={() => void startCam()} disabled={!consent}>
               <ScanFace className="mr-2 h-4 w-4" /> {t("Start camera")}
             </Button>
           )}
-          {(phase.kind === "ready" || (phase.kind === "error" && camOn)) && (
-            <Button onClick={() => void capture()}>
-              <ScanFace className="mr-2 h-4 w-4" />{" "}
-              {phase.kind === "error" ? t("Try again") : t("Scan face")}
+          {phase.kind === "error" && (
+            <Button onClick={() => void (phase.camera ? capture() : startCam())}>
+              <ScanFace className="mr-2 h-4 w-4" /> {t("Try again")}
             </Button>
-          )}
-          {phase.kind === "error" && !camOn && (
-            <Button onClick={() => void startCam()}>{t("Try again")}</Button>
           )}
         </DialogFooter>
       </DialogContent>

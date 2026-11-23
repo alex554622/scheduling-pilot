@@ -1,58 +1,108 @@
 /**
  * Face recognition for the shared clock-in, in the browser.
  *
- * Uses @vladmandic/face-api (the maintained fork of face-api.js, TensorFlow.js
- * underneath): a tiny face detector, the 68-point landmark model and the
- * ResNet-34 recognition model, which turns a face into a 128-number
- * descriptor. Two descriptors of the same person are close (Euclidean
- * distance about 0.25-0.40); different people are far apart (0.55+).
+ * Uses Human (@vladmandic/human 3.3, MIT), the maintained successor of
+ * face-api.js by the same author: the BlazeFace detector, a 478-point face
+ * mesh with iris refinement, and the "faceres" recognition model, which turns
+ * a face into 1024 numbers. We scale those to length 1, so the distance
+ * between two faces is between 0 (identical) and 2.
+ *
+ * Measured on 40 photos of 8 people (different days, light, expressions):
+ * Human found 39 faces where the old face-api.js detector found 25, and
+ * separated people about twice as well (equal error rate ~4% vs ~10%).
+ * Same person, different photos: median 0.81. Different people: never under
+ * 0.88. Scans from one camera in one session are much closer than that.
+ * The server holds the limits (kiosk_face_match).
  *
  * Everything here runs on the device. No frame leaves it: only descriptors
- * are sent, and matching happens on the server (kiosk_face_match), so the
- * tablet never holds anyone's face data. The models (about 7 MB, served from
- * /models/face) and the library are loaded only on the screens that use them.
+ * are sent, and matching happens on the server, so the tablet never holds
+ * anyone's face data. The library and models (~13 MB, public/vendor/human and
+ * public/models/human) load only on the screens that use them.
  *
- * Liveness: a scan only counts after the person blinks (eye aspect ratio from
- * the landmarks drops and comes back). A printed photo or a still on a phone
- * can't blink. A video of someone can, which is why the server also requires
- * a clear margin over every other enrolled face and the PIN stays available.
+ * Liveness, on the clock-in only: a scan counts after the person blinks. The
+ * blink is measured against that person's own eye openness, so it works for
+ * every eye shape and on slow tablets. Adding a face doesn't ask for a blink:
+ * an admin is there, or an admin approves it afterwards.
  */
 
-type FaceApi = typeof import("@vladmandic/face-api/dist/face-api.esm.js");
+/** The parts of a Human detection result we use. */
+type HumanFace = {
+  box: [number, number, number, number];
+  score: number;
+  mesh: [number, number, number?][];
+  embedding?: number[];
+  rotation?: { angle: { roll: number; yaw: number; pitch: number } } | null;
+};
+type HumanResult = { face: HumanFace[] };
+type HumanInstance = {
+  load(): Promise<void>;
+  warmup(): Promise<unknown>;
+  detect(input: HTMLVideoElement, config?: unknown): Promise<HumanResult>;
+  tf: { getBackend(): string };
+};
+type HumanModule = { Human: new (config: unknown) => HumanInstance };
 
-const FACE_API_URL = "/vendor/face-api/face-api.esm.js";
+export type FaceEngine = HumanInstance;
 
-let apiPromise: Promise<FaceApi> | null = null;
+/**
+ * Loaded as a static file, not bundled: the library is 2 MB of minified
+ * TensorFlow.js, and bundling it runs the production build out of memory.
+ * To upgrade, copy dist/human.esm.js from a newer @vladmandic/human here
+ * (drop its sourceMappingURL line) and the face models into /models/human.
+ */
+const HUMAN_URL = "/vendor/human/human.esm.js";
 
-/** Loads the library and the three models once. Rejects if the device can't run them. */
-export function loadFaceApi(): Promise<FaceApi> {
-  apiPromise ??= (async () => {
-    // Loaded as a static file (public/vendor/face-api), not bundled: the
-    // library is 1.3 MB of minified TensorFlow.js, and bundling it ran the
-    // production build out of memory. After upgrading @vladmandic/face-api,
-    // copy dist/face-api.esm.js there again (drop its sourceMappingURL line).
-    const faceapi = (await import(/* @vite-ignore */ FACE_API_URL)) as FaceApi;
-    // The bundled TensorFlow.js; its typings aren't shipped with the package.
-    const tf = faceapi.tf as unknown as {
-      setBackend(name: string): Promise<boolean>;
-      ready(): Promise<void>;
-    };
-    // WebGL is fast on tablets; the CPU backend is the slow but safe fallback.
-    const gl = await tf.setBackend("webgl").catch(() => false);
-    if (!gl) await tf.setBackend("cpu");
-    await tf.ready();
-    const base = "/models/face";
-    await Promise.all([
-      faceapi.nets.tinyFaceDetector.loadFromUri(base),
-      faceapi.nets.faceLandmark68Net.loadFromUri(base),
-      faceapi.nets.faceRecognitionNet.loadFromUri(base),
-    ]);
-    return faceapi;
+const CONFIG = {
+  modelBasePath: "/models/human/",
+  backend: "webgl",
+  debug: false,
+  // Reuse the face box between video frames: much faster, the mesh still
+  // runs every frame.
+  cacheSensitivity: 0.7,
+  filter: { enabled: true, equalization: false },
+  face: {
+    enabled: true,
+    detector: { rotation: true, maxDetected: 2, minConfidence: 0.5, skipFrames: 10, skipTime: 500 },
+    mesh: { enabled: true },
+    iris: { enabled: true },
+    // Turned on per frame when we want a descriptor; never reused across frames.
+    description: { enabled: true, skipFrames: 0, skipTime: 0 },
+    emotion: { enabled: false },
+    antispoof: { enabled: false },
+    liveness: { enabled: false },
+    attention: { enabled: false },
+  },
+  body: { enabled: false },
+  hand: { enabled: false },
+  object: { enabled: false },
+  gesture: { enabled: false },
+  segmentation: { enabled: false },
+};
+
+let enginePromise: Promise<FaceEngine> | null = null;
+
+/** Loads the library and the models once. Rejects if the device can't run them. */
+export function loadFaceEngine(): Promise<FaceEngine> {
+  enginePromise ??= (async () => {
+    // A full URL: Vite's dev server rewrites "/..." imports and refuses
+    // public files. Works the same in the build and in the mobile apps.
+    const url = new URL(HUMAN_URL, window.location.origin).href;
+    const mod = (await import(/* @vite-ignore */ url)) as HumanModule;
+    let human = new mod.Human(CONFIG);
+    try {
+      await human.load();
+    } catch {
+      // No WebGL: the CPU backend is slow but works.
+      human = new mod.Human({ ...CONFIG, backend: "cpu" });
+      await human.load();
+    }
+    await human.warmup();
+    return human;
   })().catch((e: unknown) => {
-    apiPromise = null;
+    enginePromise = null;
     throw e;
   });
-  return apiPromise;
+  return enginePromise;
 }
 
 /** Whether this browser can open a camera at all (secure context + API). */
@@ -80,50 +130,57 @@ export async function startCamera(video: HTMLVideoElement): Promise<() => void> 
   };
 }
 
+/** What one frame shows, with a hint for the person if it isn't usable. */
 export type FrameResult =
   | { kind: "none" }
   | { kind: "many" }
   | { kind: "far" }
-  | { kind: "face"; ear: number; descriptor: Float32Array | null };
+  | { kind: "turned" }
+  | { kind: "face"; eyes: number; descriptor: number[] | null };
 
-type Pt = { x: number; y: number };
-const dist = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.y - b.y);
+type Pt = [number, number, number?];
+const gap = (a: Pt, b: Pt) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 
-/** Eye aspect ratio (Soukupová & Čech): ~0.3 open, under ~0.2 closed. */
-function eyeAspect(eye: Pt[]): number {
-  if (eye.length < 6) return 0;
-  return (dist(eye[1], eye[5]) + dist(eye[2], eye[4])) / (2 * dist(eye[0], eye[3]) || 1);
+/** Eye openness from the mesh: lid gap over eye width, both eyes averaged. */
+function eyeOpenness(mesh: Pt[]): number {
+  if (mesh.length < 400) return 0;
+  const left = gap(mesh[159], mesh[145]) / (gap(mesh[33], mesh[133]) || 1);
+  const right = gap(mesh[386], mesh[374]) / (gap(mesh[362], mesh[263]) || 1);
+  return (left + right) / 2;
 }
 
-/** A face must fill at least this share of the frame width (close to the camera). */
-const MIN_FACE_SHARE = 0.22;
+/** A face must be at least this share of the frame width (close enough). */
+const MIN_FACE_SHARE = 0.2;
+/** Head turned further than this (radians, ~20°) gives a poorer descriptor. */
+const MAX_TURN = 0.35;
 
-/**
- * Looks at one video frame. With `withDescriptor`, also computes the
- * descriptor (the slow part); without, only detection + landmarks, which is
- * fast enough to catch a blink.
- */
+function unit(v: number[]): number[] {
+  const n = Math.hypot(...v) || 1;
+  return v.map((x) => x / n);
+}
+
+/** Looks at one video frame. With `withDescriptor`, also computes the descriptor. */
 export async function readFrame(
-  faceapi: FaceApi,
+  human: FaceEngine,
   video: HTMLVideoElement,
   withDescriptor: boolean,
 ): Promise<FrameResult> {
   if (video.readyState < 2 || !video.videoWidth) return { kind: "none" };
-  const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 });
-  const task = faceapi.detectAllFaces(video, options).withFaceLandmarks();
-  const all: Array<{
-    detection: { score: number; box: { width: number } };
-    landmarks: { getLeftEye(): Pt[]; getRightEye(): Pt[] };
-    descriptor?: Float32Array;
-  }> = withDescriptor ? await task.withFaceDescriptors() : await task;
-  if (all.length === 0) return { kind: "none" };
-  if (all.length > 1) return { kind: "many" };
-  const one = all[0];
-  if (one.detection.box.width < video.videoWidth * MIN_FACE_SHARE) return { kind: "far" };
-  const ear = (eyeAspect(one.landmarks.getLeftEye()) + eyeAspect(one.landmarks.getRightEye())) / 2;
-  // Only a confident detection is good enough to recognise someone by.
-  const descriptor = one.descriptor && one.detection.score >= 0.7 ? one.descriptor : null;
-  return { kind: "face", ear, descriptor };
+  // Human keeps per-call settings, so say both ways every time.
+  const r = await human.detect(video, { face: { description: { enabled: withDescriptor } } });
+  const faces = r.face.filter((f) => f.score >= 0.5);
+  if (faces.length === 0) return { kind: "none" };
+  if (faces.length > 1) return { kind: "many" };
+  const f = faces[0];
+  if (f.box[2] < video.videoWidth * MIN_FACE_SHARE) return { kind: "far" };
+  const angle = f.rotation?.angle;
+  const turned = !!angle && (Math.abs(angle.yaw) > MAX_TURN || Math.abs(angle.pitch) > MAX_TURN);
+  if (turned) return { kind: "turned" };
+  const descriptor =
+    withDescriptor && f.embedding && f.embedding.length === 1024 && f.score >= 0.7
+      ? unit(f.embedding)
+      : null;
+  return { kind: "face", eyes: eyeOpenness(f.mesh), descriptor };
 }
 
 export function distance(a: ArrayLike<number>, b: ArrayLike<number>): number {
@@ -132,106 +189,136 @@ export function distance(a: ArrayLike<number>, b: ArrayLike<number>): number {
   return Math.sqrt(s);
 }
 
-export function meanDescriptor(list: ArrayLike<number>[]): number[] {
-  const out = new Array<number>(128).fill(0);
-  for (const d of list) for (let i = 0; i < 128; i++) out[i] += d[i] / list.length;
-  return out;
+/** Average of unit descriptors, scaled back to length 1. */
+export function meanDescriptor(list: number[][]): number[] {
+  const out = new Array<number>(list[0].length).fill(0);
+  for (const d of list) for (let i = 0; i < d.length; i++) out[i] += d[i];
+  return unit(out);
 }
 
-/** True when every pair is within `max` of each other (one person throughout). */
-export function consistent(list: ArrayLike<number>[], max: number): boolean {
-  for (let i = 0; i < list.length; i++)
-    for (let j = i + 1; j < list.length; j++) if (distance(list[i], list[j]) > max) return false;
-  return true;
+/**
+ * Same session, same person: scans are well within this of each other. A scan
+ * further than this from the others is a bad frame (blur, half a turn) or
+ * someone else, and is dropped.
+ */
+const SAME_SESSION = 0.7;
+
+/**
+ * The largest group of scans that are all close to their middle one. Bad
+ * frames are dropped instead of failing the whole scan.
+ */
+export function steadySamples(list: number[][], max = SAME_SESSION): number[][] {
+  if (list.length < 2) return list;
+  let best: number[][] = [];
+  for (const centre of list) {
+    const near = list.filter((d) => distance(d, centre) <= max);
+    if (near.length > best.length) best = near;
+  }
+  return best;
 }
 
-const OPEN_EAR = 0.25;
-const CLOSED_EAR = 0.2;
-
-/** Tracks open -> closed -> open across frames. */
+/**
+ * Notices a blink relative to the person's own eyes: openness drops below
+ * 70% of what it usually is, then comes back above 85%. Works for any eye
+ * shape, and a partial close counts, so a slow tablet that misses the frame
+ * with the eyes fully shut still sees it.
+ */
 export class BlinkTracker {
-  private sawOpen = false;
-  private sawClosed = false;
+  private open = 0;
+  private closed = false;
   blinked = false;
-  push(ear: number) {
-    if (ear >= OPEN_EAR) {
-      if (this.sawClosed && this.sawOpen) this.blinked = true;
-      this.sawOpen = true;
-    } else if (ear <= CLOSED_EAR && this.sawOpen) {
-      this.sawClosed = true;
-    }
+  push(eyes: number) {
+    if (eyes <= 0) return;
+    // Running "eyes open" level: rises quickly, falls slowly.
+    this.open = this.open === 0 ? eyes : Math.max(eyes, this.open * 0.98 + eyes * 0.02);
+    if (eyes < this.open * 0.7) this.closed = true;
+    else if (this.closed && eyes > this.open * 0.85) this.blinked = true;
   }
-  /** Eyes clearly open: the frames to take descriptors from. */
-  static open(ear: number) {
-    return ear >= OPEN_EAR;
+  /** Eyes open now: a good frame to take a descriptor from. */
+  isOpen(eyes: number) {
+    return this.open > 0 && eyes >= this.open * 0.8;
   }
 }
 
-export type ScanStatus = "starting" | "look" | "closer" | "one" | "blink" | "checking";
+export type ScanStatus =
+  | "starting"
+  | "look"
+  | "closer"
+  | "one"
+  | "straight"
+  | "blink"
+  | "hold"
+  | "checking";
 
 export type ScanOutcome =
   | { ok: true; descriptor: number[] }
-  | { ok: false; reason: "timeout" | "cancelled" | "unsteady" };
+  | { ok: false; reason: "timeout" | "cancelled" };
+
+const pause = (ms: number) => new Promise((res) => setTimeout(res, ms));
+
+function statusFor(r: FrameResult): ScanStatus | null {
+  if (r.kind === "none") return "look";
+  if (r.kind === "many") return "one";
+  if (r.kind === "far") return "closer";
+  if (r.kind === "turned") return "straight";
+  return null;
+}
 
 /**
- * Watches the camera until it has a live (blinking) face and three matching
- * descriptors from open-eye frames, then returns their average. Gives up after
- * `timeoutMs`.
+ * Clock-in: watches the camera until it has a live (blinking) face and three
+ * matching descriptors from open-eye frames, then returns their average.
+ * Gives up after `timeoutMs`.
  */
 export async function scanLiveFace(
-  faceapi: FaceApi,
+  human: FaceEngine,
   video: HTMLVideoElement,
   opts: { timeoutMs: number; signal: AbortSignal; onStatus: (s: ScanStatus) => void },
 ): Promise<ScanOutcome> {
   const blink = new BlinkTracker();
-  const samples: Float32Array[] = [];
+  let samples: number[][] = [];
   const deadline = Date.now() + opts.timeoutMs;
-  let frame = 0;
+  let lastSample = 0;
   opts.onStatus("look");
   while (Date.now() < deadline) {
     if (opts.signal.aborted) return { ok: false, reason: "cancelled" };
-    frame++;
-    // A descriptor every third frame; landmarks every frame for the blink.
-    const wantDescriptor = samples.length < 3 && frame % 3 === 0;
+    // A descriptor at most every 250 ms; the mesh (for the blink) every frame.
+    const wantDescriptor = samples.length < 5 && Date.now() - lastSample > 250;
     let r: FrameResult;
     try {
-      r = await readFrame(faceapi, video, wantDescriptor);
+      r = await readFrame(human, video, wantDescriptor);
     } catch {
       r = { kind: "none" };
     }
     if (opts.signal.aborted) return { ok: false, reason: "cancelled" };
-    if (r.kind === "none") {
-      opts.onStatus("look");
-    } else if (r.kind === "many") {
-      opts.onStatus("one");
-      samples.length = 0;
-    } else if (r.kind === "far") {
-      opts.onStatus("closer");
-    } else {
-      blink.push(r.ear);
-      if (r.descriptor && BlinkTracker.open(r.ear)) samples.push(r.descriptor);
-      if (samples.length >= 3 && !consistent(samples, 0.45)) {
-        // Someone else stepped in mid-scan: start the samples over.
-        samples.length = 0;
-        return { ok: false, reason: "unsteady" };
+    const hint = statusFor(r);
+    if (r.kind === "many") samples = [];
+    if (hint) opts.onStatus(hint);
+    else if (r.kind === "face") {
+      blink.push(r.eyes);
+      if (r.descriptor && blink.isOpen(r.eyes)) {
+        samples.push(r.descriptor);
+        lastSample = Date.now();
+        samples = steadySamples(samples);
       }
       if (blink.blinked && samples.length >= 3) {
         opts.onStatus("checking");
         return { ok: true, descriptor: meanDescriptor(samples) };
       }
-      opts.onStatus(blink.blinked ? "look" : "blink");
+      opts.onStatus(blink.blinked ? "hold" : "blink");
     }
-    await new Promise((res) => setTimeout(res, 40));
+    await pause(15);
   }
   return { ok: false, reason: "timeout" };
 }
 
 /**
- * For enrollment: `count` descriptors of one live face, taken at least
- * `gapMs` apart so they cover small changes of angle and expression.
+ * Adding a face: `count` steady descriptors of one face, taken at least
+ * `gapMs` apart so they cover small changes of angle and expression. No blink
+ * needed. Bad frames are dropped and taken again, so it keeps going until it
+ * has enough or time runs out.
  */
 export async function captureSamples(
-  faceapi: FaceApi,
+  human: FaceEngine,
   video: HTMLVideoElement,
   opts: {
     count: number;
@@ -241,40 +328,40 @@ export async function captureSamples(
     onStatus: (s: ScanStatus) => void;
     onProgress: (n: number) => void;
   },
-): Promise<
-  { ok: true; samples: number[][] } | { ok: false; reason: "timeout" | "cancelled" | "unsteady" }
-> {
-  const blink = new BlinkTracker();
-  const samples: Float32Array[] = [];
+): Promise<{ ok: true; samples: number[][] } | { ok: false; reason: "timeout" | "cancelled" }> {
+  let samples: number[][] = [];
   const deadline = Date.now() + opts.timeoutMs;
   let last = 0;
   opts.onStatus("look");
+  opts.onProgress(0);
   while (Date.now() < deadline) {
     if (opts.signal.aborted) return { ok: false, reason: "cancelled" };
-    const due = samples.length < opts.count && Date.now() - last >= opts.gapMs;
+    const due = Date.now() - last >= opts.gapMs;
     let r: FrameResult;
     try {
-      r = await readFrame(faceapi, video, due);
+      r = await readFrame(human, video, due);
     } catch {
       r = { kind: "none" };
     }
-    if (r.kind === "none") opts.onStatus("look");
-    else if (r.kind === "many") opts.onStatus("one");
-    else if (r.kind === "far") opts.onStatus("closer");
-    else {
-      blink.push(r.ear);
-      if (r.descriptor && BlinkTracker.open(r.ear)) {
-        samples.push(r.descriptor);
-        last = Date.now();
-        opts.onProgress(samples.length);
-        if (!consistent(samples, 0.45)) return { ok: false, reason: "unsteady" };
-      }
-      if (samples.length >= opts.count && blink.blinked) {
-        return { ok: true, samples: samples.map((s) => Array.from(s)) };
-      }
-      opts.onStatus(samples.length >= opts.count && !blink.blinked ? "blink" : "look");
+    if (opts.signal.aborted) return { ok: false, reason: "cancelled" };
+    const hint = statusFor(r);
+    if (r.kind === "many") {
+      samples = [];
+      opts.onProgress(0);
     }
-    await new Promise((res) => setTimeout(res, 40));
+    if (hint) opts.onStatus(hint);
+    else if (r.kind === "face") {
+      opts.onStatus("hold");
+      if (r.descriptor) {
+        samples = steadySamples([...samples, r.descriptor]);
+        last = Date.now();
+        opts.onProgress(Math.min(samples.length, opts.count));
+        if (samples.length >= opts.count) {
+          return { ok: true, samples: samples.slice(0, opts.count) };
+        }
+      }
+    }
+    await pause(15);
   }
   return { ok: false, reason: "timeout" };
 }
