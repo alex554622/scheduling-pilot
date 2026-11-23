@@ -23,6 +23,19 @@ interface Notification {
   created_at: string;
 }
 
+/**
+ * Notifications with no company show in every company only if they are about
+ * the account itself (same rule as the notifications_own_select policy and
+ * notification_is_account_wide in the database).
+ */
+function isAccountWide(type: string): boolean {
+  return (
+    type.startsWith("membership_") ||
+    type.startsWith("company_status_") ||
+    type === "company_pending"
+  );
+}
+
 export function NotificationsBell() {
   const { user, company } = useAuth();
   const t = useT("shell");
@@ -147,7 +160,8 @@ export function NotificationsBell() {
   const items = useMemo(
     () =>
       (notifsQ.data ?? []).filter(
-        (n) => wants(n.type) && (!n.company_id || n.company_id === company?.id),
+        (n) =>
+          wants(n.type) && (n.company_id ? n.company_id === company?.id : isAccountWide(n.type)),
       ),
     [notifsQ.data, wants, company?.id],
   );
@@ -209,7 +223,9 @@ export function NotificationsBell() {
             {notifsQ.isLoading ? (
               <p className="px-4 py-6 text-center text-sm text-muted-foreground">{t("Loading…")}</p>
             ) : items.length === 0 ? (
-              <p className="px-4 py-6 text-center text-sm text-muted-foreground">{t("You're all caught up.")}</p>
+              <p className="px-4 py-6 text-center text-sm text-muted-foreground">
+                {t("You're all caught up.")}
+              </p>
             ) : (
               items.map((n) => (
                 // A row, not one big button: marking read is its own control,
@@ -249,7 +265,7 @@ export function NotificationsBell() {
                       onClick={() => markRead.mutate([n.id])}
                       disabled={markRead.isPending}
                       className="m-1.5 rounded-md p-1.5 text-muted-foreground hover:bg-background hover:text-primary"
-                      aria-label={t("Mark \"{title}\" as read", { title: n.title })}
+                      aria-label={t('Mark "{title}" as read', { title: n.title })}
                       title={t("Mark as read")}
                     >
                       <Check className="h-4 w-4" />
