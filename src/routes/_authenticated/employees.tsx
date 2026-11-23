@@ -1668,7 +1668,7 @@ function EditMemberDialog({
   }, [visibilityQ.data]);
 
   const worksAtQ = useQuery({
-    queryKey: ["employee-locations", member?.id],
+    queryKey: ["employee-locations", member?.id, companyId],
     enabled: !!member,
     queryFn: async () => {
       const { data, error } = await supabase
@@ -1787,8 +1787,11 @@ function EditMemberDialog({
     const locAdd = [...worksAt].filter((id) => !wasAt.has(id));
     const locRemove = [...wasAt].filter((id) => !worksAt.has(id));
     if (locAdd.length) {
-      const { error: addErr } = await supabase.from("employee_locations").insert(
+      // Upsert, skipping rows that already exist: a location can already be
+      // on file (loaded late, or saved twice), and that is not an error.
+      const { error: addErr } = await supabase.from("employee_locations").upsert(
         locAdd.map((location_id) => ({ company_id: companyId, employee_id: member.id, location_id })),
+        { onConflict: "employee_id,location_id", ignoreDuplicates: true },
       );
       if (addErr) { setSaving(false); setErr(addErr.message); return; }
     }
@@ -2175,7 +2178,9 @@ function BulkEditDialog({
           [...worksAt].map((location_id) => ({ company_id: companyId, employee_id, location_id })),
         );
         if (rows.length) {
-          const { error: addErr } = await supabase.from("employee_locations").insert(rows);
+          const { error: addErr } = await supabase
+            .from("employee_locations")
+            .upsert(rows, { onConflict: "employee_id,location_id", ignoreDuplicates: true });
           if (addErr) throw addErr;
         }
       }
