@@ -318,8 +318,6 @@ export const time: Record<string, string> = {
   "Delete your message": "Eliminar tu mensaje",
   "Delete (admin)": "Eliminar (administrador)",
   "Messages": "Mensajes",
-  "Today's board for the whole team. Everything posted here disappears after 24 hours.": "El tablero de hoy para todo el equipo. Todo lo que se publique aquí desaparece después de 24 horas.",
-  "Write an announcement for everyone…": "Escribe un anuncio para todos…",
   "Write a message for the team…": "Escribe un mensaje para el equipo…",
   "Announcement": "Anuncio",
   "— pinned, and everyone is notified": "— fijado, y se notifica a todos",
@@ -423,4 +421,15 @@ export const time: Record<string, string> = {
     "Aprobado. Todos los supervisores lo aprobaron, así que pasó a un administrador para la respuesta final.",
   "Approved. It is still waiting on another supervisor.":
     "Aprobado. Todavía espera la respuesta de otro supervisor.",
+  // Department messages.
+  "Today's board for your company and your department. Everything posted here disappears after 24 hours.":
+    "El tablero del día para tu empresa y tu departamento. Todo lo que se publica aquí desaparece después de 24 horas.",
+  "Write an announcement…": "Escribe un anuncio…",
+  "You can post once an admin puts you in a department.":
+    "Podrás publicar cuando un administrador te asigne a un departamento.",
+  "Post to:": "Publicar en:",
+  "Everyone": "Todos",
+  "Department": "Departamento",
+  "mine": "el mío",
+  "— pinned, and those departments are notified": "— fijado, y se avisa a esos departamentos",
 };

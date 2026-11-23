@@ -1445,6 +1445,7 @@ export type Database = {
           body: string
           company_id: string
           created_at: string
+          department_ids: string[] | null
           id: string
           is_announcement: boolean
         }
@@ -1453,6 +1454,7 @@ export type Database = {
           body: string
           company_id: string
           created_at?: string
+          department_ids?: string[] | null
           id?: string
           is_announcement?: boolean
         }
@@ -1461,6 +1463,7 @@ export type Database = {
           body?: string
           company_id?: string
           created_at?: string
+          department_ids?: string[] | null
           id?: string
           is_announcement?: boolean
         }

@@ -87,7 +87,7 @@ export function useManagedScope() {
       managesDepartment,
       /** Supervisors may fix punches and notes (company rule, on unless turned off). */
       canEditTimecards: !isSupervisor || rules.supervisors_edit_timecards,
-      /** Supervisors may approve time off and record absences (company rule). */
+      /** Supervisors may record absences (company rule). Requests always go to them. */
       canApproveTimeOff: !isSupervisor || rules.supervisors_approve_time_off,
     }),
     [isSupervisor, idsQ.isLoading, deptQ.isLoading, manages, narrow, managesDepartment, rules],
