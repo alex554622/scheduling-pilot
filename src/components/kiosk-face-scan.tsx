@@ -205,12 +205,12 @@ export function KioskFaceScan({
         {phase.kind === "scanning" && phase.status === "blink" && (
           <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center gap-3 bg-gradient-to-t from-black/80 to-transparent px-4 pb-5 pt-10 text-white">
             <Eye className="h-9 w-9 animate-pulse" />
-            <span className="text-2xl font-bold">{t("Blink your eyes")}</span>
+            <span className="text-2xl font-bold">{t("Blink slowly")}</span>
           </div>
         )}
         {debugOn && debug && (
           <pre className="pointer-events-none absolute left-1 top-1 rounded bg-black/70 px-2 py-1 text-left text-[11px] leading-tight text-emerald-300">
-            {`${debug.frame}  ${debug.ms}ms
+            {`${debug.frame}  ${debug.ms}ms  ${debug.backend}
 size ${debug.share.toFixed(2)}  score ${debug.score.toFixed(2)}
 eyes ${debug.eyes.toFixed(3)} / open ${debug.open.toFixed(3)}
 samples ${debug.samples}  blinked ${debug.blinked ? "yes" : "no"}`}

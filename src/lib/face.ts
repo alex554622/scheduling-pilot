@@ -287,6 +287,7 @@ function statusFor(r: FrameResult): ScanStatus | null {
 /** Live numbers for the ?debug=face overlay on the clock-in. */
 export type ScanDebug = {
   frame: FrameResult["kind"];
+  backend: string;
   share: number;
   score: number;
   eyes: number;
@@ -297,10 +298,15 @@ export type ScanDebug = {
 };
 
 /**
- * Clock-in: watches the camera until it has a live (blinking) face and two
- * matching descriptors, then returns their average. Descriptors are taken
- * while the person looks at the camera, before and after the blink, so the
- * blink is usually the last thing needed. Gives up after `timeoutMs`.
+ * Clock-in: a live (blinking) face and two matching descriptors, averaged.
+ *
+ * Built for slow tablets, where a descriptor frame can take half a second: a
+ * blink (100-300 ms) would fall between two such frames and never be seen.
+ * So it takes ONE descriptor as soon as a face is steady, then runs only the
+ * fast eye frames until the blink, then takes the second descriptor right
+ * after it. The face that blinked is the face that gets matched: if the two
+ * descriptors disagree (someone swapped in), it starts over. Gives up after
+ * `timeoutMs`.
  */
 export async function scanLiveFace(
   human: FaceEngine,
@@ -312,15 +318,18 @@ export async function scanLiveFace(
     onDebug?: (d: ScanDebug) => void;
   },
 ): Promise<ScanOutcome> {
-  const blink = new BlinkTracker();
+  let blink = new BlinkTracker();
   let samples: number[][] = [];
   const deadline = Date.now() + opts.timeoutMs;
-  let lastSample = 0;
+  let lastHeavy = 0;
+  const backend = human.tf.getBackend();
   opts.onStatus("look");
   while (Date.now() < deadline) {
     if (opts.signal.aborted) return { ok: false, reason: "cancelled" };
-    // A descriptor at most every 200 ms; the mesh (for the blink) every frame.
-    const wantDescriptor = samples.length < 4 && Date.now() - lastSample > 200;
+    const now = Date.now();
+    const wantDescriptor = blink.blinked
+      ? samples.length < 2 && now - lastHeavy > 100
+      : samples.length === 0 && now - lastHeavy > 600;
     const started = performance.now();
     let r: FrameResult;
     try {
@@ -329,14 +338,24 @@ export async function scanLiveFace(
       r = { kind: "none" };
     }
     if (opts.signal.aborted) return { ok: false, reason: "cancelled" };
+    if (wantDescriptor) lastHeavy = Date.now();
     const hint = statusFor(r);
-    if (r.kind === "many") samples = [];
+    if (r.kind === "many") {
+      // Two people in view: start over.
+      samples = [];
+      blink = new BlinkTracker();
+    }
     if (hint) opts.onStatus(hint);
     else if (r.kind === "face") {
       blink.push(r.eyes);
       if (r.descriptor && blink.isOpen(r.eyes)) {
-        samples = steadySamples([...samples, r.descriptor]);
-        lastSample = Date.now();
+        if (samples.length > 0 && distance(samples[0], r.descriptor) > SAME_SESSION) {
+          // Not the same face as before the blink: start over.
+          samples = [r.descriptor];
+          blink = new BlinkTracker();
+        } else {
+          samples.push(r.descriptor);
+        }
       }
       if (blink.blinked && samples.length >= 2) {
         opts.onStatus("checking");
@@ -346,6 +365,7 @@ export async function scanLiveFace(
     }
     opts.onDebug?.({
       frame: r.kind,
+      backend,
       share: r.kind === "face" ? r.share : 0,
       score: r.kind === "face" ? r.score : 0,
       eyes: r.kind === "face" ? r.eyes : 0,
@@ -354,7 +374,8 @@ export async function scanLiveFace(
       blinked: blink.blinked,
       ms: Math.round(performance.now() - started),
     });
-    await pause(5);
+    // Yield to the page (and the camera) between frames.
+    await pause(0);
   }
   return { ok: false, reason: "timeout" };
 }

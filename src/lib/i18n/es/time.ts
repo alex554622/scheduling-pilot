@@ -460,5 +460,5 @@ export const time: Record<string, string> = {
   "Face saved": "Rostro guardado",
   "Close": "Cerrar",
   "Try again": "Intentar de nuevo",
-  "Blink your eyes": "Parpadea",
+  "Blink slowly": "Parpadea despacio",
 };
