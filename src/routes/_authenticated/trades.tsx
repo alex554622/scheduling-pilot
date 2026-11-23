@@ -11,6 +11,9 @@ import {
 } from "@/components/ui/dialog";
 import { RefreshCw, Plus, Loader2, Check, X, ArrowRight } from "lucide-react";
 import { localeTag, useT } from "@/lib/i18n";
+import {
+  ApprovalTrail, DecisionDialog, awaitsMe, useRequestApprovals,
+} from "@/components/request-approvals";
 
 export const Route = createFileRoute("/_authenticated/trades")({
   component: TradesPage,
@@ -23,6 +26,8 @@ interface Trade {
   from_employee_id: string;
   to_employee_id: string;
   status: string;
+  /** While 'pending_supervisor': 'supervisors' or 'admin', whose answer it is waiting on. */
+  approval_stage: "supervisors" | "admin" | null;
   company_id: string;
   created_at: string;
 }
@@ -50,6 +55,11 @@ function TradesPage() {
   const [open, setOpen] = useState(false);
   const companyId = profile?.company_id ?? null;
   const canAdminister = primaryRole === "company_admin" || primaryRole === "super_admin";
+  // After the teammate accepts, every supervisor of either person approves,
+  // then an admin gives the final answer (20261128120000_request_approval_chain.sql).
+  const approvalsQ = useRequestApprovals("shift_trade", companyId);
+  const approvalsOf = (id: string) => approvalsQ.data?.get(id);
+  const [deciding, setDeciding] = useState<{ trade: Trade; approve: boolean } | null>(null);
 
   const tradesQ = useQuery({
     queryKey: ["trades", companyId],
@@ -109,7 +119,7 @@ function TradesPage() {
 
   function refreshAll() {
     setActionError(null);
-    for (const key of ["trades", "shifts", "trades-shifts"]) {
+    for (const key of ["trades", "shifts", "trades-shifts", "request-approvals"]) {
       qc.invalidateQueries({ queryKey: [key] });
     }
   }
@@ -128,12 +138,18 @@ function TradesPage() {
     onError: (e: Error) => setActionError(e.message),
   });
 
+  /** A supervisor's answer, or an admin's final one. */
   const approveMut = useMutation({
-    mutationFn: async ({ id, approve }: { id: string; approve: boolean }) => {
-      const { error } = await supabase.rpc("approve_trade", { _trade: id, _approve: approve });
+    mutationFn: async ({ id, approve, comment }: { id: string; approve: boolean; comment: string }) => {
+      const { error } = canAdminister
+        ? await supabase.rpc("approve_trade", { _trade: id, _approve: approve, _comment: comment || null })
+        : await supabase.rpc("supervisor_decide", {
+            _type: "shift_trade", _request: id, _approve: approve, _comment: comment || null,
+          });
       if (error) throw error;
     },
-    onSuccess: refreshAll,
+    onMutate: () => setActionError(null),
+    onSuccess: () => { setDeciding(null); refreshAll(); },
     onError: (e: Error) => setActionError(e.message),
   });
 
@@ -159,7 +175,7 @@ function TradesPage() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-2xl font-semibold text-foreground">{tx("Shift trades")}</h2>
-          <p className="text-sm text-muted-foreground">{tx("Propose a swap with a teammate. Both they and a company admin must approve.")}</p>
+          <p className="text-sm text-muted-foreground">{tx("Propose a swap with a teammate. They accept, your supervisors approve, then a company admin gives the final answer.")}</p>
         </div>
         <Button onClick={() => setOpen(true)} disabled={myShifts.length === 0}>
           <Plus className="h-4 w-4" /> {tx("Propose trade")}
@@ -193,9 +209,15 @@ function TradesPage() {
               const isFrom = t.from_employee_id === user?.id;
               const isTo = t.to_employee_id === user?.id;
               const canEmployeeAct = isTo && t.status === "pending_employee";
-              // "pending_supervisor" is the stored status from when supervisors were
-              // their own role; it now just means "waiting on a company admin".
-              const canAdminAct = canAdminister && t.status === "pending_supervisor";
+              // "pending_supervisor" means accepted and in the approval chain;
+              // approval_stage says whether supervisors or an admin are next.
+              const inChain = t.status === "pending_supervisor";
+              const canSupervisorAct =
+                !canAdminister && inChain && t.approval_stage === "supervisors" && awaitsMe(approvalsOf(t.id), user?.id);
+              const canAdminAct = canAdminister && inChain;
+              // An admin may deny at any point, but approves only once the supervisors have.
+              const canApprove = canSupervisorAct || (canAdminAct && t.approval_stage === "admin");
+              const canDeny = canSupervisorAct || canAdminAct;
               return (
                 <li key={t.id} className="flex flex-wrap items-center gap-4 px-5 py-4">
                   <div className="grid h-10 w-10 place-items-center rounded-lg bg-primary-soft text-primary">
@@ -214,8 +236,13 @@ function TradesPage() {
                         {tx("Takes:")} {returnShift ? `${fmtRange(returnShift.starts_at, returnShift.ends_at)}${returnShift.position ? " · " + returnShift.position : ""}` : tx("Shift no longer available")}
                       </p>
                     )}
+                    <ApprovalTrail
+                      approvals={approvalsOf(t.id)}
+                      nameOf={(id) => nameOf.get(id) ?? tx("Admin")}
+                      pending={inChain}
+                    />
                   </div>
-                  <TradeBadge status={t.status} />
+                  <TradeBadge status={t.status} stage={t.approval_stage} />
                   {canEmployeeAct && (
                     <div className="flex gap-1">
                       <Button size="sm" variant="outline" disabled={busy} onClick={() => respondMut.mutate({ id: t.id, accept: true })}>
@@ -226,17 +253,19 @@ function TradesPage() {
                       </Button>
                     </div>
                   )}
-                  {canAdminAct && (
+                  {canDeny && (
                     <div className="flex gap-1">
-                      <Button size="sm" variant="outline" disabled={busy} onClick={() => approveMut.mutate({ id: t.id, approve: true })}>
-                        <Check className="h-4 w-4" /> {tx("Approve")}
-                      </Button>
-                      <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" disabled={busy} onClick={() => approveMut.mutate({ id: t.id, approve: false })}>
+                      {canApprove && (
+                        <Button size="sm" variant="outline" disabled={busy} onClick={() => setDeciding({ trade: t, approve: true })}>
+                          <Check className="h-4 w-4" /> {tx("Approve")}
+                        </Button>
+                      )}
+                      <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" disabled={busy} onClick={() => setDeciding({ trade: t, approve: false })}>
                         <X className="h-4 w-4" /> {tx("Deny")}
                       </Button>
                     </div>
                   )}
-                  {isFrom && t.status === "pending_employee" && (
+                  {isFrom && (t.status === "pending_employee" || inChain) && (
                     <Button size="sm" variant="ghost" disabled={busy} onClick={() => cancelMut.mutate(t.id)}>{tx("Cancel")}</Button>
                   )}
                 </li>
@@ -245,6 +274,34 @@ function TradesPage() {
           </ul>
         )}
       </div>
+
+      <DecisionDialog
+        open={!!deciding}
+        approve={deciding?.approve ?? true}
+        title={
+          deciding
+            ? deciding.approve
+              ? canAdminister ? tx("Give final approval") : tx("Approve as supervisor")
+              : tx("Deny this trade")
+            : ""
+        }
+        description={
+          deciding
+            ? `${nameOf.get(deciding.trade.from_employee_id) ?? tx("Member")} → ${nameOf.get(deciding.trade.to_employee_id) ?? tx("Member")}. ` +
+              (deciding.approve
+                ? canAdminister
+                  ? tx("This is the final answer: the shifts move now, and both people and their supervisors are told.")
+                  : tx("Once every supervisor has approved, it goes to an admin for the final answer.")
+                : tx("A denied trade goes no further. Both people are told, with your comment."))
+            : undefined
+        }
+        busy={approveMut.isPending}
+        error={actionError}
+        onCancel={() => { setDeciding(null); setActionError(null); }}
+        onConfirm={(comment) =>
+          deciding && approveMut.mutate({ id: deciding.trade.id, approve: deciding.approve, comment })
+        }
+      />
 
       <ProposeTradeDialog
         open={open}
@@ -266,11 +323,15 @@ function TradesPage() {
   );
 }
 
-function TradeBadge({ status }: { status: string }) {
+function TradeBadge({ status, stage }: { status: string; stage: Trade["approval_stage"] }) {
   const t = useT("time");
   const map: Record<string, [string, string]> = {
     pending_employee: ["bg-warning/20 text-warning-foreground", "Awaiting teammate"],
-    pending_supervisor: ["bg-primary-soft text-primary", "Awaiting admin"],
+    pending_supervisor: [
+      "bg-primary-soft text-primary",
+      stage === "supervisors" ? "Awaiting supervisors" : "Awaiting admin",
+    ],
+    declined: ["bg-muted text-muted-foreground", "Declined"],
     approved: ["bg-success-soft text-success", "Approved"],
     denied: ["bg-destructive/15 text-destructive", "Denied"],
     cancelled: ["bg-muted text-muted-foreground", "Cancelled"],

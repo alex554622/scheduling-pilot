@@ -248,7 +248,6 @@ export const time: Record<string, string> = {
   "Deny": "Rechazar",
   "Pick at least one day": "Elige al menos un día",
   "Request time off": "Solicitar tiempo libre",
-  "Pick the days you need off. A company admin will review and respond.": "Elige los días que necesitas libres. Un administrador de la empresa revisará y responderá.",
   "Pick days": "Elegir días",
   "Date range": "Rango de fechas",
   "Tap each day you need off — they don't have to be next to each other.": "Toca cada día que necesitas libre; no tienen que ser consecutivos.",
@@ -261,7 +260,6 @@ export const time: Record<string, string> = {
   "Submit": "Enviar",
   "Join a company to use shift trades.": "Únete a una empresa para usar los intercambios de turno.",
   "Shift trades": "Intercambios de turno",
-  "Propose a swap with a teammate. Both they and a company admin must approve.": "Propón un intercambio con un compañero. Tanto esa persona como un administrador de la empresa deben aprobarlo.",
   "Propose trade": "Proponer intercambio",
   "You have no upcoming published shifts, so there's nothing to trade yet. Shifts appear here once a manager builds the schedule and posts it.": "No tienes turnos próximos publicados, así que aún no hay nada que intercambiar. Los turnos aparecen aquí cuando un gerente arma el horario y lo publica.",
   "All trade requests": "Todas las solicitudes de intercambio",
@@ -392,4 +390,37 @@ export const time: Record<string, string> = {
     "Entrada {n} min después del inicio del turno de las {time}",
   "You clocked in {n} min late for your {time} shift.":
     "Registraste tu entrada {n} min tarde para tu turno de las {time}.",
+  // Approval chain: supervisors, then an admin.
+  "Pick the days you need off. Your supervisors review it first, then a company admin gives the final answer.":
+    "Elige los días que necesitas libres. Primero lo revisan tus supervisores y luego un administrador de la empresa da la respuesta final.",
+  "Propose a swap with a teammate. They accept, your supervisors approve, then a company admin gives the final answer.":
+    "Propón un intercambio con un compañero. Esa persona acepta, tus supervisores lo aprueban y luego un administrador de la empresa da la respuesta final.",
+  "Awaiting supervisors": "Esperando a los supervisores",
+  "Declined": "Rechazado",
+  "Supervisor": "Supervisor",
+  "Admin": "Administrador",
+  "approved": "aprobó",
+  "denied": "rechazó",
+  "waiting": "pendiente",
+  "Comment (optional)": "Comentario (opcional)",
+  "Anything to add?": "¿Algo que añadir?",
+  "Why is it being denied?": "¿Por qué se rechaza?",
+  "Give final approval": "Dar la aprobación final",
+  "Approve as supervisor": "Aprobar como supervisor",
+  "Deny this request": "Rechazar esta solicitud",
+  "Deny this trade": "Rechazar este intercambio",
+  "This is the final answer. The employee and their supervisors are told.":
+    "Esta es la respuesta final. Se avisa al empleado y a sus supervisores.",
+  "Once every supervisor has approved, it goes to an admin for the final answer.":
+    "Cuando todos los supervisores lo aprueben, pasa a un administrador para la respuesta final.",
+  "A denied request goes no further. The employee is told, with your comment.":
+    "Una solicitud rechazada no sigue adelante. Se avisa al empleado, con tu comentario.",
+  "This is the final answer: the shifts move now, and both people and their supervisors are told.":
+    "Esta es la respuesta final: los turnos cambian ahora y se avisa a ambas personas y a sus supervisores.",
+  "A denied trade goes no further. Both people are told, with your comment.":
+    "Un intercambio rechazado no sigue adelante. Se avisa a ambas personas, con tu comentario.",
+  "Approved. Every supervisor has approved, so it has gone to an admin for the final answer.":
+    "Aprobado. Todos los supervisores lo aprobaron, así que pasó a un administrador para la respuesta final.",
+  "Approved. It is still waiting on another supervisor.":
+    "Aprobado. Todavía espera la respuesta de otro supervisor.",
 };

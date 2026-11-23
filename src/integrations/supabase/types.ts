@@ -1252,8 +1252,48 @@ export type Database = {
           },
         ]
       }
+      request_approvals: {
+        Row: {
+          approver_id: string
+          comment: string | null
+          company_id: string
+          created_at: string
+          decided_at: string | null
+          decision: string | null
+          id: string
+          request_id: string
+          request_type: string
+          stage: string
+        }
+        Insert: {
+          approver_id: string
+          comment?: string | null
+          company_id: string
+          created_at?: string
+          decided_at?: string | null
+          decision?: string | null
+          id?: string
+          request_id: string
+          request_type: string
+          stage: string
+        }
+        Update: {
+          approver_id?: string
+          comment?: string | null
+          company_id?: string
+          created_at?: string
+          decided_at?: string | null
+          decision?: string | null
+          id?: string
+          request_id?: string
+          request_type?: string
+          stage?: string
+        }
+        Relationships: []
+      }
       shift_trades: {
         Row: {
+          approval_stage: string | null
           company_id: string
           created_at: string
           from_employee_id: string
@@ -1473,6 +1513,7 @@ export type Database = {
       }
       time_off_requests: {
         Row: {
+          approval_stage: string | null
           company_id: string
           created_at: string
           employee_id: string
@@ -1888,9 +1929,13 @@ export type Database = {
           severity: string
         }[]
       }
-      approve_trade: { Args: { _trade: string; _approve: boolean }; Returns: Json }
+      approve_trade: { Args: { _trade: string; _approve: boolean; _comment?: string | null }; Returns: Json }
+      supervisor_decide: {
+        Args: { _type: string; _request: string; _approve: boolean; _comment?: string | null }
+        Returns: string
+      }
       respond_to_trade: { Args: { _trade: string; _accept: boolean }; Returns: Json }
-      decide_time_off: { Args: { _request: string; _approve: boolean }; Returns: number }
+      decide_time_off: { Args: { _request: string; _approve: boolean; _comment?: string | null }; Returns: number }
       manager_record_absence: {
         Args: { _employee: string; _kind: string; _start: string; _end: string; _note?: string | null }
         Returns: string

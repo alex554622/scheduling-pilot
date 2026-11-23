@@ -429,9 +429,9 @@ export const people: Record<string, string> = {
   Supervisor: "Supervisor",
   Supervisors: "Supervisores",
   "What supervisors can do": "Lo que pueden hacer los supervisores",
-  "Supervisors can approve time off": "Los supervisores pueden aprobar tiempo libre",
-  "On: a supervisor approves or denies time off for the people in their departments, and can record sick days, vacation and family leave on their cards. Off: only admins can.":
-    "Activado: un supervisor aprueba o rechaza el tiempo libre de las personas de sus departamentos y puede registrar días de enfermedad, vacaciones y permisos familiares en sus tarjetas. Desactivado: solo los administradores pueden.",
+  "Supervisors can record absences": "Los supervisores pueden registrar ausencias",
+  "On: a supervisor can record sick days, vacation and family leave on the cards of the people in their departments. Off: only admins can. (Time-off requests and shift trades always go to the department's supervisors first, then to an admin for the final answer.)":
+    "Activado: un supervisor puede registrar días de enfermedad, vacaciones y permisos familiares en las tarjetas de las personas de sus departamentos. Desactivado: solo los administradores pueden. (Las solicitudes de tiempo libre y los intercambios de turnos siempre pasan primero por los supervisores del departamento y luego por un administrador para la respuesta final.)",
   "Supervisors can edit timecards": "Los supervisores pueden editar tarjetas de tiempo",
   "On: a supervisor can fix missed or wrong punches and write notes on the cards of the people in their departments. Off: they can review the cards but not change them.":
     "Activado: un supervisor puede corregir marcajes olvidados o erróneos y escribir notas en las tarjetas de las personas de sus departamentos. Desactivado: puede revisar las tarjetas pero no cambiarlas.",
