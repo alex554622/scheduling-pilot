@@ -11,6 +11,7 @@ import { useT, translate, useLocaleTag } from "@/lib/i18n";
 import { Users, ShieldCheck, Search, Copy, Check, Loader2, UserCog, Trash2, Pencil, Mail, Send, X, Link2, RefreshCw, CalendarClock, Inbox, History, RotateCcw, UserCheck, PauseCircle, PlayCircle } from "lucide-react";
 import { shareableOrigin } from "@/lib/native/platform";
 import type { VisibilityMode } from "@/lib/staff-visibility";
+import { TempPasswordSection } from "@/components/temp-password";
 import { ORG_STRUCTURE_KEY, useOrgStructure } from "@/lib/use-org-structure";
 import { activeOrCurrent, positionFitsDepartment, positionsForDepartment } from "@/lib/org-structure";
 
@@ -2023,6 +2024,8 @@ function EditMemberDialog({
               {t("Where they may clock in. Their hours on the timecard are split by the location each shift was worked at.")}
             </p>
           </div>
+
+          {member && <TempPasswordSection key={member.id} userId={member.id} name={member.full_name} />}
 
           {err && <p className="text-sm text-destructive">{err}</p>}
         </div>

@@ -54,6 +54,7 @@ import { unlockSound } from "@/lib/notify-sound";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { BrandLogo, BrandMark } from "@/components/brand";
 import { JoinCompanyGate } from "@/components/join-company-gate";
+import { ChangePasswordGate, usePasswordChangeRequired } from "@/components/temp-password";
 import { noindexSeo } from "@/lib/seo";
 
 export const Route = createFileRoute("/_authenticated")({
@@ -381,6 +382,10 @@ function AuthLayout() {
     if (!loading && !user) navigate({ to: "/login" });
   }, [loading, user, navigate]);
 
+  // Signed in with a temporary password from an admin: they choose their own
+  // before anything else (see components/temp-password.tsx).
+  const passwordQ = usePasswordChangeRequired();
+
   // The server didn't answer when we asked who this is. Keep asking — every
   // 10 seconds and the moment the device is back online — so the account
   // appears by itself once the server is up, with no refresh needed.
@@ -395,7 +400,7 @@ function AuthLayout() {
     };
   }, [loadError, refresh]);
 
-  if (loading || !user) {
+  if (loading || !user || passwordQ.isLoading) {
     return (
       <div className="grid min-h-screen place-items-center bg-background text-sm text-muted-foreground">
         {t("Loading…")}
@@ -435,6 +440,17 @@ function AuthLayout() {
           </div>
         </div>
       </div>
+    );
+  }
+
+  if (passwordQ.data) {
+    return (
+      <ChangePasswordGate
+        onSignOut={async () => {
+          await signOut();
+          navigate({ to: "/login" });
+        }}
+      />
     );
   }
 

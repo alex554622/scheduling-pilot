@@ -2040,6 +2040,10 @@ export type Database = {
         Returns: undefined
       }
       admin_delete_user: { Args: { _user: string }; Returns: undefined }
+      admin_set_temp_password: { Args: { _user: string; _password?: string | null }; Returns: string }
+      can_reset_password: { Args: { _actor: string; _target: string; _company: string }; Returns: boolean }
+      my_password_change_required: { Args: never; Returns: boolean }
+      finish_password_change: { Args: never; Returns: boolean }
       admin_review_company: {
         Args: { _company: string; _approve: boolean; _note?: string | null }
         Returns: undefined

@@ -550,4 +550,11 @@ export const people: Record<string, string> = {
   "Connect the schedule to time cards": "Conectar el horario con las tarjetas de tiempo",
   "Each clock-in is read against the person's published shift. Anyone who clocks in after their shift start is marked late on the time clock and on their timecard. Draft shifts don't count, and editing a shift updates the mark.": "Cada entrada se compara con el turno publicado de la persona. Quien registre su entrada después del inicio de su turno se marca con retardo en el reloj y en su tarjeta de tiempo. Los turnos en borrador no cuentan, y editar un turno actualiza la marca.",
   "With 5 minutes, a 9:00 shift clocked into at 9:05 is on time and at 9:06 is 6 minutes late.": "Con 5 minutos, en un turno de las 9:00 una entrada a las 9:05 es puntual y a las 9:06 tiene 6 minutos de retardo.",
+  "Give {name} this temporary password. It is shown only now.": "Dale a {name} esta contraseña temporal. Solo se muestra ahora.",
+  "They have been signed out everywhere. After signing in with it they choose their own password.": "Se cerró su sesión en todos los dispositivos. Después de entrar con ella, elegirán su propia contraseña.",
+  "Temporary password (leave empty to make one up)": "Contraseña temporal (déjala vacía para crear una)",
+  "At least 8 characters": "Al menos 8 caracteres",
+  "Set password": "Establecer contraseña",
+  "Forgot their password? Give them a temporary one to sign in with.": "¿Olvidó su contraseña? Dale una temporal para entrar.",
+  "Set a temporary password": "Establecer una contraseña temporal",
 };

@@ -381,4 +381,7 @@ export const shell: Record<string, string> = {
   "Late clock-in": "Entrada con retardo",
   "Clock-in without GPS": "Entrada sin GPS",
   "Clock-out without GPS": "Salida sin GPS",
+  "Choose your password": "Elige tu contraseña",
+  "You signed in with a temporary password from your admin. Pick your own to keep using the app.": "Entraste con una contraseña temporal de tu administrador. Elige la tuya para seguir usando la app.",
+  "Save password": "Guardar contraseña",
 };
