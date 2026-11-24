@@ -347,7 +347,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    */
   const loadSeq = useRef(0);
 
-  const loadContext = useCallback(async (authUser: Pick<User, "id" | "email"> | null) => {
+  const loadContext = useCallback(async (authUser: Pick<User, "id" | "email"> | null): Promise<boolean> => {
     const seq = ++loadSeq.current;
     const uid = authUser?.id ?? null;
     if (!uid) {
@@ -360,7 +360,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsSuperAdmin(false);
       setLoadError(false);
       contextFor.current = null;
-      return;
+      return true;
     }
 
     // A server that is down or still starting must never read as "this person
@@ -372,18 +372,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         ctx = await fetchContext(uid, authUser?.email);
         break;
       } catch (e) {
-        if (seq !== loadSeq.current) return;
+        if (seq !== loadSeq.current) return false;
         if (attempt >= RETRY_DELAYS_MS.length) {
           console.warn("[auth] could not load account", e);
           setLoadError(true);
           contextFor.current = null;
-          return;
+          return true;
         }
         await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
-        if (seq !== loadSeq.current) return;
+        if (seq !== loadSeq.current) return false;
       }
     }
-    if (seq !== loadSeq.current) return;
+    if (seq !== loadSeq.current) return false;
 
     setLoadError(false);
     setIsSuperAdmin(ctx.isSuperAdmin);
@@ -393,6 +393,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setCompany(ctx.company);
     setMemberships(ctx.memberships);
     contextFor.current = uid;
+    return true;
+  }, []);
+
+  /**
+   * End the loading screen, but only for the load whose answer is now in
+   * state. Sign-in and a fresh page start two loads at once; the older one
+   * used to clear `loading` on its way out while the newer was still reading,
+   * so for a moment a signed-in person with no company in state was shown the
+   * "Add your company" screen.
+   */
+  const endLoading = useCallback((landed: boolean) => {
+    if (landed) setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -414,14 +426,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if ((s?.user?.id ?? null) !== contextFor.current) setLoading(true);
       // Defer DB calls so we don't deadlock the auth callback.
       setTimeout(() => {
-        void loadContext(s?.user ?? null).finally(() => setLoading(false));
+        void loadContext(s?.user ?? null).then(endLoading, () => setLoading(false));
       }, 0);
     });
 
     void supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setUser(data.session?.user ?? null);
-      void loadContext(data.session?.user ?? null).finally(() => setLoading(false));
+      void loadContext(data.session?.user ?? null).then(endLoading, () => setLoading(false));
       if (linkFailed) {
         // Already signed in (a confirmation link clicked twice, say): the stale
         // link is moot. Otherwise the sign-in form is where the reason is shown —
@@ -432,7 +444,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     return () => subscription.unsubscribe();
-  }, [loadContext, navigate]);
+  }, [loadContext, endLoading, navigate]);
 
   // Live-update the gating state when a super admin suspends/reactivates the
   // current user's company. The UI re-renders instantly with the new status.
@@ -455,7 +467,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [company?.id]);
 
-  const refresh = useCallback(() => loadContext(user ?? null), [loadContext, user]);
+  // A refresh that overtakes a sign-in load is now the newest one, so it is
+  // the one that ends the loading screen.
+  const refresh = useCallback(async () => {
+    endLoading(await loadContext(user ?? null));
+  }, [loadContext, endLoading, user]);
 
   /**
    * Everything cached belongs to the company it was read for. Stop what is in
