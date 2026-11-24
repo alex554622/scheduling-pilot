@@ -158,6 +158,7 @@ export function translateRuleMessage(msg: string | undefined | null): string | u
     "Your team needs your GPS location to clock in. Turn on location and try again.",
     "Your team can't use the shared clock-in. Clock in from the app on your own phone.",
     "A note is required when changing time for this team. Say why in the note box.",
+    "A punch can't be in the future. Check the date and time.",
   ]) {
     if (msg.includes(known)) return translate(known);
   }

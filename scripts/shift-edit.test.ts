@@ -125,6 +125,14 @@ const noEnd: DraftShift[] = [
 eq("a closed shift needs its break ended", validateDay(noEnd, DAY).get("a"), [
   "Break: enter an end time, or clear the clock-out.",
 ]);
+// A future punch would make every clock read the person as clocked out.
+const tomorrow = new Date();
+tomorrow.setDate(tomorrow.getDate() + 1);
+eq(
+  "a punch in the future",
+  validateDay([{ key: "a", inTime: "09:00", outTime: "17:00", breaks: [] }], tomorrow).get("a"),
+  ["A punch can't be in the future. Check the date and time."],
+);
 
 console.log(failures === 0 ? "\nAll shift-edit checks passed.\n" : `\n${failures} check(s) failed.\n`);
 process.exit(failures === 0 ? 0 : 1);

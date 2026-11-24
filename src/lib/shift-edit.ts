@@ -149,6 +149,13 @@ export function validateDay(shifts: DraftShift[], day: Date): Map<string, string
   for (const r of resolved) {
     const k = r.shift.key;
     if (!r.inAt) add(k, translate("Enter a clock-in time."));
+    // A future punch would read as the person's latest one, so every clock
+    // would show them as out until that date. The database refuses it too.
+    const soon = Date.now() + 5 * 60_000;
+    const times = [r.inAt, r.outAt, ...r.breaks.flatMap((b) => [b.startAt, b.endAt])];
+    if (times.some((t) => t && t.getTime() > soon)) {
+      add(k, translate("A punch can't be in the future. Check the date and time."));
+    }
     if (r.inAt && r.outAt && r.outAt.getTime() === r.inAt.getTime()) {
       add(k, translate("Clock-out can't be the same as clock-in."));
     }

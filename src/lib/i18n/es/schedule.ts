@@ -308,6 +308,8 @@ export const schedule: Record<string, string> = {
   "Break{n}: has to end by the clock-out.": "Descanso{n}: debe terminar antes de la salida.",
   "Break{n}: pick a length.": "Descanso{n}: elige una duración.",
   "Two breaks overlap.": "Dos descansos se traslapan.",
+  "A punch can't be in the future. Check the date and time.":
+    "Un registro no puede estar en el futuro. Revisa la fecha y la hora.",
   "Only the last shift of the day can be left without a clock-out.": "Solo el último turno del día puede quedar sin salida.",
   "Starts before the shift above it has ended.": "Empieza antes de que termine el turno anterior.",
   // Organization structure in Edit member and Settings
