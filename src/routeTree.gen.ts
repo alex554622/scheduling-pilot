@@ -25,6 +25,7 @@ import { Route as AboutRouteImport } from './routes/about'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ClockTokenRouteImport } from './routes/clock.$token'
+import { Route as ApiGhostPersonRouteImport } from './routes/api/ghost-person'
 import { Route as AuthenticatedWorksiteRouteImport } from './routes/_authenticated/worksite'
 import { Route as AuthenticatedWhosInRouteImport } from './routes/_authenticated/whos-in'
 import { Route as AuthenticatedTradesRouteImport } from './routes/_authenticated/trades'
@@ -127,6 +128,11 @@ const IndexRoute = IndexRouteImport.update({
 const ClockTokenRoute = ClockTokenRouteImport.update({
   id: '/clock/$token',
   path: '/clock/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiGhostPersonRoute = ApiGhostPersonRouteImport.update({
+  id: '/api/ghost-person',
+  path: '/api/ghost-person',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedWorksiteRoute = AuthenticatedWorksiteRouteImport.update({
@@ -294,6 +300,7 @@ export interface FileRoutesByFullPath {
   '/trades': typeof AuthenticatedTradesRoute
   '/whos-in': typeof AuthenticatedWhosInRoute
   '/worksite': typeof AuthenticatedWorksiteRoute
+  '/api/ghost-person': typeof ApiGhostPersonRoute
   '/clock/$token': typeof ClockTokenRoute
   '/employees/join-requests': typeof AuthenticatedEmployeesJoinRequestsRoute
 }
@@ -335,6 +342,7 @@ export interface FileRoutesByTo {
   '/trades': typeof AuthenticatedTradesRoute
   '/whos-in': typeof AuthenticatedWhosInRoute
   '/worksite': typeof AuthenticatedWorksiteRoute
+  '/api/ghost-person': typeof ApiGhostPersonRoute
   '/clock/$token': typeof ClockTokenRoute
   '/employees/join-requests': typeof AuthenticatedEmployeesJoinRequestsRoute
 }
@@ -378,6 +386,7 @@ export interface FileRoutesById {
   '/_authenticated/trades': typeof AuthenticatedTradesRoute
   '/_authenticated/whos-in': typeof AuthenticatedWhosInRoute
   '/_authenticated/worksite': typeof AuthenticatedWorksiteRoute
+  '/api/ghost-person': typeof ApiGhostPersonRoute
   '/clock/$token': typeof ClockTokenRoute
   '/_authenticated/employees/join-requests': typeof AuthenticatedEmployeesJoinRequestsRoute
 }
@@ -421,6 +430,7 @@ export interface FileRouteTypes {
     | '/trades'
     | '/whos-in'
     | '/worksite'
+    | '/api/ghost-person'
     | '/clock/$token'
     | '/employees/join-requests'
   fileRoutesByTo: FileRoutesByTo
@@ -462,6 +472,7 @@ export interface FileRouteTypes {
     | '/trades'
     | '/whos-in'
     | '/worksite'
+    | '/api/ghost-person'
     | '/clock/$token'
     | '/employees/join-requests'
   id:
@@ -504,6 +515,7 @@ export interface FileRouteTypes {
     | '/_authenticated/trades'
     | '/_authenticated/whos-in'
     | '/_authenticated/worksite'
+    | '/api/ghost-person'
     | '/clock/$token'
     | '/_authenticated/employees/join-requests'
   fileRoutesById: FileRoutesById
@@ -524,6 +536,7 @@ export interface RootRouteChildren {
   TimeClockRoute: typeof TimeClockRoute
   TimeOffManagementRoute: typeof TimeOffManagementRoute
   WorkforceManagementRoute: typeof WorkforceManagementRoute
+  ApiGhostPersonRoute: typeof ApiGhostPersonRoute
   ClockTokenRoute: typeof ClockTokenRoute
 }
 
@@ -639,6 +652,13 @@ declare module '@tanstack/react-router' {
       path: '/clock/$token'
       fullPath: '/clock/$token'
       preLoaderRoute: typeof ClockTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ghost-person': {
+      id: '/api/ghost-person'
+      path: '/api/ghost-person'
+      fullPath: '/api/ghost-person'
+      preLoaderRoute: typeof ApiGhostPersonRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/worksite': {
@@ -899,6 +919,7 @@ const rootRouteChildren: RootRouteChildren = {
   TimeClockRoute: TimeClockRoute,
   TimeOffManagementRoute: TimeOffManagementRoute,
   WorkforceManagementRoute: WorkforceManagementRoute,
+  ApiGhostPersonRoute: ApiGhostPersonRoute,
   ClockTokenRoute: ClockTokenRoute,
 }
 export const routeTree = rootRouteImport

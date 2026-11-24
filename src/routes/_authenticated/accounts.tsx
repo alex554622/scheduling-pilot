@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   Building2,
   Check,
+  Ghost,
   ChevronDown,
   ChevronRight,
   Loader2,
@@ -29,6 +30,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { errorMessage } from "@/lib/error-message";
+import { canGhostPeopleHere, startGhostPerson } from "@/lib/ghost-person";
 
 /**
  * Every account on the platform, whether or not it ever got anywhere.
@@ -111,6 +113,7 @@ function AccountsPage() {
   const [err, setErr] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<AccountRow | null>(null);
   const [approving, setApproving] = useState<AccountRow | null>(null);
+  const [ghosting, setGhosting] = useState<AccountRow | null>(null);
   // Which company sections are open, and which single account is expanded.
   // Twenty-odd accounts each carrying two dropdowns is a wall; the controls
   // belong behind the name they act on.
@@ -536,6 +539,17 @@ function AccountsPage() {
                                     </Button>
                                   )
                                 )}
+                                {!isSelf && !platformAdmin && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setGhosting(a)}
+                                    title={t("Ghost mode")}
+                                  >
+                                    <Ghost className="mr-2 h-3.5 w-3.5" />
+                                    {t("Ghost")}
+                                  </Button>
+                                )}
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -664,6 +678,8 @@ function AccountsPage() {
         }
       />
 
+      <GhostAccountDialog account={ghosting} onClose={() => setGhosting(null)} />
+
       <DeleteAccountDialog
         account={deleting}
         pending={remove.isPending}
@@ -672,6 +688,132 @@ function AccountsPage() {
         onConfirm={() => deleting && remove.mutate(deleting.user_id)}
       />
     </div>
+  );
+}
+
+/**
+ * Two ways in, for fixing things on someone's behalf:
+ * - as the person — their own screens (time clock, schedule, settings), and
+ *   anything saved is saved as them (see lib/ghost-person.ts);
+ * - as an admin of their company — company ghost mode, with your own name on
+ *   every change (see the super_admin_ghost_mode migration).
+ * Both are written to the company's audit log.
+ */
+function GhostAccountDialog({ account, onClose }: { account: AccountRow | null; onClose: () => void }) {
+  const t = useT("admin");
+  const { startGhost } = useAuth();
+  const [busy, setBusy] = useState<"person" | "company" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const name = account?.full_name || account?.email || t("Unnamed");
+
+  const close = () => {
+    if (busy) return;
+    setError(null);
+    onClose();
+  };
+
+  const asPerson = async () => {
+    if (!account) return;
+    setBusy("person");
+    setError(null);
+    try {
+      await startGhostPerson({ id: account.user_id, name });
+    } catch (e) {
+      setError(errorMessage(e));
+      setBusy(null);
+    }
+  };
+
+  const asCompanyAdmin = async () => {
+    if (!account?.company_id) return;
+    setBusy("company");
+    setError(null);
+    try {
+      await startGhost(account.company_id);
+      window.location.assign("/dashboard");
+    } catch (e) {
+      setError(errorMessage(e));
+      setBusy(null);
+    }
+  };
+
+  return (
+    <Dialog open={!!account} onOpenChange={(o) => !o && close()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t("Ghost mode: {name}", { name })}</DialogTitle>
+          <DialogDescription>
+            {t(
+              "Use the app on their behalf to fix something for them. Changes are real, and the visit is recorded in the company's audit log. Use Exit ghost mode at the top of the screen to come back.",
+            )}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <div className="rounded-lg border border-border p-3">
+            <p className="text-sm font-medium text-foreground">{t("Sign in as {name}", { name })}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {t(
+                "See exactly what they see, including their own time clock. Anything you do — a punch, an edit — is saved as them. Their own devices stay signed in.",
+              )}
+            </p>
+            <Button
+              size="sm"
+              className="mt-3"
+              disabled={!!busy || !account?.email || !canGhostPeopleHere()}
+              onClick={() => void asPerson()}
+            >
+              {busy === "person" ? (
+                <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Ghost className="mr-2 h-3.5 w-3.5" />
+              )}
+              {t("Sign in as them")}
+            </Button>
+            {!canGhostPeopleHere() && (
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                {t("Available on the website, not in the phone app.")}
+              </p>
+            )}
+          </div>
+
+          {account?.company_id && (
+            <div className="rounded-lg border border-border p-3">
+              <p className="text-sm font-medium text-foreground">
+                {t("Admin of {company}", { company: account.company_name ?? "" })}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {t(
+                  "Use the app as an admin of their company, with your own name on every change.",
+                )}
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-3"
+                disabled={!!busy}
+                onClick={() => void asCompanyAdmin()}
+              >
+                {busy === "company" ? (
+                  <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Building2 className="mr-2 h-3.5 w-3.5" />
+                )}
+                {t("Enter as company admin")}
+              </Button>
+            </div>
+          )}
+
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={close} disabled={!!busy}>
+            {t("Cancel")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

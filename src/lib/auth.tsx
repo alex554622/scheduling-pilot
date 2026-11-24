@@ -17,6 +17,7 @@ import { releaseNativePush } from "@/lib/native/push";
 import { translate } from "@/lib/i18n";
 import { clearSignupIntent, readSignupIntent, saveSignupIntentError } from "@/lib/signup-intent";
 import { readRememberedCompany, rememberCompany, setActiveCompanyId } from "@/lib/active-company";
+import { endGhostPerson, isGhostingPerson } from "@/lib/ghost-person";
 
 export type AppRole = "super_admin" | "company_admin" | "supervisor" | "employee";
 
@@ -548,6 +549,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [loadContext, user]);
 
   const signOut = useCallback(async () => {
+    // Ghosting someone: "sign out" means leave their account, back to your own.
+    if (isGhostingPerson()) {
+      await endGhostPerson();
+      return;
+    }
     // "local" ends only this device's session. The default, "global", revokes
     // every refresh token the user has, so signing out on a laptop also threw
     // them out of the app on their phone.

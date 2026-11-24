@@ -43,6 +43,7 @@ import { useCapabilities, CAPABILITY_LABELS, type CapabilityKey } from "@/lib/ca
 import { useTrialStatus, trialCountdown } from "@/lib/trial";
 import { NotificationsBell } from "@/components/notifications-bell";
 import { NotificationPrompt } from "@/components/notification-prompt";
+import { endGhostPerson, isGhostingPerson, useGhostPerson } from "@/lib/ghost-person";
 import { Toaster } from "@/components/ui/sonner";
 import { useBreakReminder } from "@/lib/break-reminder";
 import { ensureServiceWorker } from "@/lib/notification-prefs";
@@ -379,8 +380,14 @@ function AuthLayout() {
   // Wait for the AuthProvider to finish hydrating before redirecting; otherwise
   // a quick flash sends authenticated users to /login on every reload.
   useEffect(() => {
-    if (!loading && !user) navigate({ to: "/login" });
+    if (loading || user) return;
+    // A ghost session that ended under us (revoked, expired): back to the
+    // platform admin's own account rather than a login screen.
+    if (isGhostingPerson()) void endGhostPerson();
+    else navigate({ to: "/login" });
   }, [loading, user, navigate]);
+  const ghostPerson = useGhostPerson();
+  const [leavingGhostPerson, setLeavingGhostPerson] = useState(false);
 
   // Signed in with a temporary password from an admin: they choose their own
   // before anything else (see components/temp-password.tsx).
@@ -443,7 +450,8 @@ function AuthLayout() {
     );
   }
 
-  if (passwordQ.data) {
+  // Not while ghosting: the platform admin would be choosing the person's password.
+  if (passwordQ.data && !ghostPerson) {
     return (
       <ChangePasswordGate
         onSignOut={async () => {
@@ -759,6 +767,37 @@ function AuthLayout() {
             <NotificationsBell />
           </div>
         </header>
+        {ghostPerson && (
+          <div
+            data-print-hide
+            className="flex flex-wrap items-center justify-between gap-3 border-b border-warning/40 bg-warning/15 px-4 py-2.5 text-sm text-foreground md:px-8"
+          >
+            <span className="flex items-center gap-2">
+              <Ghost className="h-4 w-4 shrink-0" />
+              <span>
+                <span className="font-medium">{t("Ghost mode")}</span> ·{" "}
+                {t(
+                  "You are signed in as {name}. Anything you do is saved as them, and your visit is logged.",
+                  { name: ghostPerson.target.name },
+                )}
+              </span>
+            </span>
+            <button
+              disabled={leavingGhostPerson}
+              onClick={async () => {
+                setLeavingGhostPerson(true);
+                try {
+                  await endGhostPerson();
+                } catch {
+                  setLeavingGhostPerson(false);
+                }
+              }}
+              className="shrink-0 rounded-md border border-border bg-card px-3 py-1 font-medium hover:bg-accent disabled:opacity-60"
+            >
+              {t("Exit ghost mode")}
+            </button>
+          </div>
+        )}
         {ghost && (
           <div
             data-print-hide
@@ -843,7 +882,7 @@ function AuthLayout() {
       </div>
       {/* Where the break reminder lands, and where the punch-correction toasts
           have been going all along — nothing was mounted to render them. */}
-      <NotificationPrompt />
+      {!ghostPerson && <NotificationPrompt />}
       <Toaster position="top-right" richColors closeButton />
     </div>
   );

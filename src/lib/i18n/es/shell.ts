@@ -386,4 +386,5 @@ export const shell: Record<string, string> = {
   "Save password": "Guardar contraseña",
   // Position rules and the automatic meal break
   "Employee position rules": "Reglas por puesto del empleado",
+  "You are signed in as {name}. Anything you do is saved as them, and your visit is logged.": "Has entrado como {name}. Todo lo que hagas se guarda como si fuera suyo, y tu visita queda registrada.",
 };

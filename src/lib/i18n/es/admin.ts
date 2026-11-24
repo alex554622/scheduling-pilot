@@ -345,5 +345,16 @@ export const admin: Record<string, string> = {
   "past_due": "vencida",
   "Enter ghost mode": "Entrar en modo fantasma",
   "Ghost into {name}?": "¿Entrar a {name} en modo fantasma?",
-  "You'll see and use the app exactly as an admin of this company does, and can change anything they can. Changes are real, carry your name, and the visit is recorded in the company's audit log. Use Exit ghost mode at the top of the screen to come back.": "Verás y usarás la aplicación exactamente como un administrador de esta empresa, y podrás cambiar todo lo que él puede. Los cambios son reales, llevan tu nombre y la visita queda registrada en el registro de auditoría de la empresa. Usa Salir del modo fantasma en la parte superior de la pantalla para volver."
+  "You'll see and use the app exactly as an admin of this company does, and can change anything they can. Changes are real, carry your name, and the visit is recorded in the company's audit log. Use Exit ghost mode at the top of the screen to come back.": "Verás y usarás la aplicación exactamente como un administrador de esta empresa, y podrás cambiar todo lo que él puede. Los cambios son reales, llevan tu nombre y la visita queda registrada en el registro de auditoría de la empresa. Usa Salir del modo fantasma en la parte superior de la pantalla para volver.",
+  "Ghost": "Fantasma",
+  "Ghost mode": "Modo fantasma",
+  "Ghost mode: {name}": "Modo fantasma: {name}",
+  "Use the app on their behalf to fix something for them. Changes are real, and the visit is recorded in the company's audit log. Use Exit ghost mode at the top of the screen to come back.": "Usa la aplicación en su nombre para arreglarle algo. Los cambios son reales y la visita queda registrada en el registro de auditoría de la empresa. Usa Salir del modo fantasma en la parte superior de la pantalla para volver.",
+  "Sign in as {name}": "Entrar como {name}",
+  "See exactly what they see, including their own time clock. Anything you do — a punch, an edit — is saved as them. Their own devices stay signed in.": "Ve exactamente lo que ve esa persona, incluido su propio reloj de entrada. Todo lo que hagas (un registro, un cambio) se guarda como si fuera suyo. Sus propios dispositivos siguen con la sesión abierta.",
+  "Sign in as them": "Entrar como esta persona",
+  "Available on the website, not in the phone app.": "Disponible en el sitio web, no en la app del teléfono.",
+  "Admin of {company}": "Administrador de {company}",
+  "Use the app as an admin of their company, with your own name on every change.": "Usa la aplicación como administrador de su empresa, con tu propio nombre en cada cambio.",
+  "Enter as company admin": "Entrar como administrador de la empresa",
 };

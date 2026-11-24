@@ -21,6 +21,7 @@ import { useAuth } from "@/lib/auth";
 import { useNotificationPrefs } from "@/lib/notification-prefs";
 import { isNativeApp } from "@/lib/native/platform";
 import { registerNativePush } from "@/lib/native/push";
+import { isGhostingPerson } from "@/lib/ghost-person";
 
 /** Handed to the browser so the push service knows which app is sending. */
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined;
@@ -220,7 +221,8 @@ export async function unsubscribeFromPush(): Promise<void> {
 export function usePushRegistration(): void {
   const { user } = useAuth();
   const { prefs } = useNotificationPrefs();
-  const wanted = !!user && prefs.desktop;
+  // Never while ghosting someone: this device would start getting their notifications.
+  const wanted = !!user && prefs.desktop && !isGhostingPerson();
 
   useEffect(() => {
     if (!wanted || !user) return;
