@@ -136,7 +136,7 @@ function TimeclockPage() {
   const t = useT("time");
   const tag = useLocaleTag();
   const { user, company, primaryRole, loading } = useAuth();
-  // The company's App rules with this person's team rules over them.
+  // The company's App rules with this person's position rules over them.
   const rules = useMyRules();
   const capBreaks = rules.cap_break_to_length;
   // A position with paid lunch: a 30 or a 60 doesn't come off this shift.
@@ -998,7 +998,15 @@ function TimeclockPage() {
             )}
             {status !== "off" && status !== "on_break" && allowedBreaks.length === 0 && (
               <p className="mt-3 text-center text-xs text-muted-foreground">
-                {t("Breaks are turned off for your team.")}
+                {t("Breaks are turned off for your position.")}
+              </p>
+            )}
+            {status !== "off" && rules.auto_meal_minutes > 0 && (
+              <p className="mt-2 text-center text-xs text-muted-foreground">
+                {t(
+                  "Your meal break is automatic: {n} min comes off shifts of {h}h or more, so you don't need to clock out for it. If you punch a 30- or 60-minute break instead, nothing extra comes off. Missed it? Report it on your timecard.",
+                  { n: rules.auto_meal_minutes, h: rules.auto_meal_after_hours },
+                )}
               </p>
             )}
             {status === "on_break" && (

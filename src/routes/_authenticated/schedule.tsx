@@ -33,6 +33,7 @@ import {
   Plane,
   ClipboardPaste,
   X,
+  Eye,
 } from "lucide-react";
 import { SHIFT_COLORS, shiftColorClass, shiftColorHex } from "@/lib/shift-colors";
 import { ScheduleCopyPaste } from "@/components/schedule-copy-paste";
@@ -121,8 +122,45 @@ interface MemberRow {
   id: string;
   full_name: string;
   position: string | null;
+  /** Their position on the Organization page, when one is picked. */
+  position_id?: string | null;
   /** The team they belong to — `departments` on the Organization page. */
   department_id: string | null;
+}
+
+/**
+ * Hints for placing someone whose own department is blank: which departments
+ * list each position, and which departments a supervisor runs whole.
+ */
+interface DepartmentHints {
+  positionDepartments: Map<string, Set<string>>;
+  supervisedDepartments: Map<string, Set<string>>;
+}
+
+/**
+ * Each person's department for the schedule's headings. Their own department
+ * wins. Without one, a position that belongs to exactly one department places
+ * them there, and failing that a supervisor goes under the one department they
+ * run. Anyone still unplaced stays under "No department".
+ */
+function placeInDepartments(
+  members: MemberRow[],
+  teams: TeamRow[],
+  hints: DepartmentHints | undefined,
+): MemberRow[] {
+  if (!hints) return members;
+  const known = new Set(teams.map((t) => t.id));
+  const only = (ids: Set<string> | undefined) => {
+    const live = [...(ids ?? [])].filter((id) => known.has(id));
+    return live.length === 1 ? live[0] : null;
+  };
+  return members.map((m) => {
+    if (m.department_id && known.has(m.department_id)) return m;
+    const inferred =
+      (m.position_id ? only(hints.positionDepartments.get(m.position_id)) : null) ??
+      only(hints.supervisedDepartments.get(m.id));
+    return inferred ? { ...m, department_id: inferred } : m;
+  });
 }
 
 interface TeamRow {
@@ -421,6 +459,10 @@ function CompanyDashboard({ role }: { role: AppRole }) {
   const scope = useManagedScope();
   /** Who gets the grid of everyone. An employee gets their own week instead. */
   const isBuilder = role !== "employee";
+  // A supervisor can also look at every other department's schedule, read-only:
+  // the schedule is open to everyone, but they plan only for their own.
+  const [allDepartments, setAllDepartments] = useState(false);
+  const readOnlyAll = scope.isSupervisor && allDepartments;
 
   const [view, setView] = useState<ScheduleView>(() => {
     if (typeof window === "undefined") return "week";
@@ -473,6 +515,56 @@ function CompanyDashboard({ role }: { role: AppRole }) {
     queryKey: ["members", companyId],
     enabled: !!companyId && isBuilder,
     queryFn: async () => {
+      const { data, error } = await supabase
+        .from("company_members")
+        .select("id, full_name, position, position_id, department_id")
+        .eq("company_id", companyId!)
+        .order("full_name");
+      if (error) throw error;
+      return data as MemberRow[];
+    },
+  });
+
+  // What places someone under a department when their own is blank. Either
+  // list failing to load only means fewer people are placed, never an error.
+  const hintsQ = useQuery({
+    queryKey: ["schedule-department-hints", companyId],
+    enabled: !!companyId && isBuilder,
+    queryFn: async (): Promise<DepartmentHints> => {
+      const [links, sups] = await Promise.all([
+        supabase
+          .from("department_positions")
+          .select("department_id, position_id")
+          .eq("company_id", companyId!),
+        supabase
+          .from("supervisor_assignments")
+          .select("supervisor_id, department_id, employee_id")
+          .eq("company_id", companyId!)
+          .is("employee_id", null),
+      ]);
+      const add = (map: Map<string, Set<string>>, key: string, value: string) => {
+        const set = map.get(key) ?? new Set<string>();
+        set.add(value);
+        map.set(key, set);
+      };
+      const positionDepartments = new Map<string, Set<string>>();
+      for (const l of links.data ?? []) add(positionDepartments, l.position_id, l.department_id);
+      const supervisedDepartments = new Map<string, Set<string>>();
+      for (const a of sups.data ?? []) add(supervisedDepartments, a.supervisor_id, a.department_id);
+      return { positionDepartments, supervisedDepartments };
+    },
+  });
+
+  // Everyone on the schedule, for a supervisor's read-only view of every
+  // department. `company_members` follows "Keep departments separate", which
+  // the schedule does not, so this asks `schedule_roster()`.
+  const allMembersQ = useQuery({
+    queryKey: ["schedule-roster-full", companyId],
+    enabled: !!companyId && readOnlyAll,
+    queryFn: async () => {
+      const roster = await supabase.rpc("schedule_roster");
+      if (!roster.error) return (roster.data ?? []) as MemberRow[];
+      // Before 20261205120000_open_schedule_team_dashboard.sql is applied.
       const { data, error } = await supabase
         .from("company_members")
         .select("id, full_name, position, department_id")
@@ -577,11 +669,17 @@ function CompanyDashboard({ role }: { role: AppRole }) {
   });
 
   // Names for that roster. The builder has `membersQ` for this; an employee
-  // needs nothing but the names, so it asks for nothing but the names.
+  // needs nothing but the names, so it asks for nothing but the names. The
+  // schedule shows everyone in the company but the ghosts, whatever
+  // "Keep departments separate" says, so the names come from
+  // `schedule_roster()` rather than `company_members`, which follows that rule.
   const rosterNamesQ = useQuery({
     queryKey: ["roster-names", companyId],
     enabled: !!companyId && !isBuilder,
     queryFn: async () => {
+      const roster = await supabase.rpc("schedule_roster");
+      if (!roster.error) return (roster.data ?? []) as { id: string; full_name: string }[];
+      // Before 20261205120000_open_schedule_team_dashboard.sql is applied.
       const { data, error } = await supabase
         .from("company_members")
         .select("id, full_name")
@@ -598,16 +696,29 @@ function CompanyDashboard({ role }: { role: AppRole }) {
   // applied. An admin is either somebody you put on a schedule or they are not,
   // and that cannot depend on who is looking at it. Their own row stays —
   // nobody is hidden from themselves.
-  const members = scope.narrow(
-    staff.visible(membersQ.data ?? [], (m) => m.id, "schedule"),
-    (m) => m.id,
+  const members = placeInDepartments(
+    readOnlyAll
+      ? staff.visible(allMembersQ.data ?? [], (m) => m.id, "schedule")
+      : scope.narrow(
+          staff.visible(membersQ.data ?? [], (m) => m.id, "schedule"),
+          (m) => m.id,
+        ),
+    teamsQ.data ?? [],
+    hintsQ.data,
   );
-  const teams = (teamsQ.data ?? []).filter((d) => scope.managesDepartment(d.id));
-  const shifts = scope.isSupervisor
-    ? (shiftsQ.data ?? []).filter((s) =>
-        s.employee_id ? scope.manages(s.employee_id) : scope.managesDepartment(s.department_id),
-      )
-    : (shiftsQ.data ?? []);
+  const teams = readOnlyAll
+    ? (teamsQ.data ?? [])
+    : (teamsQ.data ?? []).filter((d) => scope.managesDepartment(d.id));
+  const memberIds = new Set(members.map((m) => m.id));
+  const shifts = readOnlyAll
+    ? // Everyone's shifts but the ghosts'. The database already holds back
+      // drafts outside the supervisor's own departments.
+      (shiftsQ.data ?? []).filter((s) => !s.employee_id || memberIds.has(s.employee_id))
+    : scope.isSupervisor
+      ? (shiftsQ.data ?? []).filter((s) =>
+          s.employee_id ? scope.manages(s.employee_id) : scope.managesDepartment(s.department_id),
+        )
+      : (shiftsQ.data ?? []);
 
   if (role === "employee") {
     // `shifts` is already only this person's — the query asked for nothing else.
@@ -654,8 +765,11 @@ function CompanyDashboard({ role }: { role: AppRole }) {
         setAnchor={setAnchor}
         view={effectiveView}
         setView={setView}
-        canEdit={canEdit}
-        isLoading={membersQ.isLoading || shiftsQ.isLoading}
+        canEdit={canEdit && !readOnlyAll}
+        allDepartments={
+          scope.isSupervisor ? { on: allDepartments, onChange: setAllDepartments } : undefined
+        }
+        isLoading={(readOnlyAll ? allMembersQ.isLoading : membersQ.isLoading) || shiftsQ.isLoading}
         layout={layout}
         onLayout={(l) => void setLayout(l)}
         layoutSaving={layoutSaving}
@@ -986,6 +1100,11 @@ interface BuilderProps {
   view: ScheduleView;
   setView: (v: ScheduleView) => void;
   canEdit: boolean;
+  /**
+   * A supervisor's switch between the departments they run (editable) and
+   * every department (read-only). Absent for admins, who see everyone anyway.
+   */
+  allDepartments?: { on: boolean; onChange: (on: boolean) => void };
   isLoading: boolean;
   layout: ScheduleLayout;
   onLayout: (l: ScheduleLayout) => void;
@@ -1006,6 +1125,7 @@ function ScheduleBuilder(props: BuilderProps) {
     view,
     setView,
     canEdit,
+    allDepartments,
     layout,
     onLayout,
     layoutSaving,
@@ -1064,13 +1184,12 @@ function ScheduleBuilder(props: BuilderProps) {
     shifts.some((s) => s.employee_id === memberId && sameDay(new Date(s.starts_at), day));
   const isOffOn = (memberId: string, day: Date) => !!timeOffOn(props.timeOff, memberId, day);
 
-  // Divide the rows under their team. Remembered per browser, because a
-  // company that runs teams wants them every time and one that does not
-  // should never see the headings.
-  const [groupByTeamOn, setGroupByTeamOn] = useState(false);
+  // Divide the rows under their department: on unless this browser switched it
+  // off. A company with no departments never sees the headings.
+  const [groupByTeamOn, setGroupByTeamOn] = useState(true);
   useEffect(() => {
     try {
-      if (localStorage.getItem(GROUP_BY_TEAM_KEY) === "1") setGroupByTeamOn(true);
+      if (localStorage.getItem(GROUP_BY_TEAM_KEY) === "0") setGroupByTeamOn(false);
     } catch {
       /* private mode, or storage switched off */
     }
@@ -1089,7 +1208,7 @@ function ScheduleBuilder(props: BuilderProps) {
 
   /** null renders one flat list, exactly as before. */
   const groups = useMemo(
-    () => (groupByTeamOn ? groupByTeam(members, teams) : null),
+    () => (groupByTeamOn && teams.length > 0 ? groupByTeam(members, teams) : null),
     [groupByTeamOn, members, teams],
   );
 
@@ -1238,7 +1357,11 @@ function ScheduleBuilder(props: BuilderProps) {
         <div className="min-w-0">
           <h2 className="truncate text-2xl font-semibold text-foreground">{t("Schedule builder")}</h2>
           <p className="text-sm text-muted-foreground">
-            {canEdit ? t("Click any cell to add or edit a shift.") : t("Read-only view.")}{" "}
+            {canEdit
+              ? t("Click any cell to add or edit a shift.")
+              : allDepartments?.on
+                ? t("Every department, read-only. Switch to My departments to make changes.")
+                : t("Read-only view.")}{" "}
             {t("Changes are scoped to {name}.", { name: companyName })}
           </p>
         </div>
@@ -1295,6 +1418,30 @@ function ScheduleBuilder(props: BuilderProps) {
           <span className="ml-1 text-sm text-muted-foreground">{rangeLabel}</span>
         </div>
         <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
+          {allDepartments && (
+            <div className="inline-flex rounded-lg bg-secondary p-1" role="group">
+              {[
+                { on: false, label: t("My departments") },
+                { on: true, label: t("All departments (read-only)") },
+              ].map((o) => (
+                <button
+                  key={String(o.on)}
+                  type="button"
+                  aria-pressed={allDepartments.on === o.on}
+                  onClick={() => {
+                    sel.clear();
+                    setCopied(null);
+                    setEdit(null);
+                    allDepartments.onChange(o.on);
+                  }}
+                  className={`inline-flex items-center rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${allDepartments.on === o.on ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  {o.on && <Eye className="mr-1.5 h-3.5 w-3.5" />}
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          )}
           {teams.length > 0 && (
             <Button
               variant={groupByTeamOn ? "default" : "outline"}
@@ -1467,6 +1614,11 @@ function ScheduleBuilder(props: BuilderProps) {
                 : "Week of"
             }
             showDrafts
+            groups={groups?.map((g) => ({
+              id: g.id,
+              name: g.name,
+              memberIds: g.members.map((m) => m.id),
+            }))}
             timeOff={props.timeOff.filter((o) => members.some((m) => m.id === o.employee_id))}
             emptyText={t("Nobody is scheduled this week yet.")}
           />

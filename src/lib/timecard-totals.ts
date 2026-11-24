@@ -99,6 +99,54 @@ export function readBreak(
   };
 }
 
+/**
+ * A position's automatic meal break: `minutes` taken off every finished shift
+ * at least `afterHours` long, as unpaid time, so nobody has to punch out and
+ * back in for lunch. See the position rules `auto_meal_minutes` and
+ * `auto_meal_after_hours`.
+ */
+export interface AutoMealRule {
+  minutes: number;
+  afterHours: number;
+}
+
+/** The rule from someone's effective rules, or null when it is off. */
+export function autoMealRule(rules: {
+  auto_meal_minutes?: number;
+  auto_meal_after_hours?: number;
+}): AutoMealRule | null {
+  const minutes = rules.auto_meal_minutes ?? 0;
+  return minutes > 0 ? { minutes, afterHours: rules.auto_meal_after_hours ?? 0 } : null;
+}
+
+/** A break of this length or longer is a meal break someone punched. */
+export const MEAL_BREAK_MINUTES = 30;
+
+/**
+ * What the automatic meal break takes off one finished shift.
+ *
+ *  - An admin's or supervisor's correction wins: `overrideMinutes` is what
+ *    comes off (0 removes it), whatever the rule says.
+ *  - Otherwise nothing when the rule is off, when the shift is shorter than
+ *    the rule's minimum, or when a meal break was already punched during it —
+ *    a manual meal break is never charged twice.
+ *
+ * Never more than the shift has left once its punched unpaid breaks are off.
+ */
+export function autoMealMs(
+  grossMs: number,
+  punchedUnpaidMs: number,
+  mealPunched: boolean,
+  rule: AutoMealRule | null,
+  overrideMinutes?: number | null,
+): number {
+  const room = Math.max(0, grossMs - punchedUnpaidMs);
+  if (overrideMinutes != null) return Math.min(room, Math.max(0, overrideMinutes) * 60_000);
+  if (!rule || rule.minutes <= 0 || mealPunched) return 0;
+  if (grossMs < rule.afterHours * 3_600_000) return 0;
+  return Math.min(room, rule.minutes * 60_000);
+}
+
 export type PunchKind = "in" | "out" | "break_start" | "break_end";
 
 /**
@@ -113,6 +161,8 @@ export interface LocationMove {
 }
 
 export interface SimplePunch {
+  /** The punch's row id; needed only to find a shift's meal-break correction. */
+  id?: string;
   user_id: string;
   kind: PunchKind;
   at: string;
@@ -203,8 +253,10 @@ export interface ShiftSpan {
   outAt: string | null;
   /** Clock-out minus clock-in, breaks included. */
   grossMs: number;
-  /** What gets paid: gross less unpaid break time. */
+  /** What gets paid: gross less unpaid break time and the automatic meal break. */
   workedMs: number;
+  /** The automatic meal break taken off this shift; 0 when none. */
+  autoMealMs: number;
   /** The clock-in's location; null when it was never filed under one. */
   locationId: string | null;
   /**
@@ -292,6 +344,8 @@ export interface DayDetail {
   workedMs: number;
   unpaidMs: number;
   paidMs: number;
+  /** Automatic meal breaks taken off this day — not in `unpaidMs`. */
+  autoMealMs: number;
   /** Breaks the person came back from early — see `readBreak`. */
   incompleteBreaks: number;
   /** Break time run past the picked length and not charged to them. */
@@ -304,6 +358,8 @@ export interface PersonTotals {
   workedMs: number;
   unpaidMs: number;
   paidMs: number;
+  /** Automatic meal breaks across the period — not in `unpaidMs`. */
+  autoMealMs: number;
   /** One entry per day with punches — what the overtime split reads. */
   dayTotals: number[];
   /** The same days, with their punch times, oldest first. */
@@ -323,6 +379,7 @@ function openSpan(p: SimplePunch): ShiftSpan {
     outAt: null,
     grossMs: 0,
     workedMs: 0,
+    autoMealMs: 0,
     locationId: p.location_id ?? null,
     byLocation: [],
   };
@@ -335,6 +392,9 @@ function openSpan(p: SimplePunch): ShiftSpan {
  * by place. Rounded by the same rule as the punches.
  * @param paidMealsFor whether a person's position pays meal breaks —
  * see `@/lib/pay-rules`. Left out, nobody's are.
+ * @param autoMealFor a person's automatic meal break rule — see `autoMealMs`.
+ * @param mealOverride a shift's corrected deduction in minutes, by its
+ * clock-in punch id; null or undefined when nobody corrected it.
  */
 export function totalsByPerson(
   punches: SimplePunch[],
@@ -342,6 +402,8 @@ export function totalsByPerson(
   capBreaks = true,
   moves: LocationMove[] = [],
   paidMealsFor?: (userId: string) => boolean,
+  autoMealFor?: (userId: string) => AutoMealRule | null,
+  mealOverride?: (inPunchId: string) => number | null | undefined,
 ): Map<string, PersonTotals> {
   const movesByUser = new Map<string, LocationMove[]>();
   for (const m of roundPunches(moves, roundMinutes)) {
@@ -365,11 +427,13 @@ export function totalsByPerson(
   const out = new Map<string, PersonTotals>();
   for (const [userId, days] of byUser) {
     const paidMeals = paidMealsFor?.(userId) ?? false;
+    const mealRule = autoMealFor?.(userId) ?? null;
     const totals: PersonTotals = {
       grossMs: 0,
       workedMs: 0,
       unpaidMs: 0,
       paidMs: 0,
+      autoMealMs: 0,
       dayTotals: [],
       days: [],
       incompleteBreaks: 0,
@@ -391,10 +455,12 @@ export function totalsByPerson(
         workedMs: 0,
         unpaidMs: 0,
         paidMs: 0,
+        autoMealMs: 0,
         incompleteBreaks: 0,
         overBreakMs: 0,
       };
       let dayMs = 0;
+      let mealPunched = false;
       let openIn: SimplePunch | null = null;
       let openBreak: SimplePunch | null = null;
       let unpaid = 0;
@@ -413,16 +479,30 @@ export function totalsByPerson(
           paid = 0;
           unpaidBreaks = [];
           openBreak = null;
+          mealPunched = false;
         } else if (p.kind === "out") {
           if (openIn) {
             const gross = new Date(p.at).getTime() - new Date(openIn.at).getTime();
-            const worked = Math.max(0, gross - unpaid);
+            const auto = autoMealMs(
+              gross,
+              unpaid,
+              mealPunched,
+              mealRule,
+              openIn.id ? mealOverride?.(openIn.id) : null,
+            );
+            // Placed mid-shift, for splitting the hours by location.
+            if (auto > 0) {
+              const mid = (new Date(openIn.at).getTime() + new Date(p.at).getTime()) / 2;
+              unpaidBreaks.push({ at: new Date(mid).toISOString(), ms: auto });
+            }
+            const worked = Math.max(0, gross - unpaid - auto);
             dayMs += worked;
             detail.spans.push({
               inAt: openIn.at,
               outAt: p.at,
               grossMs: gross,
               workedMs: worked,
+              autoMealMs: auto,
               locationId: openIn.location_id ?? null,
               byLocation: splitByLocation(
                 openIn.at,
@@ -435,6 +515,8 @@ export function totalsByPerson(
             detail.grossMs += gross;
             detail.unpaidMs += unpaid;
             detail.paidMs += paid;
+            detail.autoMealMs += auto;
+            totals.autoMealMs += auto;
             totals.grossMs += gross;
             totals.unpaidMs += unpaid;
             totals.paidMs += paid;
@@ -445,7 +527,10 @@ export function totalsByPerson(
             openBreak = null;
           }
         } else if (p.kind === "break_start") {
-          if (openIn && !openBreak) openBreak = p;
+          if (openIn && !openBreak) {
+            openBreak = p;
+            if ((p.break_minutes ?? MEAL_BREAK_MINUTES) >= MEAL_BREAK_MINUTES) mealPunched = true;
+          }
         } else if (p.kind === "break_end") {
           if (openBreak) {
             const read = readBreak(

@@ -1,8 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { z } from "zod";
 import { AppRulesPanel } from "@/components/app-rules-panel";
-import { TeamRulesPanel } from "@/components/team-rules-panel";
-import { useMyRuleDepartments } from "@/lib/team-rules";
+import { PositionRulesPanel } from "@/components/position-rules-panel";
 import { OrganizationPanel } from "@/components/organization-panel";
 import { MyCompaniesPanel } from "@/components/my-companies-panel";
 import { useCapabilities } from "@/lib/capabilities";
@@ -60,11 +59,12 @@ import {
 import { errorMessage } from "@/lib/error-message";
 
 /**
- * `?tab=companies` opens My companies; `organization` and `rules` are admin tabs.
- * `teams` (Team rules) is for admins and for supervisors of a whole department.
+ * `?tab=companies` opens My companies; `organization`, `rules` and
+ * `positions` (Position rules) are admin tabs. `teams` is the old name of
+ * Position rules, kept so saved links still land there.
  */
 const searchSchema = z.object({
-  tab: z.enum(["account", "companies", "organization", "rules", "teams"]).optional(),
+  tab: z.enum(["account", "companies", "organization", "rules", "positions", "teams"]).optional(),
 });
 
 export const Route = createFileRoute("/_authenticated/settings")({
@@ -86,15 +86,12 @@ function SettingsPage() {
   // Organization is a plan feature, as it was when it had its own menu item.
   const { capabilities } = useCapabilities();
   const hasOrg = capabilities.org_structure;
-  // Supervisors aren't admins, but may set rules for the teams they run.
-  const ruleTeamsQ = useMyRuleDepartments();
-  const canTeamRules = isAdmin || (ruleTeamsQ.data?.length ?? 0) > 0;
+  // Position rules are admins' only; supervisors never set rules.
+  const asked = tab === "teams" ? "positions" : tab;
   const current =
-    !tab ||
-    (tab === "teams" ? !canTeamRules : !isAdmin && tab !== "companies") ||
-    (tab === "organization" && !hasOrg)
+    !asked || (!isAdmin && asked !== "companies") || (asked === "organization" && !hasOrg)
       ? "account"
-      : tab;
+      : asked;
 
   if (loading) return <div className="text-sm text-muted-foreground">{t("Loading…")}</div>;
 
@@ -108,12 +105,12 @@ function SettingsPage() {
               ["companies", t("My companies")],
               ["organization", t("Organization")],
               ["rules", t("App rules")],
-              ["teams", t("Team rules")],
+              ["positions", t("Employee position rules")],
             ] as const
           )
             .filter(
               ([key]) =>
-                isAdmin || key === "account" || key === "companies" || (key === "teams" && canTeamRules),
+                isAdmin || key === "account" || key === "companies",
             )
             .filter(([key]) => key !== "organization" || hasOrg)
             .map(([key, label]) => {
@@ -142,8 +139,8 @@ function SettingsPage() {
         <MyCompaniesPanel />
       ) : current === "rules" ? (
         <AppRulesPanel />
-      ) : current === "teams" ? (
-        <TeamRulesPanel />
+      ) : current === "positions" ? (
+        <PositionRulesPanel />
       ) : current === "organization" ? (
         <OrganizationPanel />
       ) : (

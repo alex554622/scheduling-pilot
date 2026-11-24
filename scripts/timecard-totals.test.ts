@@ -2,6 +2,7 @@
  * Checks for the roster-wide timecard totals. Run with `bun run test:timecards`.
  */
 import {
+  autoMealMs,
   hoursByLocation,
   splitByLocation,
   type LocationMove,
@@ -408,6 +409,51 @@ console.log("\npunches from before locations existed");
 t = totalsByPerson([punch("a", "in", 3, 8), punch("a", "out", 3, 16)]).get("a")!;
 eq("all filed under no location", t.byLocation, [{ locationId: null, workedMs: 8 * HOUR }]);
 eq("no shifts, no lines", hoursByLocation([]), []);
+
+console.log("\nautomatic meal break");
+const meal = { minutes: 30, afterHours: 6 };
+const withId = (p: SimplePunch, id: string): SimplePunch => ({ ...p, id });
+const eight = [withId(punch("a", "in", 3, 8), "in-1"), punch("a", "out", 3, 16)];
+t = totalsByPerson(eight, 0, true, [], undefined, () => meal).get("a")!;
+eq("30 min off an 8-hour shift", [t.workedMs / HOUR, t.autoMealMs / MINUTE], [7.5, 30]);
+eq("kept apart from punched breaks", t.unpaidMs, 0);
+eq("on the span too", t.days[0].spans[0].autoMealMs / MINUTE, 30);
+t = totalsByPerson(
+  [punch("a", "in", 3, 8), punch("a", "out", 3, 13)],
+  0, true, [], undefined, () => meal,
+).get("a")!;
+eq("not on a shift under the minimum", t.autoMealMs, 0);
+t = totalsByPerson(
+  [
+    punch("a", "in", 3, 8),
+    punch("a", "break_start", 3, 12, 0, 30),
+    punch("a", "break_end", 3, 12, 30),
+    punch("a", "out", 3, 16),
+  ],
+  0, true, [], undefined, () => meal,
+).get("a")!;
+eq("no double charge after a punched meal break", [t.workedMs / HOUR, t.autoMealMs], [7.5, 0]);
+t = totalsByPerson(
+  [
+    punch("a", "in", 3, 8),
+    punch("a", "break_start", 3, 10, 0, 10),
+    punch("a", "break_end", 3, 10, 10),
+    punch("a", "out", 3, 16),
+  ],
+  0, true, [], undefined, () => meal,
+).get("a")!;
+eq("a paid 10 is not a meal break", t.autoMealMs / MINUTE, 30);
+t = totalsByPerson(eight, 0, true, [], undefined, () => meal, (id) => (id === "in-1" ? 0 : null)).get("a")!;
+eq("a correction to 0 removes it", [t.workedMs / HOUR, t.autoMealMs], [8, 0]);
+t = totalsByPerson(eight, 0, true, [], undefined, () => meal, () => 15).get("a")!;
+eq("a correction to 15 takes 15", t.autoMealMs / MINUTE, 15);
+t = totalsByPerson(eight, 0, true, [], undefined, () => null, () => 20).get("a")!;
+eq("a correction applies even with the rule off", t.autoMealMs / MINUTE, 20);
+t = totalsByPerson(eight, 0, true, [], undefined, () => ({ minutes: 60, afterHours: 0 })).get("a")!;
+eq("60 minutes, any length", t.workedMs / HOUR, 7);
+eq("never more than the shift", autoMealMs(20 * MINUTE, 0, false, { minutes: 30, afterHours: 0 }), 20 * MINUTE);
+t = totalsByPerson(eight, 0, true, [], undefined, () => meal).get("a")!;
+eq("location split adds up", t.byLocation, [{ locationId: null, workedMs: 7.5 * HOUR }]);
 
 console.log(
   failures === 0 ? "\nAll timecard checks passed.\n" : `\n${failures} check(s) failed.\n`,

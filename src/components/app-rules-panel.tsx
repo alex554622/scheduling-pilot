@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { PositionPayRulesPanel } from "@/components/position-pay-rules-panel";
 import { useT } from "@/lib/i18n";
 import {
   Loader2,
@@ -114,9 +113,9 @@ export function AppRulesPanel() {
           )}
         </p>
         <p className="mt-1 text-sm text-muted-foreground">
-          {t("A team can change its own clock-in and timesheet rules in")}{" "}
-          <Link to="/settings" search={{ tab: "teams" }} className="text-primary underline">
-            {t("Team rules")}
+          {t("Each position can change its own clock-in, break, timesheet and pay rules in")}{" "}
+          <Link to="/settings" search={{ tab: "positions" }} className="text-primary underline">
+            {t("Employee position rules")}
           </Link>
           .
         </p>
@@ -505,14 +504,14 @@ export function AppRulesPanel() {
               onChange={(v) => set("hide_admins_from_staff", v)}
             />
             <ToggleRow
-              label="Employees can see coworkers on the dashboard"
-              description="On: the dashboard shows each employee who else is working, on a break or due in today. Off: employees see only themselves — their own status and their own shift. Admins always see everyone."
+              label="Employees can see their department on the dashboard"
+              description="On: the dashboard shows each employee who else in their department is working, on a break or due in today. Off: employees see only themselves — their own status and their own shift. A position can set its own in Employee position rules. Supervisors always see the departments they run; admins see everyone."
               checked={rules.staff_see_coworkers}
               onChange={(v) => set("staff_see_coworkers", v)}
             />
             <ToggleRow
               label="Keep departments separate"
-              description="On: each employee sees only their own department — its people, schedule, open shifts, time off and shift trades — plus people with no department, their own supervisors and anyone they supervise. Admins always see everything; someone with no department sees only the office until you assign one. Off: everyone sees the whole company. To have one team see only themselves, use Team rules."
+              description="On: each employee sees only their own department — its people, open shifts, time off and shift trades — plus people with no department, their own supervisors and anyone they supervise. Admins always see everything; someone with no department sees only the office until you assign one. Off: everyone sees the whole company. The schedule always shows everyone except ghosts."
               checked={rules.departments_separate}
               onChange={(v) => set("departments_separate", v)}
             />
@@ -553,8 +552,11 @@ export function AppRulesPanel() {
             </Button>
           </div>
 
-          {/* Saved group by group, apart from the rules form above. */}
-          <PositionPayRulesPanel />
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "Overtime, breaks, rounding, clock-in limits, paid meals, differentials and the automatic meal break can be set for each position under Employee position rules. A position follows these App rules wherever it sets nothing of its own.",
+            )}
+          </p>
         </>
       )}
     </div>

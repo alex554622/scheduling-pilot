@@ -519,4 +519,8 @@ export const time: Record<string, string> = {
   "Write a message for your department…": "Escribe un mensaje para tu departamento…",
   "— goes to everyone, pinned, and everyone is notified": "— llega a todos, queda fijado y se avisa a todos",
   "Department messages": "Mensajes del departamento",
+  // Position rules and the automatic meal break
+  "Breaks are turned off for your position.": "Los descansos están desactivados para tu puesto.",
+  "A note is required when changing time for this position. Say why in the note box.": "Se requiere una nota al cambiar el tiempo de este puesto. Explica el motivo en el cuadro de nota.",
+  "Your meal break is automatic: {n} min comes off shifts of {h}h or more, so you don't need to clock out for it. If you punch a 30- or 60-minute break instead, nothing extra comes off. Missed it? Report it on your timecard.": "Tu comida es automática: se descuentan {n} min de los turnos de {h} h o más, así que no necesitas registrar salida para comer. Si registras un descanso de 30 o 60 minutos, no se descuenta nada más. ¿No la tuviste? Repórtalo en tu tarjeta.",
 };

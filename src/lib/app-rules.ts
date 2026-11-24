@@ -40,16 +40,19 @@ export type AppRules = {
    */
   hide_admins_from_staff: boolean;
   /**
-   * Whether an employee's dashboard lists their coworkers. Off, it shows only
-   * them — their own status and their own shift — and `company_presence()`
-   * hands them nothing but their own row. Admins always see everyone.
+   * Whether an employee's dashboard lists the coworkers in their own
+   * department. Off (the default), it shows only them — their own status and
+   * their own shift — and `company_presence()` hands them nothing but their
+   * own row. A position can set its own in Employee position rules. Supervisors always see the
+   * departments they run; admins see everyone.
    */
   staff_see_coworkers: boolean;
   /**
    * Each department as its own group: an employee sees only the people,
-   * shifts, time off and trades of their own department (plus people with no
-   * department, their supervisors and anyone they supervise). Enforced by the
-   * database —
+   * open shifts, time off and trades of their own department (plus people with no
+   * department, their supervisors and anyone they supervise). The schedule is
+   * not narrowed by it: everyone sees everyone's shifts except ghosts. Enforced
+   * by the database —
    * 20261129120000_department_separation.sql. Admins always see everything.
    */
   departments_separate: boolean;
@@ -101,7 +104,7 @@ export const DEFAULT_APP_RULES: AppRules = {
   schedule_advance_notice_hours: 24,
   schedule_menu: "builder",
   hide_admins_from_staff: true,
-  staff_see_coworkers: true,
+  staff_see_coworkers: false,
   departments_separate: false,
   schedule_lateness: false,
   late_grace_minutes: 5,

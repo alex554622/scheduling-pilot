@@ -384,4 +384,6 @@ export const shell: Record<string, string> = {
   "Choose your password": "Elige tu contraseña",
   "You signed in with a temporary password from your admin. Pick your own to keep using the app.": "Entraste con una contraseña temporal de tu administrador. Elige la tuya para seguir usando la app.",
   "Save password": "Guardar contraseña",
+  // Position rules and the automatic meal break
+  "Employee position rules": "Reglas por puesto del empleado",
 };

@@ -541,6 +541,84 @@ export type Database = {
           },
         ]
       }
+      position_rules: {
+        Row: {
+          id: string
+          position_id: string
+          company_id: string
+          rules: Json
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          id?: string
+          position_id: string
+          company_id?: string
+          rules?: Json
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          id?: string
+          position_id?: string
+          company_id?: string
+          rules?: Json
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
+      meal_break_adjustments: {
+        Row: {
+          id: string
+          company_id: string
+          user_id: string
+          in_punch_id: string
+          report_kind: string | null
+          report_minutes: number | null
+          report_note: string | null
+          reported_at: string | null
+          deduct_minutes: number | null
+          decision_note: string | null
+          decided_by: string | null
+          decided_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          user_id: string
+          in_punch_id: string
+          report_kind?: string | null
+          report_minutes?: number | null
+          report_note?: string | null
+          reported_at?: string | null
+          deduct_minutes?: number | null
+          decision_note?: string | null
+          decided_by?: string | null
+          decided_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          user_id?: string
+          in_punch_id?: string
+          report_kind?: string | null
+          report_minutes?: number | null
+          report_note?: string | null
+          reported_at?: string | null
+          deduct_minutes?: number | null
+          decision_note?: string | null
+          decided_by?: string | null
+          decided_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       departments: {
         Row: {
           location_id: string | null
@@ -1810,6 +1888,19 @@ export type Database = {
     }
     Functions: {
       my_rule_departments: { Args: never; Returns: string[] }
+      can_manage_position_rules: { Args: { _position: string; _user: string }; Returns: boolean }
+      report_meal_break: {
+        Args: { _in_punch: string; _kind: string | null; _minutes?: number | null; _note?: string | null }
+        Returns: Database["public"]["Tables"]["meal_break_adjustments"]["Row"]
+      }
+      set_meal_deduction: {
+        Args: { _in_punch: string; _minutes: number | null; _note?: string | null }
+        Returns: Database["public"]["Tables"]["meal_break_adjustments"]["Row"]
+      }
+      schedule_roster: {
+        Args: never
+        Returns: { id: string; full_name: string; position: string | null; department_id: string | null }[]
+      }
       can_manage_team_rules: {
         Args: { _department: string; _user: string }
         Returns: boolean

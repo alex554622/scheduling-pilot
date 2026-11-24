@@ -22,7 +22,7 @@ export function usePositionPayRules(companyId?: string | null) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("positions")
-        .select("id, name, paid_meal_breaks, diff_enabled, diff_label, diff_start, diff_end")
+        .select("id, name, is_active, paid_meal_breaks, diff_enabled, diff_label, diff_start, diff_end")
         .eq("company_id", cid!)
         .order("name");
       if (error) return { positions: [] as PositionPayRules[], missing: true };

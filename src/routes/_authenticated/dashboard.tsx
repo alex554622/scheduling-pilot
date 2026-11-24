@@ -3,9 +3,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
-import { useAppRules } from "@/lib/app-rules";
 import { useMemberRules } from "@/lib/team-rules";
 import { useStaffVisibility } from "@/lib/staff-visibility";
+import { useManagedScope } from "@/lib/supervisor-scope";
 import { PAID_BREAK_MINUTES, readBreak, roundPunches } from "@/lib/timecard-totals";
 import { toDayString } from "@/lib/day-string";
 import { latenessByPunch } from "@/lib/lateness";
@@ -83,11 +83,16 @@ function DashboardPage() {
   const t = useT("time");
   const tag = useLocaleTag();
   const { company, primaryRole, loading, user } = useAuth();
-  const rules = useAppRules();
-  // Rounding and break counting follow each person's team rules.
+  // Rounding and break counting follow each person's position rules.
   const { rulesFor } = useMemberRules();
   const staff = useStaffVisibility();
   const isManager = primaryRole === "company_admin" || primaryRole === "super_admin";
+  const scope = useManagedScope();
+  // Who else an employee's dashboard lists. A supervisor always sees everyone
+  // in the departments they run. An employee sees only themselves unless their
+  // team (or the company, in App rules) lets them see their own department —
+  // and `company_presence()` draws the same line in the database.
+  const seeOthers = scope.isSupervisor || rulesFor(user?.id).staff_see_coworkers;
   const qc = useQueryClient();
   const [now, setNow] = useState(Date.now());
 
@@ -145,7 +150,7 @@ function DashboardPage() {
   // shown the posted schedule only, plus their own shift whether or not it has
   // been published yet.
   const shiftsTodayQ = useQuery<ScheduledShift[]>({
-    queryKey: ["today-shifts", company?.id, dayStart.toISOString(), isManager, rules.staff_see_coworkers],
+    queryKey: ["today-shifts", company?.id, dayStart.toISOString(), isManager, seeOthers],
     // Waiting for `user` keeps the narrowing below from being skipped in the
     // moment before the session lands, which would pull draft shifts down to
     // someone who may not see them.
@@ -160,7 +165,7 @@ function DashboardPage() {
       if (!isManager) {
         // With coworkers hidden, an employee's dashboard asks only for their
         // own shifts — other people's are not this screen's to show.
-        q = rules.staff_see_coworkers
+        q = seeOthers
           ? q.or(`published.eq.true,employee_id.eq.${user!.id}`)
           : q.eq("employee_id", user!.id);
       }
@@ -490,10 +495,14 @@ function DashboardPage() {
     // thing this list cannot know.
     // With coworkers hidden the database already sends only their own row;
     // filtering here as well keeps that true before it has the newer function.
-    const seeOthers = rules.staff_see_coworkers;
-    const presence = staff
-      .visible(presenceQ.data ?? [], (p) => p.user_id, "roster")
-      .filter((p) => seeOthers || p.user_id === user?.id)
+    // A supervisor's own people stay on their list even when marked as ghosts.
+    const presence = (presenceQ.data ?? [])
+      .filter(
+        (p) =>
+          p.user_id === user?.id ||
+          (seeOthers &&
+            ((scope.isSupervisor && scope.manages(p.user_id)) || !staff.isHidden(p.user_id, "roster"))),
+      )
       .filter(
         (p) => dueToday.has(p.user_id) || p.status === "working" || p.status === "on_break",
       )

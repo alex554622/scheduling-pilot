@@ -20,6 +20,8 @@ export interface PositionPayRules {
   diff_start: string;
   /** When it closes. Earlier than the start means it runs past midnight. */
   diff_end: string;
+  /** Turned off under Organization: kept for those who hold it. */
+  is_active?: boolean;
 }
 
 /**

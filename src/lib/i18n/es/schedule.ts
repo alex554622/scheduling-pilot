@@ -319,4 +319,9 @@ export const schedule: Record<string, string> = {
   "1 department": "1 departamento",
   "{n} departments": "{n} departamentos",
   "No department": "Sin departamento",
+  "Open shifts": "Turnos abiertos",
+  "My departments": "Mis departamentos",
+  "All departments (read-only)": "Todos los departamentos (solo lectura)",
+  "Every department, read-only. Switch to My departments to make changes.":
+    "Todos los departamentos, solo lectura. Cambia a Mis departamentos para hacer cambios.",
 };

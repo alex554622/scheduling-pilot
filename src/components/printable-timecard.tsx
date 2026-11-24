@@ -18,6 +18,8 @@ export interface PrintablePair {
   late?: string | null;
   /** "Night differential 6h 00m" for this shift, from the position's pay rules; otherwise null. */
   diff?: string | null;
+  /** "Auto meal break 0h 30m" or a correction of it; otherwise null. */
+  meal?: string | null;
   /** Where it was worked; null when the company keeps no locations. */
   location?: string | null;
 }
@@ -249,6 +251,7 @@ export function PrintableTimecard({
                       pair.location ?? null,
                       pair.late ?? null,
                       pair.diff ?? null,
+                      pair.meal ?? null,
                       !pair.outAt ? t("Still clocked in") : null,
                       pair.offSite ? t("Off-site punch") : null,
                     ]

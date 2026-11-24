@@ -37,6 +37,7 @@ import {
   Printer,
   Trash2,
   Users,
+  Utensils,
 } from "lucide-react";
 import {
   Dialog,
@@ -49,9 +50,18 @@ import {
 import { PrintableTimecard, type PrintableTimecardProps } from "@/components/printable-timecard";
 import { TimecardDayEditor, type EditablePunch } from "@/components/timecard-day-editor";
 import { splitPeriod, overtimeNote } from "@/lib/overtime";
+import { useMealAdjustments, type MealAdjustment } from "@/lib/use-meal-adjustments";
 import {
+  CorrectMealDialog,
+  ReportMealDialog,
+  type MealDialogTarget,
+} from "@/components/meal-break-dialog";
+import {
+  autoMealMs,
+  autoMealRule,
   groupByShiftDay,
   MAX_SHIFT_MS,
+  MEAL_BREAK_MINUTES,
   punchesInPeriod,
   readBreak,
   roundPunches,
@@ -122,6 +132,8 @@ type Absence = {
   start_date: string;
   end_date: string;
   note: string | null;
+  /** "pending" while it waits on a supervisor or an admin; only "approved" counts. */
+  status: string;
 };
 
 /** The kinds an admin can mark from the time card, in the order offered. */
@@ -431,6 +443,14 @@ function TimecardsPage() {
         : selectedUser;
   /** The rules this card is worked out by: the person's team's, else the company's. */
   const cardRules = rulesFor(targetUserId);
+  /** The position's automatic meal break, or null when it is off. */
+  const cardMeal = useMemo(
+    () => autoMealRule(cardRules),
+    [cardRules.auto_meal_minutes, cardRules.auto_meal_after_hours],
+  );
+  /** The shift whose meal break is being reported or corrected. */
+  const [mealReport, setMealReport] = useState<MealDialogTarget | null>(null);
+  const [mealCorrect, setMealCorrect] = useState<MealDialogTarget | null>(null);
 
   /**
    * Whether the edit controls show. An admin edits any card. A supervisor
@@ -447,7 +467,9 @@ function TimecardsPage() {
   /**
    * Whether the absence button shows. A supervisor records absences only for
    * their own people, and only while the company lets supervisors handle time
-   * off. manager_record_absence refuses anything else regardless.
+   * off. manager_record_absence refuses anything else regardless. A
+   * supervisor's absence waits on an admin's final approval
+   * (20261206130000_supervisor_absences_need_admin.sql); an admin's counts at once.
    */
   const canMarkAbsence =
     isManager &&
@@ -595,9 +617,9 @@ function TimecardsPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("time_off_requests")
-        .select("id, kind, start_date, end_date, note")
+        .select("id, kind, start_date, end_date, note, status")
         .eq("employee_id", targetUserId!)
-        .eq("status", "approved")
+        .in("status", ["approved", "pending"])
         .lte("start_date", periodLastDay)
         .gte("end_date", periodFirstDay)
         .order("start_date", { ascending: true });
@@ -605,16 +627,24 @@ function TimecardsPage() {
       return data ?? [];
     },
   });
-  /** Each day of the period that falls in an absence, by its "YYYY-MM-DD". */
-  const absenceByDay = useMemo(() => {
-    const m = new Map<string, Absence>();
+  /**
+   * Each day of the period that falls in an absence, by its "YYYY-MM-DD".
+   * `absenceByDay` holds only approved ones — what the card, its totals and
+   * the printout count. `pendingAbsenceByDay` holds time off still waiting on
+   * a supervisor or an admin (a supervisor's absence waits on an admin), shown
+   * on screen only.
+   */
+  const [absenceByDay, pendingAbsenceByDay] = useMemo(() => {
+    const approved = new Map<string, Absence>();
+    const pending = new Map<string, Absence>();
     for (const a of absencesQ.data ?? []) {
+      const m = a.status === "approved" ? approved : pending;
       for (let d = fromDayString(a.start_date); toDayString(d) <= a.end_date; d = addDays(d, 1)) {
         const key = toDayString(d);
         if (key >= periodFirstDay && key <= periodLastDay && !m.has(key)) m.set(key, a);
       }
     }
-    return m;
+    return [approved, pending] as const;
   }, [absencesQ.data, periodFirstDay, periodLastDay]);
   const absenceLabel = (a: Absence) => t(ABSENCE_LABEL[a.kind] ?? "Day off");
   /** "Sick 1 day · Vacation 2 days" — the period's days off, by kind. */
@@ -659,7 +689,7 @@ function TimecardsPage() {
       setAbsenceDay(null);
       void qc.invalidateQueries({ queryKey: ["timecard-absences"] });
     },
-    onError: (e: Error) => setAbsenceErr(e.message),
+    onError: (e: Error) => setAbsenceErr(translateRuleMessage(e.message) ?? e.message),
   });
   const removeAbsence = useMutation({
     mutationFn: async (id: string) => {
@@ -670,7 +700,7 @@ function TimecardsPage() {
       setAbsenceDay(null);
       void qc.invalidateQueries({ queryKey: ["timecard-absences"] });
     },
-    onError: (e: Error) => setAbsenceErr(e.message),
+    onError: (e: Error) => setAbsenceErr(translateRuleMessage(e.message) ?? e.message),
   });
 
   const addNote = useMutation({
@@ -728,7 +758,7 @@ function TimecardsPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("time_punches")
-        .select("user_id, kind, at, break_minutes, location_id")
+        .select("id, user_id, kind, at, break_minutes, location_id")
         .gte("at", fetchFrom)
         .lt("at", fetchTo)
         .order("at", { ascending: true });
@@ -752,6 +782,20 @@ function TimecardsPage() {
     },
   });
 
+  // Meal-break reports and corrections for every shift on screen, by clock-in.
+  const mealPunchIds = useMemo(
+    () =>
+      [...(viewingAll ? (allQ.data ?? []) : (punchesQ.data ?? []))]
+        .filter((p) => p.kind === "in" && p.id)
+        .map((p) => p.id!),
+    [viewingAll, allQ.data, punchesQ.data],
+  );
+  const mealAdj = useMealAdjustments(mealPunchIds);
+  const mealOverride = useMemo(
+    () => (id: string) => mealAdj.get(id)?.deduct_minutes ?? null,
+    [mealAdj],
+  );
+
   /** One line per person: their days, breaks, hours and overtime split. */
   const everyone = useMemo(() => {
     if (!viewingAll) return [];
@@ -770,11 +814,14 @@ function TimecardsPage() {
           own.cap_break_to_length,
           (allMovesQ.data ?? []).filter((mv) => mv.user_id === m.id),
           (id) => rulesOf(id)?.paid_meal_breaks ?? false,
+          () => autoMealRule(own),
+          mealOverride,
         ).get(m.id) ?? {
           grossMs: 0,
           workedMs: 0,
           unpaidMs: 0,
           paidMs: 0,
+          autoMealMs: 0,
           dayTotals: [],
           days: [],
           incompleteBreaks: 0,
@@ -794,7 +841,7 @@ function TimecardsPage() {
         };
       })
       .sort((a, b) => b.workedMs - a.workedMs || a.name.localeCompare(b.name));
-  }, [viewingAll, allQ.data, allMovesQ.data, roster, rulesFor, period, t, rulesOf]);
+  }, [viewingAll, allQ.data, allMovesQ.data, roster, rulesFor, period, t, rulesOf, mealOverride]);
 
   /** Everyone's paid time per location, for the foot of the roster-wide table. */
   const everyoneByLocation = useMemo(() => {
@@ -890,6 +937,10 @@ function TimecardsPage() {
       overBreakMs: number;
       /** Hours worked inside the position's differential window. */
       diffMs: number;
+      /** The automatic meal break taken off this shift — not in unpaidBreakMs. */
+      autoMealMs: number;
+      /** What the position's rule alone would take off, before any correction. */
+      ruleMealMs: number;
     };
     const rows: {
       date: Date;
@@ -898,6 +949,7 @@ function TimecardsPage() {
       totalMs: number;
       unpaidBreakMs: number;
       paidBreakMs: number;
+      autoMealMs: number;
       incompleteBreaks: number;
       overBreakMs: number;
       diffMs: number;
@@ -927,9 +979,12 @@ function TimecardsPage() {
       let dayShort = 0;
       let dayOver = 0;
       let dayDiff = 0;
+      let dayMeal = 0;
+      // A 30 or 60 punched during the shift: no automatic meal break on top.
+      let mealPunched = false;
       // Unpaid breaks as charged, for taking them out of the differential.
       let currentBreaks: { startMs: number; ms: number }[] = [];
-      const openPair = (i: Punch, o?: Punch, diffMs = 0): Pair => ({
+      const openPair = (i: Punch, o?: Punch, diffMs = 0, auto = 0, ruleMeal = 0): Pair => ({
         in: i,
         out: o,
         unpaidBreakMs: currentUnpaid,
@@ -937,6 +992,8 @@ function TimecardsPage() {
         incompleteBreaks: currentShort,
         overBreakMs: currentOver,
         diffMs,
+        autoMealMs: auto,
+        ruleMealMs: ruleMeal,
       });
       for (const p of counted) {
         if (p.kind === "in") {
@@ -948,24 +1005,36 @@ function TimecardsPage() {
           currentOver = 0;
           currentBreaks = [];
           openBreak = null;
+          mealPunched = false;
         } else if (p.kind === "out") {
           if (openIn) {
-            const gross = new Date(p.at).getTime() - new Date(openIn.at).getTime();
-            const net = Math.max(0, gross - currentUnpaid);
+            const inMs = new Date(openIn.at).getTime();
+            const outMs = new Date(p.at).getTime();
+            const gross = outMs - inMs;
+            // Same rule as the roster-wide totals (`autoMealMs`).
+            const ruleMeal = autoMealMs(gross, currentUnpaid, mealPunched, cardMeal);
+            const auto = autoMealMs(
+              gross,
+              currentUnpaid,
+              mealPunched,
+              cardMeal,
+              mealOverride(openIn.id),
+            );
+            const net = Math.max(0, gross - currentUnpaid - auto);
+            // Placed mid-shift, so it comes out of the differential too.
+            const breaks =
+              auto > 0 ? [...currentBreaks, { startMs: (inMs + outMs) / 2, ms: auto }] : currentBreaks;
             const diff = diffRule
               ? differentialMs(
-                  {
-                    inMs: new Date(openIn.at).getTime(),
-                    outMs: new Date(p.at).getTime(),
-                    unpaidBreaks: currentBreaks,
-                  },
+                  { inMs, outMs, unpaidBreaks: breaks },
                   diffRule.diff_start,
                   diffRule.diff_end,
                 )
               : 0;
-            pairs.push(openPair(openIn, p, diff));
+            pairs.push(openPair(openIn, p, diff, auto, ruleMeal));
             totalMs += net;
             dayDiff += diff;
+            dayMeal += auto;
             currentBreaks = [];
             dayUnpaidMs += currentUnpaid;
             dayPaidMs += currentPaid;
@@ -979,7 +1048,10 @@ function TimecardsPage() {
             openBreak = null;
           }
         } else if (p.kind === "break_start") {
-          if (openIn && !openBreak) openBreak = p;
+          if (openIn && !openBreak) {
+            openBreak = p;
+            if ((p.break_minutes ?? MEAL_BREAK_MINUTES) >= MEAL_BREAK_MINUTES) mealPunched = true;
+          }
         } else if (p.kind === "break_end") {
           if (openBreak) {
             // One rule, one place: the same reading the roster-wide totals use.
@@ -1014,11 +1086,13 @@ function TimecardsPage() {
         totalMs,
         unpaidBreakMs: dayUnpaidMs,
         paidBreakMs: dayPaidMs,
+        autoMealMs: dayMeal,
         diffMs: dayDiff,
       });
       weekTotal += totalMs;
       periodDiff += dayDiff;
-      weekUnpaid += dayUnpaidMs;
+      // The period's unpaid time includes the automatic meal breaks.
+      weekUnpaid += dayUnpaidMs + dayMeal;
       weekPaid += dayPaidMs;
     }
     // Paid time per location, by the same rules as the roster-wide view: each
@@ -1031,6 +1105,8 @@ function TimecardsPage() {
           cardRules.cap_break_to_length,
           movesQ.data ?? [],
           () => paidMeals,
+          () => cardMeal,
+          mealOverride,
         ).get(targetUserId)
       : undefined;
     const byLocation = person?.byLocation ?? [];
@@ -1048,7 +1124,7 @@ function TimecardsPage() {
       const slice = rows.slice(w * 7, w * 7 + 7);
       weeks.push({
         workedMs: slice.reduce((n, r) => n + r.totalMs, 0),
-        unpaidBreakMs: slice.reduce((n, r) => n + r.unpaidBreakMs, 0),
+        unpaidBreakMs: slice.reduce((n, r) => n + r.unpaidBreakMs + r.autoMealMs, 0),
         paidBreakMs: slice.reduce((n, r) => n + r.paidBreakMs, 0),
         diffMs: slice.reduce((n, r) => n + r.diffMs, 0),
       });
@@ -1064,6 +1140,8 @@ function TimecardsPage() {
     cardRules.cap_break_to_length,
     paidMeals,
     diffRule,
+    cardMeal,
+    mealOverride,
   ]);
 
   // The day asked for from the dashboard, opened once that card has loaded —
@@ -1094,6 +1172,20 @@ function TimecardsPage() {
    * date and the day's total sit on the day's first row, extra shifts hang
    * beneath. Kept next to the PDF call so the two can't drift.
    */
+  /**
+   * "Auto meal break 30m", "Meal break removed" or "Meal break corrected to
+   * 15m" for a shift, so a printed card says why its unpaid time is what it
+   * is. Null when the shift had nothing automatic.
+   */
+  function mealNote(p: { in: Punch; autoMealMs: number; ruleMealMs: number }): string | null {
+    const corrected = mealAdj.get(p.in.id)?.deduct_minutes;
+    if (corrected != null) {
+      if (corrected === 0) return p.ruleMealMs > 0 ? t("Meal break removed") : null;
+      return t("Meal break corrected to {time}", { time: fmtHours(p.autoMealMs) });
+    }
+    return p.autoMealMs > 0 ? t("Auto meal break {time}", { time: fmtHours(p.autoMealMs) }) : null;
+  }
+
   function buildTimecardPdfData() {
     const HOUR = 3_600_000;
     const dec = (ms: number) => (ms / HOUR).toFixed(2);
@@ -1143,11 +1235,13 @@ function TimecardsPage() {
         scheduled: i === 0 ? (scheduledByDay.get(toDayString(r.date)) ?? undefined) : undefined,
         clockIn: fmtTime(p.in.at, cardRules.punch_round_minutes),
         clockOut: p.out ? fmtTime(p.out.at, cardRules.punch_round_minutes) : "—",
-        unpaid: p.unpaidBreakMs > 0 ? fmtHours(p.unpaidBreakMs) : "—",
+        unpaid:
+          p.unpaidBreakMs + p.autoMealMs > 0 ? fmtHours(p.unpaidBreakMs + p.autoMealMs) : "—",
         paid: p.paidBreakMs > 0 ? fmtHours(p.paidBreakMs) : "—",
         hours: i === 0 ? fmtHours(r.totalMs) : "",
         notes: [
           i === 0 && off ? absenceLabel(off) : null,
+          mealNote(p),
           ...(i === 0 ? (commentsByDay.get(toDayString(r.date)) ?? []).map(quoted) : []),
           hasLocations ? shiftPlaces(grouped.splits.get(p.in.at), p.in.location_id) : null,
           lateText(p.in.id),
@@ -1297,11 +1391,12 @@ function TimecardsPage() {
       pairs: r.pairs.map((p) => ({
         inAt: p.in.at,
         outAt: p.out?.at ?? null,
-        unpaidBreakMs: p.unpaidBreakMs,
+        unpaidBreakMs: p.unpaidBreakMs + p.autoMealMs,
         paidBreakMs: p.paidBreakMs,
         offSite: isManager && (!p.in.within_geofence || (!!p.out && !p.out.within_geofence)),
         late: lateText(p.in.id),
         diff: diffRule && p.diffMs > 0 ? `${diffRule.diff_label} ${fmtHours(p.diffMs)}` : null,
+        meal: mealNote(p),
         location: hasLocations ? shiftPlaces(grouped.splits.get(p.in.at), p.in.location_id) : null,
       })),
     })),
@@ -1420,9 +1515,15 @@ function TimecardsPage() {
               {absenceDay ? ` · ${fmtDate(fromDayString(absenceDay))}` : ""}
             </DialogDescription>
           </DialogHeader>
-          {absenceDay && absenceByDay.has(absenceDay) ? (
+          {absenceDay &&
+          (absenceByDay.has(absenceDay) || pendingAbsenceByDay.has(absenceDay)) ? (
             (() => {
-              const a = absenceByDay.get(absenceDay)!;
+              const a = absenceByDay.get(absenceDay) ?? pendingAbsenceByDay.get(absenceDay)!;
+              const pending = a.status !== "approved";
+              const adminViewer = primaryRole === "company_admin" || isSuperAdmin;
+              // A supervisor can withdraw a pending one they marked (the
+              // server checks it was theirs); approved time off is an admin's.
+              const canRemove = adminViewer || pending;
               return (
                 <div className="space-y-3 text-sm">
                   <p>
@@ -1434,24 +1535,39 @@ function TimecardsPage() {
                     </span>
                   </p>
                   {a.note && <p className="text-muted-foreground">{a.note}</p>}
+                  {pending && (
+                    <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
+                      {t(
+                        "Waiting for final approval. It doesn't count on the time card, and no shifts are opened, until an admin approves it.",
+                      )}
+                    </p>
+                  )}
                   <p className="text-xs text-muted-foreground">
-                    {t(
-                      "Removing it takes every day of it off the time card. Shifts it opened stay open.",
-                    )}
+                    {!canRemove
+                      ? t("Only an admin can remove time off that has been approved.")
+                      : pending
+                        ? t("Withdrawing it takes it out of the approval queue.")
+                        : t(
+                            "Removing it takes every day of it off the time card. Shifts it opened stay open.",
+                          )}
                   </p>
                   {absenceErr && <p className="text-xs text-destructive">{absenceErr}</p>}
                   <DialogFooter>
                     <Button variant="outline" onClick={() => setAbsenceDay(null)}>
                       {t("Close")}
                     </Button>
-                    <Button
-                      variant="destructive"
-                      disabled={removeAbsence.isPending}
-                      onClick={() => removeAbsence.mutate(a.id)}
-                    >
-                      {removeAbsence.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                      {t("Remove absence")}
-                    </Button>
+                    {canRemove && (
+                      <Button
+                        variant="destructive"
+                        disabled={removeAbsence.isPending}
+                        onClick={() => removeAbsence.mutate(a.id)}
+                      >
+                        {removeAbsence.isPending && (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        )}
+                        {pending ? t("Withdraw") : t("Remove absence")}
+                      </Button>
+                    )}
                   </DialogFooter>
                 </div>
               );
@@ -2024,7 +2140,19 @@ function TimecardsPage() {
                           label={absenceLabel(absenceByDay.get(toDayString(r.date))!)}
                         />
                       )}
-                      {r.pairs.length === 0 && !absenceByDay.has(toDayString(r.date)) && (
+                      {!absenceByDay.has(toDayString(r.date)) &&
+                        pendingAbsenceByDay.has(toDayString(r.date)) && (
+                          <AbsenceBadge
+                            absence={pendingAbsenceByDay.get(toDayString(r.date))!}
+                            label={t("{kind} · awaiting approval", {
+                              kind: absenceLabel(pendingAbsenceByDay.get(toDayString(r.date))!),
+                            })}
+                            pending
+                          />
+                        )}
+                      {r.pairs.length === 0 &&
+                        !absenceByDay.has(toDayString(r.date)) &&
+                        !pendingAbsenceByDay.has(toDayString(r.date)) && (
                         <span className="text-muted-foreground">—</span>
                       )}
                       {r.pairs.map((p, i) => (
@@ -2053,6 +2181,23 @@ function TimecardsPage() {
                           )}
                           {(!p.in.within_geofence || (p.out && !p.out.within_geofence)) && (
                             <span className="text-xs text-destructive">{t("⚠ off-site")}</span>
+                          )}
+                          {p.out && (p.ruleMealMs > 0 || mealAdj.has(p.in.id)) && (
+                            <MealChip
+                              autoMs={p.autoMealMs}
+                              adjustment={mealAdj.get(p.in.id)}
+                              canReport={targetUserId === user?.id && p.ruleMealMs > 0}
+                              canCorrect={canEditCard && targetUserId !== user?.id}
+                              target={{
+                                inPunchId: p.in.id,
+                                shiftLabel: `${fmtDate(r.date)} · ${fmtTime(p.in.at, cardRules.punch_round_minutes)} – ${fmtTime(p.out.at, cardRules.punch_round_minutes)}`,
+                                ruleMinutes: Math.round(p.ruleMealMs / 60_000),
+                                deductedMinutes: Math.round(p.autoMealMs / 60_000),
+                                adjustment: mealAdj.get(p.in.id),
+                              }}
+                              onReport={setMealReport}
+                              onCorrect={setMealCorrect}
+                            />
                           )}
                           {hasLocations &&
                             (canEditCard ? (
@@ -2126,6 +2271,11 @@ function TimecardsPage() {
                               {t("paid")} {fmtHours(r.paidBreakMs)}
                             </>
                           )}
+                        </div>
+                      )}
+                      {r.autoMealMs > 0 && (
+                        <div className="text-[10px] font-normal text-muted-foreground">
+                          {t("auto meal")} {fmtHours(r.autoMealMs)}
                         </div>
                       )}
                       {/* Back on the clock before the break was up. The day is
@@ -2669,8 +2819,100 @@ function TimecardsPage() {
             }
           />
         )}
+
+        <ReportMealDialog target={mealReport} onClose={() => setMealReport(null)} />
+        <CorrectMealDialog
+          target={mealCorrect}
+          noteRequired={cardRules.require_edit_note}
+          onClose={() => setMealCorrect(null)}
+        />
       </div>
     </>
+  );
+}
+
+/**
+ * The automatic meal break on one shift, kept apart from a punched break: what
+ * came off, whether the employee reported a problem, and whether someone
+ * corrected it. The employee can report from here; an admin or supervisor who
+ * may edit the card can correct it.
+ */
+function MealChip({
+  autoMs,
+  adjustment,
+  canReport,
+  canCorrect,
+  target,
+  onReport,
+  onCorrect,
+}: {
+  autoMs: number;
+  adjustment: MealAdjustment | undefined;
+  canReport: boolean;
+  canCorrect: boolean;
+  target: MealDialogTarget;
+  onReport: (t: MealDialogTarget) => void;
+  onCorrect: (t: MealDialogTarget) => void;
+}) {
+  const t = useT("timecards");
+  const corrected = adjustment?.deduct_minutes != null;
+  const reported = !!adjustment?.report_kind;
+  const pending =
+    reported && (!adjustment?.decided_at || adjustment.decided_at < (adjustment.reported_at ?? ""));
+  const label = corrected
+    ? autoMs > 0
+      ? t("Meal break corrected to {time}", { time: fmtHours(autoMs) })
+      : t("Meal break removed")
+    : autoMs > 0
+      ? t("Auto meal break {time}", { time: fmtHours(autoMs) })
+      : null;
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1">
+      {label && (
+        <span
+          className="inline-flex items-center gap-0.5 rounded border border-dashed border-violet-400 bg-violet-50 px-1.5 py-0.5 text-xs font-medium text-violet-700 dark:border-violet-400/50 dark:bg-violet-500/10 dark:text-violet-300"
+          title={
+            corrected
+              ? (adjustment?.decision_note ?? t("Corrected by an admin or supervisor"))
+              : t("Taken off automatically by the position's meal break rule — not punched")
+          }
+        >
+          <Utensils className="h-3 w-3" />
+          {label}
+        </span>
+      )}
+      {reported && (
+        <span
+          className={`rounded px-1.5 py-0.5 text-xs font-medium ${pending ? "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300" : "bg-slate-100 text-slate-700 dark:bg-slate-500/15 dark:text-slate-300"}`}
+          title={adjustment?.report_note ?? undefined}
+        >
+          {adjustment?.report_kind === "missed"
+            ? t("Reported missed")
+            : adjustment?.report_kind === "short"
+              ? t("Reported short")
+              : t("Reported interrupted")}
+          {pending ? ` · ${t("to review")}` : ""}
+        </span>
+      )}
+      {canReport && (
+        <button
+          type="button"
+          className="text-xs text-primary underline-offset-2 hover:underline"
+          onClick={() => onReport(target)}
+        >
+          {reported ? t("Edit report") : t("Report meal break")}
+        </button>
+      )}
+      {canCorrect && (
+        <button
+          type="button"
+          className="text-xs text-primary underline-offset-2 hover:underline"
+          onClick={() => onCorrect(target)}
+        >
+          {t("Correct")}
+        </button>
+      )}
+    </span>
   );
 }
 
@@ -2701,9 +2943,19 @@ function WeekSubtotal({
 }
 
 /** A day off on the card's day row, coloured by kind so a fortnight reads at a glance. */
-function AbsenceBadge({ absence, label }: { absence: Absence; label: string }) {
-  const tone =
-    absence.kind === "sick"
+function AbsenceBadge({
+  absence,
+  label,
+  pending = false,
+}: {
+  absence: Absence;
+  label: string;
+  /** Still waiting on approval: drawn dashed, and counted nowhere. */
+  pending?: boolean;
+}) {
+  const tone = pending
+    ? "border border-dashed border-amber-400 bg-amber-50 text-amber-800 dark:border-amber-400/50 dark:bg-amber-500/10 dark:text-amber-300"
+    : absence.kind === "sick"
       ? "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300"
       : absence.kind === "vacation"
         ? "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300"

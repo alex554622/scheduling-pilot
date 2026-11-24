@@ -87,7 +87,13 @@ export function ScheduleGrid({
   emptyText = "Nobody is scheduled this week.",
   eyebrow = "Weekly schedule",
   timeOff = [],
+  groups,
 }: {
+  /**
+   * Departments to divide the rows under, in order. Anyone in none of them
+   * goes under "No department", open shifts last. Absent: one flat list.
+   */
+  groups?: { id: string; name: string; memberIds: string[] }[];
   /** The seven days of the week, Monday first. */
   days: Date[];
   shifts: GridShift[];
@@ -108,7 +114,7 @@ export function ScheduleGrid({
   const tag = useLocaleTag();
   const today = new Date();
 
-  const { rows, legend } = useMemo(() => {
+  const { rows, legend, sections } = useMemo(() => {
     const inWeek = shifts.filter(
       (s) => (showDrafts || s.published) && days.some((d) => sameDay(new Date(s.starts_at), d)),
     );
@@ -142,8 +148,26 @@ export function ScheduleGrid({
 
     // A key only when the colours mean posts; see `sheetLegend`.
     const legend = sheetLegend(inWeek).map((l) => ({ position: l.label, color: l.color }));
-    return { rows, legend };
-  }, [shifts, days, nameOf, selfId, showDrafts, timeOff, t]);
+
+    // Rows divided under their department, in the departments' order.
+    type Row = (typeof rows)[number];
+    let sections: { id: string; name: string; rows: Row[] }[] = [{ id: "all", name: "", rows }];
+    if (groups) {
+      const groupOf = new Map<string, string>();
+      for (const g of groups) for (const id of g.memberIds) groupOf.set(id, g.id);
+      const bucket = new Map<string, Row[]>();
+      const put = (key: string, row: Row) => bucket.set(key, [...(bucket.get(key) ?? []), row]);
+      for (const row of rows) {
+        put(row.id === "open" ? "__open__" : (groupOf.get(row.id) ?? "__none__"), row);
+      }
+      sections = [
+        ...groups.map((g) => ({ id: g.id, name: g.name, rows: bucket.get(g.id) ?? [] })),
+        { id: "__none__", name: t("No department"), rows: bucket.get("__none__") ?? [] },
+        { id: "__open__", name: t("Open shifts"), rows: bucket.get("__open__") ?? [] },
+      ].filter((s) => s.rows.length > 0);
+    }
+    return { rows, legend, sections };
+  }, [shifts, days, nameOf, selfId, showDrafts, timeOff, groups, t]);
 
   return (
     <div className="relative overflow-hidden rounded-2xl border border-white/60 shadow-[0_10px_40px_-12px_rgba(15,23,42,0.35)] dark:border-white/10">
@@ -209,81 +233,99 @@ export function ScheduleGrid({
                   })}
                 </tr>
               </thead>
-              <tbody>
-                {rows.map((row, i) => {
-                  const mine = row.id === selfId;
-                  return (
-                    <tr key={row.id} className="group">
+              {sections.map((section) => (
+                <tbody key={section.id}>
+                  {groups && (
+                    <tr>
                       <th
-                        scope="row"
-                        title={row.name}
-                        className={`sticky left-0 z-10 border-b border-white/50 px-3 py-2 text-sm font-medium backdrop-blur-md dark:border-white/10 ${
-                          mine
-                            ? "bg-primary/15 text-primary dark:bg-primary/20"
-                            : i % 2
-                              ? "bg-white/70 text-slate-800 dark:bg-slate-900/60 dark:text-slate-100"
-                              : "bg-white/85 text-slate-800 dark:bg-slate-900/75 dark:text-slate-100"
-                        }`}
+                        scope="rowgroup"
+                        colSpan={days.length + 1}
+                        className="border-b border-white/50 bg-slate-700/70 px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wider text-white backdrop-blur-md dark:border-white/10"
                       >
-                        <span className="flex items-center gap-1.5">
-                          {row.id === "open" ? row.name : shortName(row.name)}
-                          {mine && (
-                            <span className="rounded-full bg-primary px-1.5 py-px text-[10px] font-semibold text-primary-foreground">
-                              {t("You")}
-                            </span>
-                          )}
+                        <span className="sticky left-3">
+                          {section.name}
+                          <span className="ml-2 font-medium normal-case tracking-normal text-slate-300">
+                            {section.rows.length}
+                          </span>
                         </span>
                       </th>
-                      {days.map((d) => {
-                        const cell = row.shifts.filter((s) => sameDay(new Date(s.starts_at), d));
-                        const k = dayKey(d);
-                        const off = timeOff.find(
-                          (t) => t.employee_id === row.id && t.start_date <= k && t.end_date >= k,
-                        );
-                        return (
-                          <td
-                            key={d.toDateString()}
-                            className={`border-b border-l border-white/50 p-1.5 align-top dark:border-white/10 ${
-                              mine ? "bg-primary/5" : ""
-                            } ${sameDay(d, today) ? "bg-primary/[0.04]" : ""}`}
-                          >
-                            <div className="space-y-1">
-                              {off && (
-                                <div className="rounded-lg border border-dashed border-amber-500/70 bg-amber-400/20 px-2 py-1.5 text-center text-[12px] font-semibold leading-tight text-amber-950 dark:text-amber-50">
-                                  {t(TIME_OFF_LABEL[off.kind] ?? "Day off")}
-                                </div>
-                              )}
-                              {cell.map((s) => (
-                                <div
-                                  key={s.id}
-                                  className={`rounded-lg border-l-[3px] px-2 py-1.5 shadow-sm ring-1 ring-inset backdrop-blur-sm ${tint(
-                                    s.color,
-                                  )} ${!s.published ? "border-dashed opacity-75" : ""}`}
-                                >
-                                  <p className="whitespace-nowrap text-[12px] font-semibold leading-tight">
-                                    {sheetTime(new Date(s.starts_at))}–
-                                    {sheetTime(new Date(s.ends_at))}
-                                  </p>
-                                  {(s.position || !s.published) && (
-                                    <p className="mt-0.5 truncate text-[11px] leading-tight opacity-75">
-                                      {s.position}
-                                      {!s.published && (
-                                        <span className="ml-1 font-semibold uppercase tracking-wide">
-                                          {t("draft")}
-                                        </span>
-                                      )}
-                                    </p>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          </td>
-                        );
-                      })}
                     </tr>
-                  );
-                })}
-              </tbody>
+                  )}
+                  {section.rows.map((row, i) => {
+                    const mine = row.id === selfId;
+                    return (
+                      <tr key={row.id} className="group">
+                        <th
+                          scope="row"
+                          title={row.name}
+                          className={`sticky left-0 z-10 border-b border-white/50 px-3 py-2 text-sm font-medium backdrop-blur-md dark:border-white/10 ${
+                            mine
+                              ? "bg-primary/15 text-primary dark:bg-primary/20"
+                              : i % 2
+                                ? "bg-white/70 text-slate-800 dark:bg-slate-900/60 dark:text-slate-100"
+                                : "bg-white/85 text-slate-800 dark:bg-slate-900/75 dark:text-slate-100"
+                          }`}
+                        >
+                          <span className="flex items-center gap-1.5">
+                            {row.id === "open" ? row.name : shortName(row.name)}
+                            {mine && (
+                              <span className="rounded-full bg-primary px-1.5 py-px text-[10px] font-semibold text-primary-foreground">
+                                {t("You")}
+                              </span>
+                            )}
+                          </span>
+                        </th>
+                        {days.map((d) => {
+                          const cell = row.shifts.filter((s) => sameDay(new Date(s.starts_at), d));
+                          const k = dayKey(d);
+                          const off = timeOff.find(
+                            (t) => t.employee_id === row.id && t.start_date <= k && t.end_date >= k,
+                          );
+                          return (
+                            <td
+                              key={d.toDateString()}
+                              className={`border-b border-l border-white/50 p-1.5 align-top dark:border-white/10 ${
+                                mine ? "bg-primary/5" : ""
+                              } ${sameDay(d, today) ? "bg-primary/[0.04]" : ""}`}
+                            >
+                              <div className="space-y-1">
+                                {off && (
+                                  <div className="rounded-lg border border-dashed border-amber-500/70 bg-amber-400/20 px-2 py-1.5 text-center text-[12px] font-semibold leading-tight text-amber-950 dark:text-amber-50">
+                                    {t(TIME_OFF_LABEL[off.kind] ?? "Day off")}
+                                  </div>
+                                )}
+                                {cell.map((s) => (
+                                  <div
+                                    key={s.id}
+                                    className={`rounded-lg border-l-[3px] px-2 py-1.5 shadow-sm ring-1 ring-inset backdrop-blur-sm ${tint(
+                                      s.color,
+                                    )} ${!s.published ? "border-dashed opacity-75" : ""}`}
+                                  >
+                                    <p className="whitespace-nowrap text-[12px] font-semibold leading-tight">
+                                      {sheetTime(new Date(s.starts_at))}–
+                                      {sheetTime(new Date(s.ends_at))}
+                                    </p>
+                                    {(s.position || !s.published) && (
+                                      <p className="mt-0.5 truncate text-[11px] leading-tight opacity-75">
+                                        {s.position}
+                                        {!s.published && (
+                                          <span className="ml-1 font-semibold uppercase tracking-wide">
+                                            {t("draft")}
+                                          </span>
+                                        )}
+                                      </p>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              ))}
             </table>
           </div>
         )}

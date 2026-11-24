@@ -99,7 +99,7 @@ export function TimecardDayEditor({
   const t = useT("timecards");
   const qc = useQueryClient();
   const { user } = useAuth();
-  // This employee's team rules, over the company's.
+  // This employee's position rules, over the company's.
   const rules = useMemberRules().rulesFor(employeeId);
   // The database refuses an unexplained change for such a team; say so up front.
   const noteRequired = rules.require_edit_note && employeeId !== user?.id;
@@ -407,7 +407,7 @@ export function TimecardDayEditor({
 
           <div className="space-y-1.5">
             <Label htmlFor="correction-reason">
-              {noteRequired ? t("Note (required for this team)") : t("Note (optional)")}
+              {noteRequired ? t("Note (required for this position)") : t("Note (optional)")}
             </Label>
             <Input
               id="correction-reason"
