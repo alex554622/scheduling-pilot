@@ -87,6 +87,10 @@ export const time: Record<string, string> = {
   "Clocked in successfully.": "Entrada registrada correctamente.",
   "Clocked out successfully.": "Salida registrada correctamente.",
   "Failed to punch": "No se pudo registrar",
+  "Couldn't reach the server, so the punch was not saved. Check your connection and try again in a moment.":
+    "No se pudo conectar con el servidor, así que el registro no se guardó. Revisa tu conexión e inténtalo de nuevo en un momento.",
+  "Couldn't reach the server, so we can't tell whether your punch was saved. Check your connection, then reopen this page before trying again.":
+    "No se pudo conectar con el servidor, así que no sabemos si tu registro se guardó. Revisa tu conexión y vuelve a abrir esta página antes de intentarlo de nuevo.",
   "Break ended.": "Descanso terminado.",
   "Break started.": "Descanso iniciado.",
   "Failed": "Error",

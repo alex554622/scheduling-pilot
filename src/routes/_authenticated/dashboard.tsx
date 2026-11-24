@@ -242,9 +242,13 @@ function DashboardPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["break-dismissals", company?.id] }),
   });
 
-  // Realtime
+  // Realtime, for managers only. Every punch in the company is checked against
+  // each subscriber's row-level security, so with everyone subscribed one
+  // shift-change rush costs (people × punches) checks on the database — the
+  // moment clock-ins most need it. Employees only see their own punches, and
+  // their own clock page refreshes this list when they punch.
   useEffect(() => {
-    if (!company?.id) return;
+    if (!company?.id || !isManager) return;
     const ch = supabase
       .channel(`today_punches_${company.id}`)
       .on(
@@ -254,7 +258,7 @@ function DashboardPage() {
       )
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [company?.id, qc]);
+  }, [company?.id, isManager, qc]);
 
   const rows = useMemo(() => {
     const byUser = new Map<string, Punch[]>();

@@ -49,6 +49,44 @@ export const Route = createFileRoute("/_authenticated/timeclock")({
 
 type PunchKind = "in" | "out" | "break_start" | "break_end";
 
+/** The request never got an answer — browsers word it differently. */
+function isNetworkError(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String((e as { message?: unknown })?.message ?? "");
+  return /failed to fetch|networkerror|load failed|network request failed|fetch failed/i.test(msg);
+}
+
+/**
+ * After a lost clock_punch answer: did the punch land anyway? Returns the new
+ * punch if the person's latest punch is no longer `before`, null if nothing was
+ * saved. Throws a "can't tell" error when the server is still out of reach.
+ */
+async function punchSavedSince(
+  userId: string,
+  before: string | null,
+): Promise<{ id: string; kind: string } | null> {
+  for (const wait of [1500, 4000]) {
+    await new Promise((r) => setTimeout(r, wait));
+    try {
+      const { data, error } = await supabase
+        .from("time_punches")
+        .select("id, kind")
+        .eq("user_id", userId)
+        .order("at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) continue;
+      return data && data.id !== before ? data : null;
+    } catch {
+      /* still unreachable: try once more */
+    }
+  }
+  throw new Error(
+    translate(
+      "Couldn't reach the server, so we can't tell whether your punch was saved. Check your connection, then reopen this page before trying again.",
+    ),
+  );
+}
+
 type Punch = {
   id: string;
   kind: PunchKind;
@@ -474,12 +512,24 @@ function TimeclockPage() {
   const punchMut = useMutation({
     mutationFn: async () => {
       if (waitingForGps) throw new Error(translate("Waiting for GPS location…"));
-      const { data, error } = await supabase.rpc("clock_punch", {
-        _lat: coords?.lat ?? null,
-        _lng: coords?.lng ?? null,
-        _accuracy: coords?.acc,
-      });
-      if (error) throw error;
+      const before = lastPunch?.id ?? null;
+      let data: { id: string; kind: string } | null;
+      try {
+        const res = await supabase.rpc("clock_punch", {
+          _lat: coords?.lat ?? null,
+          _lng: coords?.lng ?? null,
+          _accuracy: coords?.acc,
+        });
+        if (res.error) throw res.error;
+        data = res.data;
+      } catch (e) {
+        if (!isNetworkError(e)) throw e;
+        // The request or its answer was lost ("Failed to fetch"): a busy server,
+        // or the phone dropping signal. The punch may still have been saved, and
+        // clock_punch toggles in/out, so a blind retry could undo it. Look first.
+        data = await punchSavedSince(user!.id, before);
+        if (!data) throw e;
+      }
       // Clocked in at a location they picked: file the shift there, over
       // whatever the database guessed.
       if (data?.kind === "in" && pickedLocation) {
@@ -512,6 +562,7 @@ function TimeclockPage() {
         });
       }
       qc.invalidateQueries({ queryKey: ["my-punches-recent"] });
+      qc.invalidateQueries({ queryKey: ["today-punches"] });
       qc.invalidateQueries({ queryKey: ["timecards"] });
       qc.invalidateQueries({ queryKey: ["my-gps-grace"] });
     },
@@ -521,7 +572,14 @@ function TimeclockPage() {
         qc.invalidateQueries({ queryKey: ["my-gps-grace"] });
         setFlash({ kind: "err", msg: t(GPS_BLOCKED_MSG) });
       } else {
-        setFlash({ kind: "err", msg: translateRuleMessage(msg) || t("Failed to punch") });
+        setFlash({
+          kind: "err",
+          msg: isNetworkError(e)
+            ? t(
+                "Couldn't reach the server, so the punch was not saved. Check your connection and try again in a moment.",
+              )
+            : translateRuleMessage(msg) || t("Failed to punch"),
+        });
       }
     },
     onSettled: () => setSubmitting(false),
@@ -545,6 +603,7 @@ function TimeclockPage() {
       setFlash({ kind: "ok", msg: t("Now counting your time at {place}.", { place: name }) });
       qc.invalidateQueries({ queryKey: ["my-location-moves"] });
       qc.invalidateQueries({ queryKey: ["my-punches-recent"] });
+      qc.invalidateQueries({ queryKey: ["today-punches"] });
       qc.invalidateQueries({ queryKey: ["timecards"] });
     },
     onError: (e: any) => setFlash({ kind: "err", msg: e.message || t("Failed") }),
@@ -570,6 +629,7 @@ function TimeclockPage() {
         msg: status === "on_break" ? t("Break ended.") : t("Break started."),
       });
       qc.invalidateQueries({ queryKey: ["my-punches-recent"] });
+      qc.invalidateQueries({ queryKey: ["today-punches"] });
       qc.invalidateQueries({ queryKey: ["timecards"] });
     },
     onError: (e: any) => setFlash({ kind: "err", msg: e.message || t("Failed") }),

@@ -120,11 +120,10 @@ function Landing() {
       if (Number.isFinite(days)) setTrialDays(days);
     });
     loadPlans();
-    const ch = supabase.channel("settings-payments")
-      .on("postgres_changes", { event: "*", schema: "public", table: "app_settings", filter: "key=eq.payments_enabled" },
-        (p) => setPaymentsEnabled((p.new as { value: unknown })?.value === true))
-      .subscribe();
-    return () => { active = false; supabase.removeChannel(ch); };
+    // No live subscription here: this is the public landing page, and a
+    // realtime channel per visitor ties up a websocket and database work for
+    // every person who merely opens the site. The setting is read on each visit.
+    return () => { active = false; };
   }, []);
 
 

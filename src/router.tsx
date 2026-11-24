@@ -4,7 +4,24 @@ import { routeTree } from "./routeTree.gen";
 import { RoutePending } from "@/components/route-pending";
 
 export const getRouter = () => {
-  const queryClient = new QueryClient();
+  // React Query's defaults treat every answer as stale at once and refetch every
+  // query on screen each time the window regains focus — on phones that is every
+  // switch back to the app, for every user at once at shift change. Keep answers
+  // for 30s (pages that need fresher data set their own staleTime/realtime), and
+  // back off retries so a struggling server isn't hit three times as hard.
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        staleTime: 30_000,
+        retry: (failures, error) => {
+          const status = (error as { status?: number; code?: string })?.status;
+          if (status && status >= 400 && status < 500) return false;
+          return failures < 2;
+        },
+        retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 15_000) + Math.random() * 1000,
+      },
+    },
+  });
 
   const router = createRouter({
     routeTree,
