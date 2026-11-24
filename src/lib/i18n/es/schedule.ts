@@ -159,6 +159,7 @@ export const schedule: Record<string, string> = {
   "Nothing has been published yet. It appears here as soon as it is.": "Aún no se ha publicado nada. Aparecerá aquí en cuanto se publique.",
   "My schedule": "Mi horario",
   "Week of": "Semana del",
+  "Company schedule": "Horario de la empresa",
   "Coming up": "Próximamente",
   "← Prev week": "← Semana anterior",
   "Next week →": "Semana siguiente →",

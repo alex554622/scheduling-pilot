@@ -1899,7 +1899,17 @@ export type Database = {
       }
       schedule_roster: {
         Args: never
-        Returns: { id: string; full_name: string; position: string | null; department_id: string | null }[]
+        Returns: {
+          id: string
+          full_name: string
+          position: string | null
+          position_id: string | null
+          department_id: string | null
+        }[]
+      }
+      schedule_time_off: {
+        Args: { _from: string; _to: string }
+        Returns: { employee_id: string; start_date: string; end_date: string; kind: string }[]
       }
       can_manage_team_rules: {
         Args: { _department: string; _user: string }
