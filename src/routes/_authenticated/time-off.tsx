@@ -17,6 +17,7 @@ import { localeTag, useT } from "@/lib/i18n";
 import {
   ApprovalTrail, DecisionDialog, awaitsMe, useRequestApprovals,
 } from "@/components/request-approvals";
+import { errorMessage } from "@/lib/error-message";
 
 export const Route = createFileRoute("/_authenticated/time-off")({
   component: TimeOffPage,
@@ -426,7 +427,7 @@ function NewRequestDialog({ open, onClose, userId, companyId, onSaved }: { open:
       reset();
       onSaved();
     },
-    onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setErr(errorMessage(e)),
   });
 
   return (

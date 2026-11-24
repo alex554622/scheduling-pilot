@@ -12,6 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { errorMessage } from "@/lib/error-message";
 
 const ROLE_ORDER = ["super_admin", "company_admin", "supervisor", "employee"];
 
@@ -70,7 +71,7 @@ export function CompanySwitcher({
     try {
       await switchCompany(companyId);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e));
+      toast.error(errorMessage(e));
     } finally {
       setSwitching(null);
     }

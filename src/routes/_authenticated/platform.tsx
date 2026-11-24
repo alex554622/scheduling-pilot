@@ -15,6 +15,7 @@ import {
   Building2, Users, CreditCard, Activity, Clock, TrendingUp, Loader2,
   Pencil, Plus, Trash2, Star, AlertTriangle, Gift,
 } from "lucide-react";
+import { errorMessage } from "@/lib/error-message";
 
 export const Route = createFileRoute("/_authenticated/platform")({
   component: PlatformPage,
@@ -231,7 +232,7 @@ function PlansPanel({ plans, isLoading }: { plans: PlanRow[]; isLoading: boolean
       }
     },
     onSuccess: () => { invalidate(); setEditing(null); setCreating(false); setErr(null); },
-    onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setErr(errorMessage(e)),
   });
 
   // Exactly one plan can be featured, so clear the others in the same action.
@@ -243,7 +244,7 @@ function PlansPanel({ plans, isLoading }: { plans: PlanRow[]; isLoading: boolean
       if (error) throw error;
     },
     onSuccess: () => { invalidate(); setErr(null); },
-    onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setErr(errorMessage(e)),
   });
 
   const del = useMutation({
@@ -252,7 +253,7 @@ function PlansPanel({ plans, isLoading }: { plans: PlanRow[]; isLoading: boolean
       if (error) throw error;
     },
     onSuccess: () => { invalidate(); setErr(null); },
-    onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setErr(errorMessage(e)),
   });
 
   return (
@@ -515,7 +516,7 @@ function GlobalSettingsPanel() {
       if (error) throw error;
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["app-settings", "payments_enabled"] }); setErr(null); },
-    onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setErr(errorMessage(e)),
   });
 
   return (
@@ -603,7 +604,7 @@ function TrialSettingsPanel({ plans }: { plans: PlanRow[] }) {
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
     },
-    onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setErr(errorMessage(e)),
   });
 
   return (

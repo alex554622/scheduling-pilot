@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { BrandLogo } from "@/components/brand";
 import { useT } from "@/lib/i18n";
+import { errorMessage } from "@/lib/error-message";
 
 /**
  * Temporary passwords (see 20261202120000_admin_temp_password.sql).
@@ -17,7 +18,7 @@ import { useT } from "@/lib/i18n";
  * their own. The database decides who may reset whom.
  */
 
-const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+const errorText = (e: unknown) => (errorMessage(e));
 
 /** Edit member: set a temporary password and show it once. */
 export function TempPasswordSection({ userId, name }: { userId: string; name: string }) {

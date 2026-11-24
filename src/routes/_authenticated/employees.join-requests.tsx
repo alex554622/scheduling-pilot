@@ -36,6 +36,7 @@ import {
   RefreshCw,
   KeyRound,
 } from "lucide-react";
+import { errorMessage } from "@/lib/error-message";
 
 export const Route = createFileRoute("/_authenticated/employees/join-requests")({
   component: MembershipRequestsPage,
@@ -456,7 +457,7 @@ function CompanyCodeCard() {
       await qc.invalidateQueries({ queryKey: ["company-membership-policy", companyId] });
       await refresh();
     },
-    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => toast.error(errorMessage(e)),
   });
 
   const policy = useMutation({
@@ -466,7 +467,7 @@ function CompanyCodeCard() {
     },
     onSuccess: () =>
       void qc.invalidateQueries({ queryKey: ["company-membership-policy", companyId] }),
-    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => toast.error(errorMessage(e)),
   });
 
   const s = settingsQ.data;

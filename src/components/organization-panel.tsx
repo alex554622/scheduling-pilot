@@ -15,6 +15,7 @@ import { ORG_STRUCTURE_KEY, useOrgStructure } from "@/lib/use-org-structure";
 import { activeOrCurrent, diffIds, type OrgItem } from "@/lib/org-structure";
 import { useT } from "@/lib/i18n";
 import { Building2, MapPin, BriefcaseBusiness, Plus, Trash2, Pencil, Loader2, Crosshair, Globe } from "lucide-react";
+import { errorMessage } from "@/lib/error-message";
 
 type Department = { id: string; name: string; description: string | null };
 type Position = { id: string; name: string; description: string | null; color: string };
@@ -142,7 +143,7 @@ function GeneralTab({ companyId }: { companyId: string }) {
       qc.invalidateQueries({ queryKey: ["company-timezone"] });
       setErr(null); setSaved(true); setTimeout(() => setSaved(false), 2000);
     },
-    onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setErr(errorMessage(e)),
   });
 
   const zones = Array.from(new Set([detected, ...COMMON_ZONES]));
@@ -219,7 +220,7 @@ function OrgNamePanel({ companyId }: { companyId: string }) {
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     },
-    onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setErr(errorMessage(e)),
   });
 
   const dirty = !!company && name.trim() !== company.name;
@@ -311,7 +312,7 @@ function DepartmentsTab({ companyId }: { companyId: string }) {
       }
     },
     onSuccess: () => { refresh(); setEditing(null); setCreating(false); setErr(null); },
-    onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setErr(errorMessage(e)),
   });
 
   const del = useMutation({
@@ -320,7 +321,7 @@ function DepartmentsTab({ companyId }: { companyId: string }) {
       if (error) throw error;
     },
     onSuccess: refresh,
-    onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setErr(errorMessage(e)),
   });
 
   // Who is in each department, and who supervises it. Supervisors are given
@@ -608,7 +609,7 @@ function PositionsTab({ companyId }: { companyId: string }) {
       }
     },
     onSuccess: () => { refresh(); setEditing(null); setCreating(false); setErr(null); },
-    onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setErr(errorMessage(e)),
   });
 
   const del = useMutation({
@@ -617,7 +618,7 @@ function PositionsTab({ companyId }: { companyId: string }) {
       if (error) throw error;
     },
     onSuccess: refresh,
-    onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setErr(errorMessage(e)),
   });
 
   const orgPos = (id: string) => org.positions.find((p) => p.id === id);
@@ -752,7 +753,7 @@ function LocationsTab({ companyId }: { companyId: string }) {
       qc.invalidateQueries({ queryKey: [ORG_STRUCTURE_KEY] });
       setDraft(null); setErr(null);
     },
-    onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setErr(errorMessage(e)),
   });
 
   const del = useMutation({
@@ -761,7 +762,7 @@ function LocationsTab({ companyId }: { companyId: string }) {
       if (error) throw error;
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["locations"] }); setSelectedId(null); },
-    onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setErr(errorMessage(e)),
   });
 
   // Pins for every saved site; the draft pin follows the map click while editing.

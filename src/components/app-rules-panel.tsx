@@ -21,6 +21,7 @@ import {
   EyeOff,
   UserCheck,
 } from "lucide-react";
+import { errorMessage } from "@/lib/error-message";
 
 /**
  * The shape and the defaults live in `@/lib/app-rules`, next to the hook every
@@ -77,7 +78,7 @@ export function AppRulesPanel() {
       qc.invalidateQueries({ queryKey: ["company-settings", company?.id] });
       qc.invalidateQueries({ queryKey: ["company-app-rules", company?.id] });
     },
-    onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setErr(errorMessage(e)),
   });
 
   if (loading) return <div className="text-sm text-muted-foreground">{t("Loading…")}</div>;

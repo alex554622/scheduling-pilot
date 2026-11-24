@@ -23,6 +23,7 @@ import {
   type PasteSource,
   type TemplateRow,
 } from "@/lib/paste-source";
+import { errorMessage } from "@/lib/error-message";
 
 /**
  * Saved shift times for the schedule builder. Tapping a template puts it in
@@ -256,7 +257,7 @@ function TemplateForm({
       void qc.invalidateQueries({ queryKey: ["shift_templates"] });
       onClose();
     },
-    onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setErr(errorMessage(e)),
   });
 
   const remove = useMutation({
@@ -270,7 +271,7 @@ function TemplateForm({
       void qc.invalidateQueries({ queryKey: ["shift_templates"] });
       onClose();
     },
-    onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setErr(errorMessage(e)),
   });
 
   const overnight = timeToMinutes(end) < timeToMinutes(start);
@@ -476,7 +477,7 @@ function ApplyForm({
       setDone(n === 1 ? t("Added 1 shift as a draft.") : t("Added {n} shifts as drafts.", { n }));
       void qc.invalidateQueries({ queryKey: ["shifts"] });
     },
-    onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setErr(errorMessage(e)),
   });
 
   const allPicked = members.length > 0 && people.size === members.length;

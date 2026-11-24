@@ -57,6 +57,7 @@ import {
   subscribeToPush,
   unsubscribeFromPush,
 } from "@/lib/push-subscription";
+import { errorMessage } from "@/lib/error-message";
 
 /**
  * `?tab=companies` opens My companies; `organization` and `rules` are admin tabs.
@@ -179,7 +180,7 @@ function AccountSettings() {
       setProfileErr(null);
       setTimeout(() => setSavedProfile(false), 1500);
     },
-    onError: (e: unknown) => setProfileErr(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setProfileErr(errorMessage(e)),
   });
 
   const [pw, setPw] = useState("");
@@ -201,7 +202,7 @@ function AccountSettings() {
       setPwOk(true);
       setTimeout(() => setPwOk(false), 2000);
     },
-    onError: (e: unknown) => setPwErr(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setPwErr(errorMessage(e)),
   });
 
   const canSeeCode = primaryRole === "company_admin" || primaryRole === "super_admin";
@@ -241,7 +242,7 @@ function AccountSettings() {
       setCompanySaved(true);
       setTimeout(() => setCompanySaved(false), 1500);
     },
-    onError: (e: unknown) => setCompanyErr(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setCompanyErr(errorMessage(e)),
   });
 
   const companyNameDirty = !!company && companyName.trim() !== company.name;

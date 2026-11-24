@@ -57,6 +57,7 @@ import {
   Volume2,
   XCircle,
 } from "lucide-react";
+import { errorMessage } from "@/lib/error-message";
 
 /**
  * The platform admin's console for every business on the platform.
@@ -217,7 +218,7 @@ const fmtDateTime = (iso: string) =>
   new Date(iso).toLocaleString(localeTag() ?? [], { dateStyle: "medium", timeStyle: "short" });
 const fmtDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString(localeTag() ?? [], { dateStyle: "medium" }) : "—";
-const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+const errText = (e: unknown) => (errorMessage(e));
 const memberCount = (t: TFunction, n: number) => (n === 1 ? t("1 member") : t("{n} members", { n }));
 const joinRequestCount = (t: TFunction, n: number) =>
   n === 1 ? t("1 join request") : t("{n} join requests", { n });
@@ -990,7 +991,7 @@ function GhostModeButton({ company }: { company: CompanyRow }) {
                   // the company's screens.
                   window.location.assign("/dashboard");
                 } catch (e) {
-                  setError(e instanceof Error ? e.message : String(e));
+                  setError(errorMessage(e));
                   setBusy(false);
                 }
               }}

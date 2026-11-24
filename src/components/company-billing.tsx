@@ -14,6 +14,7 @@ import { PrintableInvoice, type InvoiceRecord } from "@/components/printable-inv
 import { useT, localeTag } from "@/lib/i18n";
 import { isNativeApp } from "@/lib/native/platform";
 import { billingDueLabel, fmtBillingDate, isBillingOverdue, toLocalDateTimeInput } from "@/lib/billing";
+import { errorMessage } from "@/lib/error-message";
 
 export type BillingAction = "paid" | "extend" | "suspend" | "date";
 
@@ -358,7 +359,7 @@ export function InvoiceDialog({
                       note: invoice.note,
                     });
                   } catch (e) {
-                    setError(e instanceof Error ? e.message : String(e));
+                    setError(errorMessage(e));
                   } finally {
                     setSaving(false);
                   }

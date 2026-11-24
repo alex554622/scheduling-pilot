@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { errorMessage } from "@/lib/error-message";
 
 interface LookupResult {
   ok: boolean;
@@ -70,7 +71,7 @@ export function MyCompaniesPanel() {
     },
     onSuccess: (r) => setFound(r),
     onError: (e: unknown) =>
-      setFound({ ok: false, message: e instanceof Error ? e.message : String(e) }),
+      setFound({ ok: false, message: errorMessage(e) }),
   });
 
   const send = useMutation({
@@ -93,7 +94,7 @@ export function MyCompaniesPanel() {
       setFound(null);
       void qc.invalidateQueries({ queryKey: ["my-join-requests"] });
     },
-    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => toast.error(errorMessage(e)),
   });
 
   const cancel = useMutation({
@@ -102,7 +103,7 @@ export function MyCompaniesPanel() {
       if (error) throw error;
     },
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["my-join-requests"] }),
-    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => toast.error(errorMessage(e)),
   });
 
   const leave = useMutation({
@@ -120,7 +121,7 @@ export function MyCompaniesPanel() {
       toast.success(t("You left the company."));
       await refresh();
     },
-    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => toast.error(errorMessage(e)),
   });
 
   const statusBadge: Record<JoinRequestRow["status"], string> = {

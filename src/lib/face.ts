@@ -1,3 +1,5 @@
+import { errorMessage } from "@/lib/error-message";
+
 /**
  * Face recognition for the shared clock-in, in the browser.
  *
@@ -323,7 +325,7 @@ export async function scanLiveFace(
     try {
       r = await readFrame(human, video, steady > 0, KIOSK_FACE_SHARE);
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = errorMessage(e);
       r = { kind: "none" };
     }
     if (opts.signal.aborted) return { ok: false, reason: "cancelled" };

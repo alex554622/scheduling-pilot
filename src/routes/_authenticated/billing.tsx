@@ -8,6 +8,7 @@ import { planBullets, seatLine } from "@/lib/capabilities";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { CreditCard, AlertTriangle, CheckCircle2, Loader2, Users } from "lucide-react";
+import { errorMessage } from "@/lib/error-message";
 
 export const Route = createFileRoute("/_authenticated/billing")({
   component: BillingPage,
@@ -85,7 +86,7 @@ function BillingPage() {
       if (error) throw error;
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["subscription"] }); setErr(null); },
-    onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setErr(errorMessage(e)),
   });
 
   if (loading) return <div className="text-sm text-muted-foreground">{t("Loading…")}</div>;

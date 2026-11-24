@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CalendarCheck, Plus, Trash2, Loader2, Ban, Check } from "lucide-react";
 import { useT } from "@/lib/i18n";
+import { errorMessage } from "@/lib/error-message";
 
 export const Route = createFileRoute("/_authenticated/availability")({
   component: AvailabilityPage,
@@ -124,7 +125,7 @@ function AvailabilityEditor({ companyId, employeeId }: { companyId: string; empl
       if (error) throw error;
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["availability", employeeId] }); setAdding(null); setErr(null); },
-    onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setErr(errorMessage(e)),
   });
 
   const del = useMutation({
@@ -133,7 +134,7 @@ function AvailabilityEditor({ companyId, employeeId }: { companyId: string; empl
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["availability", employeeId] }),
-    onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setErr(errorMessage(e)),
   });
 
   const slots = q.data ?? [];

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { errorMessage } from "@/lib/error-message";
 
 const hhmm = (v: string) => v.slice(0, 5);
 
@@ -64,7 +65,7 @@ export function PositionPayRulesPanel() {
               open={open === p.id}
               onToggle={() => setOpen((o) => (o === p.id ? null : p.id))}
               onChanged={() => qc.invalidateQueries({ queryKey: [PAY_RULES_KEY] })}
-              onError={(e) => setErr(e instanceof Error ? e.message : String(e))}
+              onError={(e) => setErr(errorMessage(e))}
             />
           ))}
         </div>

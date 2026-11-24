@@ -53,6 +53,7 @@ import { EraseSelectionBar } from "@/components/erase-days";
 import { useScheduleSelection, type ScheduleSelection } from "@/lib/day-selection";
 import { toDayString } from "@/lib/day-string";
 import { useT, useLocaleTag, localeTag, translate } from "@/lib/i18n";
+import { errorMessage } from "@/lib/error-message";
 
 export const Route = createFileRoute("/_authenticated/schedule")({
   component: SchedulePage,
@@ -1035,7 +1036,7 @@ function ScheduleBuilder(props: BuilderProps) {
       setPasteError(null);
       void qc.invalidateQueries({ queryKey: ["shifts"] });
     },
-    onError: (e: unknown) => setPasteError(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setPasteError(errorMessage(e)),
   });
 
   const paste = copied
@@ -2216,7 +2217,7 @@ function ShiftEditorForm({
       qc.invalidateQueries({ queryKey: ["shifts"] });
       onClose();
     },
-    onError: (e: unknown) => setServerError(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setServerError(errorMessage(e)),
   });
 
   const deleteMutation = useMutation({
@@ -2229,7 +2230,7 @@ function ShiftEditorForm({
       qc.invalidateQueries({ queryKey: ["shifts"] });
       onClose();
     },
-    onError: (e: unknown) => setServerError(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setServerError(errorMessage(e)),
   });
 
   return (

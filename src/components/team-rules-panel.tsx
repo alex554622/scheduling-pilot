@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useT } from "@/lib/i18n";
 import { Check, Clock, Eye, FileClock, Loader2, ShieldAlert, Users } from "lucide-react";
+import { errorMessage } from "@/lib/error-message";
 
 const BOOL_RULES: { key: TeamRuleKey; label: string; detail?: string }[] = [
   {
@@ -164,7 +165,7 @@ export function TeamRulesPanel() {
       setTimeout(() => setSaved(false), 1500);
       refresh();
     },
-    onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setErr(errorMessage(e)),
   });
 
   const clear = useMutation({
@@ -180,7 +181,7 @@ export function TeamRulesPanel() {
       setDraft({});
       refresh();
     },
-    onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setErr(errorMessage(e)),
   });
 
   if (loading || mineQ.isLoading || deptsQ.isLoading) {

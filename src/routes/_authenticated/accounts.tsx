@@ -28,6 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { errorMessage } from "@/lib/error-message";
 
 /**
  * Every account on the platform, whether or not it ever got anywhere.
@@ -154,7 +155,7 @@ function AccountsPage() {
     void qc.invalidateQueries({ queryKey: ["admin-companies"] });
   };
 
-  const fail = (e: unknown) => setErr(e instanceof Error ? e.message : String(e));
+  const fail = (e: unknown) => setErr(errorMessage(e));
 
   const setCompany = useMutation({
     mutationFn: async (v: { userId: string; companyId: string | null }) => {
