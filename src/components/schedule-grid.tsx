@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { compareByLastName } from "@/lib/names";
 import { useT, useLocaleTag } from "@/lib/i18n";
 import { sheetLegend, sheetTime, shortName } from "@/lib/sheet-format";
 
@@ -88,7 +89,14 @@ export function ScheduleGrid({
   eyebrow = "Weekly schedule",
   timeOff = [],
   groups,
+  people,
 }: {
+  /**
+   * Everyone who belongs on the sheet. Each gets a row whether or not they
+   * work this week, and a day they don't work reads "Off". Absent: only people
+   * with a shift or time off this week are listed.
+   */
+  people?: string[];
   /**
    * Departments to divide the rows under, in order. Anyone in none of them
    * goes under "No department", open shifts last. Absent: one flat list.
@@ -134,6 +142,9 @@ export function ScheduleGrid({
         byPerson.set(t.employee_id, []);
       }
     }
+    // Everyone on the roster has a row, scheduled or not. Leaving out whoever
+    // had no shift yet is what made people look missing from the schedule.
+    for (const id of people ?? []) if (!byPerson.has(id)) byPerson.set(id, []);
     const rows = [...byPerson.entries()]
       .map(([id, list]) => ({
         id,
@@ -141,9 +152,9 @@ export function ScheduleGrid({
         shifts: list.sort((a, b) => a.starts_at.localeCompare(b.starts_at)),
       }))
       .sort((a, b) => {
-        // You first, open shifts last, everyone else by name.
+        // You first, open shifts last, everyone else by last name.
         const rank = (id: string) => (id === selfId ? 0 : id === "open" ? 2 : 1);
-        return rank(a.id) - rank(b.id) || a.name.localeCompare(b.name);
+        return rank(a.id) - rank(b.id) || compareByLastName(a.name, b.name);
       });
 
     // A key only when the colours mean posts; see `sheetLegend`.
@@ -167,7 +178,7 @@ export function ScheduleGrid({
       ].filter((s) => s.rows.length > 0);
     }
     return { rows, legend, sections };
-  }, [shifts, days, nameOf, selfId, showDrafts, timeOff, groups, t]);
+  }, [shifts, days, nameOf, selfId, showDrafts, timeOff, groups, people, t]);
 
   return (
     <div className="relative overflow-hidden rounded-2xl border border-white/60 shadow-[0_10px_40px_-12px_rgba(15,23,42,0.35)] dark:border-white/10">
@@ -317,6 +328,11 @@ export function ScheduleGrid({
                                     )}
                                   </div>
                                 ))}
+                                {people && row.id !== "open" && !off && cell.length === 0 && (
+                                  <p className="py-1.5 text-center text-[11px] font-medium text-slate-400 dark:text-slate-500">
+                                    {t("Off")}
+                                  </p>
+                                )}
                               </div>
                             </td>
                           );

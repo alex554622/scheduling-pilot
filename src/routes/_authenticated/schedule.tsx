@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { sortByLastName, compareByLastName } from "@/lib/names";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -521,7 +522,7 @@ function CompanyDashboard({ role }: { role: AppRole }) {
         .eq("company_id", companyId!)
         .order("full_name");
       if (error) throw error;
-      return data as MemberRow[];
+      return sortByLastName(data as MemberRow[], (m) => m.full_name);
     },
   });
 
@@ -563,7 +564,7 @@ function CompanyDashboard({ role }: { role: AppRole }) {
     enabled: !!companyId && readOnlyAll,
     queryFn: async () => {
       const roster = await supabase.rpc("schedule_roster");
-      if (!roster.error) return (roster.data ?? []) as MemberRow[];
+      if (!roster.error) return sortByLastName((roster.data ?? []) as MemberRow[], (m) => m.full_name);
       // Before 20261205120000_open_schedule_team_dashboard.sql is applied.
       const { data, error } = await supabase
         .from("company_members")
@@ -571,15 +572,17 @@ function CompanyDashboard({ role }: { role: AppRole }) {
         .eq("company_id", companyId!)
         .order("full_name");
       if (error) throw error;
-      return data as MemberRow[];
+      return sortByLastName(data as MemberRow[], (m) => m.full_name);
     },
   });
 
   // Teams are the company's departments. Nothing here creates or edits them;
   // they are maintained on Organization → Departments.
+  // Everyone needs them: the company-wide schedule is grouped by department
+  // for employees too.
   const teamsQ = useQuery({
     queryKey: ["schedule-teams", companyId],
-    enabled: !!companyId && isBuilder,
+    enabled: !!companyId,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("departments")
@@ -668,25 +671,69 @@ function CompanyDashboard({ role }: { role: AppRole }) {
     },
   });
 
-  // Names for that roster. The builder has `membersQ` for this; an employee
-  // needs nothing but the names, so it asks for nothing but the names. The
-  // schedule shows everyone in the company but the ghosts, whatever
-  // "Keep departments separate" says, so the names come from
-  // `schedule_roster()` rather than `company_members`, which follows that rule.
-  const rosterNamesQ = useQuery({
-    queryKey: ["roster-names", companyId],
+  // The people on the company-wide schedule an employee sees: everyone in the
+  // company but the ghosts, each under their department, whether or not they
+  // work this week. The schedule ignores "Keep departments separate", so this
+  // asks `schedule_roster()` rather than `company_members`, which follows it.
+  const rosterQ = useQuery({
+    queryKey: ["schedule-roster-employee", companyId],
     enabled: !!companyId && !isBuilder,
     queryFn: async () => {
       const roster = await supabase.rpc("schedule_roster");
-      if (!roster.error) return (roster.data ?? []) as { id: string; full_name: string }[];
+      if (!roster.error) return sortByLastName((roster.data ?? []) as MemberRow[], (m) => m.full_name);
       // Before 20261205120000_open_schedule_team_dashboard.sql is applied.
       const { data, error } = await supabase
         .from("company_members")
-        .select("id, full_name")
+        .select("id, full_name, position, department_id")
         .eq("company_id", companyId!)
         .order("full_name");
       if (error) throw error;
-      return (data ?? []) as { id: string; full_name: string }[];
+      return sortByLastName((data ?? []) as MemberRow[], (m) => m.full_name);
+    },
+  });
+
+  // The company's published shifts for the week the arrows are on, for the
+  // employee's company-wide grid. `postedQ` covers this week onward only.
+  const companyWeekQ = useQuery({
+    queryKey: ["company-week-shifts", companyId, rangeStart.toISOString()],
+    enabled: !!companyId && !isBuilder,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("shifts")
+        .select("*")
+        .eq("company_id", companyId!)
+        .eq("published", true)
+        .gte("starts_at", rangeStart.toISOString())
+        .lt("starts_at", rangeEnd.toISOString())
+        .order("starts_at");
+      if (error) throw error;
+      return data as ShiftRow[];
+    },
+  });
+
+  // Who is off, across everything an employee can look at: the week on the
+  // arrows and every posted week. Coworkers' kinds come back as "Day off".
+  const offFrom = rangeStart < postedFrom ? rangeStart : postedFrom;
+  const offTo = rangeEnd > postedTo ? rangeEnd : postedTo;
+  const companyTimeOffQ = useQuery({
+    queryKey: ["schedule-time-off-company", companyId, toDayString(offFrom), toDayString(offTo)],
+    enabled: !!companyId && !isBuilder,
+    queryFn: async () => {
+      const res = await supabase.rpc("schedule_time_off", {
+        _from: toDayString(offFrom),
+        _to: toDayString(offTo),
+      });
+      if (!res.error) return (res.data ?? []) as TimeOffRow[];
+      // Before 20261207120000_company_schedule_for_everyone.sql is applied:
+      // whatever the employee's own access lets them read.
+      const { data } = await supabase
+        .from("time_off_requests")
+        .select("employee_id, start_date, end_date, kind")
+        .eq("company_id", companyId!)
+        .eq("status", "approved")
+        .lt("start_date", toDayString(offTo))
+        .gte("end_date", toDayString(offFrom));
+      return (data ?? []) as TimeOffRow[];
     },
   });
 
@@ -725,21 +772,38 @@ function CompanyDashboard({ role }: { role: AppRole }) {
     // The week shown is the one the arrows are on, not a fresh "today": a week
     // built and published ahead of time is only reachable if the employee can
     // walk forward into it.
-    const names = new Map((rosterNamesQ.data ?? []).map((p) => [p.id, p.full_name]));
-    // An open shift has no employee_id, so it is nobody's to hide. Until the
-    // admin list lands nothing is hidden yet, so hold the roster back rather
-    // than flash a name the rule is about to take away.
-    const posted = staff.isLoading
+    // Until the visibility settings land nothing is hidden yet, so hold the
+    // roster back rather than flash a name the rule is about to take away.
+    const roster = staff.isLoading
       ? []
-      : staff.visible(postedQ.data ?? [], (s) => s.employee_id ?? "", "schedule");
+      : staff.visible(rosterQ.data ?? [], (m) => m.id, "schedule");
+    const names = new Map(roster.map((p) => [p.id, p.full_name]));
+    const rosterIds = new Set(roster.map((p) => p.id));
+    // Departments with people in them, in the company's order, each listing its
+    // members. Anyone in none goes under "No department" in the grid.
+    const departmentGroups = groupByTeam(roster, teamsQ.data ?? [])
+      .filter((g) => g.id !== NO_TEAM)
+      .map((g) => ({ id: g.id, name: g.name, memberIds: g.members.map((m) => m.id) }));
+    // An open shift has no employee_id, so it is nobody's to hide.
+    const shown = (rows: ShiftRow[]) =>
+      staff.isLoading ? [] : staff.visible(rows, (s) => s.employee_id ?? "", "schedule");
+    const posted = shown(postedQ.data ?? []);
+    const companyWeek = shown(companyWeekQ.data ?? []);
+    const companyTimeOff = (companyTimeOffQ.data ?? []).filter((o) => rosterIds.has(o.employee_id));
     return (
       <EmployeeView
         days={days}
         shifts={shifts}
         posted={posted}
+        companyWeek={companyWeek}
+        people={roster.map((p) => p.id)}
+        groups={departmentGroups}
+        timeOff={companyTimeOff}
         nameOf={(id) => (id ? (names.get(id) ?? t("Unknown")) : t("Open shift"))}
         selfId={user!.id}
-        isLoading={shiftsQ.isLoading || postedQ.isLoading || staff.isLoading}
+        isLoading={
+          shiftsQ.isLoading || postedQ.isLoading || staff.isLoading || rosterQ.isLoading
+        }
         isThisWeek={startOfWeek(anchor).getTime() === startOfWeek(new Date()).getTime()}
         onWeek={(dir) => setAnchor((a) => (dir === 0 ? new Date() : addDays(a, dir * 7)))}
         layout={layout}
@@ -790,6 +854,10 @@ function EmployeeView({
   days,
   shifts,
   posted,
+  companyWeek,
+  people,
+  groups,
+  timeOff,
   nameOf,
   selfId,
   isLoading,
@@ -811,6 +879,14 @@ function EmployeeView({
    * already filtered for privacy. Not just the week the arrows are on.
    */
   posted: ShiftRow[];
+  /** Everyone's published shifts in the week the arrows are on. */
+  companyWeek: ShiftRow[];
+  /** Everyone on the company-wide schedule, shift or no shift. */
+  people: string[];
+  /** Departments, in order, and who is in each. */
+  groups: { id: string; name: string; memberIds: string[] }[];
+  /** Approved days off of the people on the schedule. */
+  timeOff: TimeOffRow[];
   nameOf: (id: string | null) => string;
   selfId: string;
   isLoading: boolean;
@@ -893,6 +969,9 @@ function EmployeeView({
                 rangeLabel={`${longDay(seven[0])} – ${longDay(seven[6])}`}
                 eyebrow={weekStart.getTime() === thisWeekStart ? "This week" : "Coming up"}
                 selfId={selfId}
+                people={people}
+                groups={groups}
+                timeOff={timeOff}
               />
             );
           })
@@ -969,6 +1048,26 @@ function EmployeeView({
           </ul>
         )}
       </SectionCard>
+
+      {/* The whole company for the week on the arrows: every department, every
+          person in it — working or not — their published shifts and days off.
+          Read-only; nobody edits a shift from here. */}
+      <div className="space-y-2">
+        <h3 className="text-base font-semibold text-foreground">{t("Company schedule")}</h3>
+        <ScheduleGrid
+          days={days}
+          shifts={companyWeek}
+          nameOf={(id) => nameOf(id)}
+          companyName={companyName}
+          rangeLabel={`${fmtDayLabel(days[0])} – ${fmtDayLabel(days[6])}`}
+          eyebrow={isThisWeek ? "This week" : "Week of"}
+          selfId={selfId}
+          people={people}
+          groups={groups}
+          timeOff={timeOff}
+          emptyText={isLoading ? "Loading the schedule…" : "Nobody is scheduled this week."}
+        />
+      </div>
 
       {/* Everything the company has put up, week by week — the sheet on the
           wall, with every week that is on it. Only published shifts reach
@@ -1264,7 +1363,8 @@ function ScheduleBuilder(props: BuilderProps) {
           }))
           .sort(
             (a, b) =>
-              Number(a.id === "open") - Number(b.id === "open") || a.name.localeCompare(b.name),
+              Number(a.id === "open") - Number(b.id === "open") ||
+              compareByLastName(nameById.get(a.id), nameById.get(b.id)),
           )
           .map(({ name, list }) => ({
             name,
@@ -1614,6 +1714,7 @@ function ScheduleBuilder(props: BuilderProps) {
                 : "Week of"
             }
             showDrafts
+            people={members.map((m) => m.id)}
             groups={groups?.map((g) => ({
               id: g.id,
               name: g.name,

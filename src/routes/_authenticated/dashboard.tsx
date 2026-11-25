@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { compareByLastName } from "@/lib/names";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -8,6 +9,7 @@ import { useStaffVisibility } from "@/lib/staff-visibility";
 import { useManagedScope } from "@/lib/supervisor-scope";
 import { PAID_BREAK_MINUTES, readBreak, roundPunches } from "@/lib/timecard-totals";
 import { toDayString } from "@/lib/day-string";
+import { keepTodaysPunches } from "@/lib/today-punches";
 import { latenessByPunch } from "@/lib/lateness";
 import { breakAlertsFor, type BreakAlert, type ReminderDismissal, type ReminderKind } from "@/lib/break-reminders";
 import { Button } from "@/components/ui/button";
@@ -76,6 +78,9 @@ function fmtCountdown(ms: number) {
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
 }
 
+/** How far back to look for a shift that is still running from yesterday. */
+const OVERNIGHT_LOOKBACK_MS = 24 * 3_600_000;
+
 function startOfDay(d = new Date()) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
 function endOfDay(d = new Date()) { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; }
 
@@ -120,21 +125,27 @@ function DashboardPage() {
         .from("time_punches")
         .select("id, user_id, kind, at, break_minutes")
         .eq("company_id", company!.id)
-        .gte("at", dayStart.toISOString())
+        // From a day back, so someone still on a shift that crossed midnight
+        // stays on; `keepTodaysPunches` drops what is yesterday's work.
+        .gte("at", new Date(dayStart.getTime() - OVERNIGHT_LOOKBACK_MS).toISOString())
         .lte("at", dayEnd.toISOString())
         .order("at", { ascending: true });
       if (error) throw error;
       return (data ?? []) as Punch[];
     },
   });
+  const todaysPunches = useMemo(
+    () => keepTodaysPunches(punchesQ.data ?? [], dayStart.getTime()),
+    [punchesQ.data, dayStart],
+  );
 
   /** Is anyone still on the clock? Nothing needs counting if they all went home. */
   const hasLiveClock = useMemo(() => {
     const last = new Map<string, Punch>();
     // The punches arrive oldest first, so the last one written wins.
-    for (const p of punchesQ.data ?? []) last.set(p.user_id, p);
+    for (const p of todaysPunches) last.set(p.user_id, p);
     return [...last.values()].some((p) => p.kind !== "out");
-  }, [punchesQ.data]);
+  }, [todaysPunches]);
 
   // Once a second, not once every thirty: the break countdowns and the worked
   // clocks below are meant to run, and a roster that moves in half-minute jumps
@@ -262,7 +273,7 @@ function DashboardPage() {
 
   const rows = useMemo(() => {
     const byUser = new Map<string, Punch[]>();
-    for (const p of punchesQ.data ?? []) {
+    for (const p of todaysPunches) {
       if (!byUser.has(p.user_id)) byUser.set(p.user_id, []);
       byUser.get(p.user_id)!.push(p);
     }
@@ -436,20 +447,10 @@ function DashboardPage() {
       no_show: 3,
       due: 4,
     };
-    // Within each status, earliest first: the shift's start, or the clock-in
-    // for someone working off the schedule. Name only breaks a tie.
-    const startOf = (r: Row) => {
-      const s = r.due?.starts_at ?? r.firstIn;
-      return s ? new Date(s).getTime() : Infinity;
-    };
-    list.sort(
-      (a, b) =>
-        order[a.status] - order[b.status] ||
-        startOf(a) - startOf(b) ||
-        a.name.localeCompare(b.name),
-    );
+    // Within each status, alphabetical by last name.
+    list.sort((a, b) => order[a.status] - order[b.status] || compareByLastName(a.name, b.name));
     return list;
-  }, [membersQ.data, punchesQ.data, shiftsTodayQ.data, dismissalsQ.data, dueToday, rulesFor, staff, now, t]);
+  }, [membersQ.data, todaysPunches, shiftsTodayQ.data, dismissalsQ.data, dueToday, rulesFor, staff, now, t]);
 
 
   const overdueCount = rows.filter((r) => r.alerts.length > 0).length;
@@ -500,6 +501,7 @@ function DashboardPage() {
     // With coworkers hidden the database already sends only their own row;
     // filtering here as well keeps that true before it has the newer function.
     // A supervisor's own people stay on their list even when marked as ghosts.
+    const punchedToday = new Set(todaysPunches.map((p) => p.user_id));
     const presence = (presenceQ.data ?? [])
       .filter(
         (p) =>
@@ -507,17 +509,25 @@ function DashboardPage() {
           (seeOthers &&
             ((scope.isSupervisor && scope.manages(p.user_id)) || !staff.isHidden(p.user_id, "roster"))),
       )
+      // Today's people only: scheduled today, on the clock now, or clocked in
+      // earlier today (whose punches this viewer can read — a supervisor's
+      // own team, or themselves).
       .filter(
-        (p) => dueToday.has(p.user_id) || p.status === "working" || p.status === "on_break",
+        (p) =>
+          dueToday.has(p.user_id) ||
+          punchedToday.has(p.user_id) ||
+          p.status === "working" ||
+          p.status === "on_break",
       )
-      // Earliest shift first, the same as the manager's roster; anyone on the
-      // clock without a shift today goes after.
+      // Alphabetical by last name. A supervisor's list puts who is on the
+      // clock first, then on a break, then off.
       .sort((a, b) => {
-        const ta = dueToday.get(a.user_id)?.starts_at;
-        const tb = dueToday.get(b.user_id)?.starts_at;
-        const diff =
-          (ta ? new Date(ta).getTime() : Infinity) - (tb ? new Date(tb).getTime() : Infinity);
-        return (Number.isNaN(diff) ? 0 : diff) || a.full_name.localeCompare(b.full_name);
+        if (scope.isSupervisor) {
+          const rank = { working: 0, on_break: 1, off: 2 } as Record<string, number>;
+          const r = (rank[a.status] ?? 3) - (rank[b.status] ?? 3);
+          if (r) return r;
+        }
+        return compareByLastName(a.full_name, b.full_name);
       });
     // Until the admin list has landed, saying "loading" beats showing a roster
     // that is about to lose rows.

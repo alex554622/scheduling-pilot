@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
+import { sortByLastName } from "@/lib/names";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -130,7 +131,7 @@ function Roster({
         .eq("company_id", companyId)
         .order("full_name");
       if (error) throw error;
-      return (data ?? []) as MemberRow[];
+      return sortByLastName((data ?? []) as MemberRow[], (m) => m.full_name);
     },
   });
 
@@ -1349,7 +1350,7 @@ function SupervisorScopeDialog({
         .eq("status", "active")
         .order("full_name");
       if (error) throw error;
-      return data ?? [];
+      return sortByLastName(data ?? [], (m) => m.full_name);
     },
   });
 

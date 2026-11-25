@@ -104,7 +104,9 @@ export const DEFAULT_APP_RULES: AppRules = {
   schedule_advance_notice_hours: 24,
   schedule_menu: "builder",
   hide_admins_from_staff: true,
-  staff_see_coworkers: false,
+  // On: everyone sees who is working in their own department (see
+  // company_presence() in 20261207120000_company_schedule_for_everyone.sql).
+  staff_see_coworkers: true,
   departments_separate: false,
   schedule_lateness: false,
   late_grace_minutes: 5,

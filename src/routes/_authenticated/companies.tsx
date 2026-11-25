@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { compareByLastName } from "@/lib/names";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { z } from "zod";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -248,10 +249,10 @@ function push<K, V>(map: Map<K, V[]>, key: K, value: V) {
   else map.set(key, [value]);
 }
 
-/** Admins first — whoever registered the company is one — then by name. */
+/** Admins first — whoever registered the company is one — then by last name. */
 function byRank(a: Member, b: Member): number {
   const rank = (m: Member) => (m.roles.includes("company_admin") ? 0 : 1);
-  return rank(a) - rank(b) || a.full_name.localeCompare(b.full_name);
+  return rank(a) - rank(b) || compareByLastName(a.full_name, b.full_name);
 }
 
 /* ================================================================== page == */

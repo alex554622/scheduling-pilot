@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { sortByLastName, compareByLastName } from "@/lib/names";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -172,7 +173,7 @@ function ScheduleSheetPage() {
         .eq("company_id", company!.id)
         .order("full_name");
       if (e) throw e;
-      return data ?? [];
+      return sortByLastName(data ?? [], (m) => m.full_name);
     },
   });
 
@@ -224,7 +225,7 @@ function ScheduleSheetPage() {
         start: hours[g.name]?.start ?? g.start,
         end: hours[g.name]?.end ?? g.end,
         rows: [...g.people].sort((a, b) =>
-          nameOf(a === "open" ? null : a).localeCompare(nameOf(b === "open" ? null : b)),
+          compareByLastName(nameOf(a === "open" ? null : a), nameOf(b === "open" ? null : b)),
         ),
       }))
       .sort((a, b) => a.start.localeCompare(b.start) || a.name.localeCompare(b.name));
