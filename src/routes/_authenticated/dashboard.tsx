@@ -507,12 +507,24 @@ function DashboardPage() {
           (seeOthers &&
             ((scope.isSupervisor && scope.manages(p.user_id)) || !staff.isHidden(p.user_id, "roster"))),
       )
+      // A supervisor sees their whole team every day, clocked in or not; for
+      // everyone else, today's people only.
       .filter(
-        (p) => dueToday.has(p.user_id) || p.status === "working" || p.status === "on_break",
+        (p) =>
+          (scope.isSupervisor && scope.manages(p.user_id)) ||
+          dueToday.has(p.user_id) ||
+          p.status === "working" ||
+          p.status === "on_break",
       )
       // Earliest shift first, the same as the manager's roster; anyone on the
-      // clock without a shift today goes after.
+      // clock without a shift today goes after. A supervisor's list puts who
+      // is on the clock first, then on a break, then off.
       .sort((a, b) => {
+        if (scope.isSupervisor) {
+          const rank = { working: 0, on_break: 1, off: 2 } as Record<string, number>;
+          const r = (rank[a.status] ?? 3) - (rank[b.status] ?? 3);
+          if (r) return r;
+        }
         const ta = dueToday.get(a.user_id)?.starts_at;
         const tb = dueToday.get(b.user_id)?.starts_at;
         const diff =

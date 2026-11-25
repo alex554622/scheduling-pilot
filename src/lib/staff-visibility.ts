@@ -20,8 +20,10 @@ import { useAuth } from "@/lib/auth";
  *
  * Whichever applies, it applies to every viewer, the hidden person included: a
  * person is either somebody you schedule and pay or they are not, and that
- * cannot depend on who is looking. The one exception is a platform admin
- * looking in from outside the company, who sees all of it. Anyone can still
+ * cannot depend on who is looking. Two exceptions: a platform admin looking in
+ * from outside the company sees all of it, and a company admin still sees the
+ * ghosts — "nowhere" hides someone from the staff, not from the people who run
+ * the company (the database already returns them to admins: `can_see_schedule()`). Anyone can still
  * open their own timecard, which is reached by name from the "Me" option rather
  * than off a roster — their pay record is theirs to read.
  *
@@ -79,6 +81,8 @@ export function useStaffVisibility(): StaffVisibility {
   // A platform admin is not in the company and is not subject to its rules;
   // everyone inside it gets the same list, admins included.
   const enforced = primaryRole !== "super_admin" && !!company?.id;
+  // Company admins see ghosts; every other setting still applies to them.
+  const seesGhosts = primaryRole === "company_admin";
   const hideAdmins = rules.hide_admins_from_staff;
 
   const adminsQ = useQuery({
@@ -122,9 +126,10 @@ export function useStaffVisibility(): StaffVisibility {
     (userId: string, place: VisibilityPlace) => {
       if (!enforced) return false;
       const mode = modes.get(userId) ?? (hideAdmins && adminIds.has(userId) ? "ghost" : "everywhere");
+      if (mode === "ghost" && seesGhosts) return false;
       return hiddenFrom(mode, place);
     },
-    [enforced, modes, hideAdmins, adminIds],
+    [enforced, seesGhosts, modes, hideAdmins, adminIds],
   );
 
   const visible = useCallback(
