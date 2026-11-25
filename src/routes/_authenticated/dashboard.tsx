@@ -491,6 +491,7 @@ function DashboardPage() {
     // With coworkers hidden the database already sends only their own row;
     // filtering here as well keeps that true before it has the newer function.
     // A supervisor's own people stay on their list even when marked as ghosts.
+    const punchedToday = new Set((punchesQ.data ?? []).map((p) => p.user_id));
     const presence = (presenceQ.data ?? [])
       .filter(
         (p) =>
@@ -498,12 +499,13 @@ function DashboardPage() {
           (seeOthers &&
             ((scope.isSupervisor && scope.manages(p.user_id)) || !staff.isHidden(p.user_id, "roster"))),
       )
-      // A supervisor sees their whole team every day, clocked in or not; for
-      // everyone else, today's people only.
+      // Today's people only: scheduled today, on the clock now, or clocked in
+      // earlier today (whose punches this viewer can read — a supervisor's
+      // own team, or themselves).
       .filter(
         (p) =>
-          (scope.isSupervisor && scope.manages(p.user_id)) ||
           dueToday.has(p.user_id) ||
+          punchedToday.has(p.user_id) ||
           p.status === "working" ||
           p.status === "on_break",
       )
