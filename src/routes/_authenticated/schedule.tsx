@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { sortByLastName, compareByLastName } from "@/lib/names";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -521,7 +522,7 @@ function CompanyDashboard({ role }: { role: AppRole }) {
         .eq("company_id", companyId!)
         .order("full_name");
       if (error) throw error;
-      return data as MemberRow[];
+      return sortByLastName(data as MemberRow[], (m) => m.full_name);
     },
   });
 
@@ -563,7 +564,7 @@ function CompanyDashboard({ role }: { role: AppRole }) {
     enabled: !!companyId && readOnlyAll,
     queryFn: async () => {
       const roster = await supabase.rpc("schedule_roster");
-      if (!roster.error) return (roster.data ?? []) as MemberRow[];
+      if (!roster.error) return sortByLastName((roster.data ?? []) as MemberRow[], (m) => m.full_name);
       // Before 20261205120000_open_schedule_team_dashboard.sql is applied.
       const { data, error } = await supabase
         .from("company_members")
@@ -571,7 +572,7 @@ function CompanyDashboard({ role }: { role: AppRole }) {
         .eq("company_id", companyId!)
         .order("full_name");
       if (error) throw error;
-      return data as MemberRow[];
+      return sortByLastName(data as MemberRow[], (m) => m.full_name);
     },
   });
 
@@ -679,7 +680,7 @@ function CompanyDashboard({ role }: { role: AppRole }) {
     enabled: !!companyId && !isBuilder,
     queryFn: async () => {
       const roster = await supabase.rpc("schedule_roster");
-      if (!roster.error) return (roster.data ?? []) as MemberRow[];
+      if (!roster.error) return sortByLastName((roster.data ?? []) as MemberRow[], (m) => m.full_name);
       // Before 20261205120000_open_schedule_team_dashboard.sql is applied.
       const { data, error } = await supabase
         .from("company_members")
@@ -687,7 +688,7 @@ function CompanyDashboard({ role }: { role: AppRole }) {
         .eq("company_id", companyId!)
         .order("full_name");
       if (error) throw error;
-      return (data ?? []) as MemberRow[];
+      return sortByLastName((data ?? []) as MemberRow[], (m) => m.full_name);
     },
   });
 
@@ -1362,7 +1363,8 @@ function ScheduleBuilder(props: BuilderProps) {
           }))
           .sort(
             (a, b) =>
-              Number(a.id === "open") - Number(b.id === "open") || a.name.localeCompare(b.name),
+              Number(a.id === "open") - Number(b.id === "open") ||
+              compareByLastName(nameById.get(a.id), nameById.get(b.id)),
           )
           .map(({ name, list }) => ({
             name,

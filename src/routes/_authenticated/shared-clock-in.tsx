@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { sortByLastName } from "@/lib/names";
 import { useCallback, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -89,7 +90,7 @@ function SharedClockInAdminPage() {
       if (peopleError) throw peopleError;
       if (codesError) throw codesError;
       const byUser = new Map((codes ?? []).map((c) => [c.user_id, c.code]));
-      return (people ?? []).map((p) => ({
+      return sortByLastName(people ?? [], (p) => p.full_name).map((p) => ({
         id: p.id,
         name: p.full_name || t("Unnamed"),
         code: byUser.get(p.id) ?? null,

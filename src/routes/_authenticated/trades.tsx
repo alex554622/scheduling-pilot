@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { sortByLastName } from "@/lib/names";
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -101,7 +102,7 @@ function TradesPage() {
         .eq("company_id", companyId!)
         .order("full_name");
       if (error) throw error;
-      return data ?? [];
+      return sortByLastName(data ?? [], (m) => m.full_name);
     },
   });
 

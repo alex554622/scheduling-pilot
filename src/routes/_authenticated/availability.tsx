@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { sortByLastName } from "@/lib/names";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -44,7 +45,7 @@ function AvailabilityPage() {
         .from("company_members").select("id, full_name")
         .eq("company_id", company!.id).order("full_name");
       if (error) throw error;
-      return (data ?? []) as { id: string; full_name: string }[];
+      return sortByLastName((data ?? []) as { id: string; full_name: string }[], (m) => m.full_name);
     },
   });
 

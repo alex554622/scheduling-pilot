@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { compareByLastName } from "@/lib/names";
 import { useT, useLocaleTag } from "@/lib/i18n";
 import { sheetLegend, sheetTime, shortName } from "@/lib/sheet-format";
 
@@ -151,9 +152,9 @@ export function ScheduleGrid({
         shifts: list.sort((a, b) => a.starts_at.localeCompare(b.starts_at)),
       }))
       .sort((a, b) => {
-        // You first, open shifts last, everyone else by name.
+        // You first, open shifts last, everyone else by last name.
         const rank = (id: string) => (id === selfId ? 0 : id === "open" ? 2 : 1);
-        return rank(a.id) - rank(b.id) || a.name.localeCompare(b.name);
+        return rank(a.id) - rank(b.id) || compareByLastName(a.name, b.name);
       });
 
     // A key only when the colours mean posts; see `sheetLegend`.

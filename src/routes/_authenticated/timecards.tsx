@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { sortByLastName } from "@/lib/names";
 import { z } from "zod";
 import { isNativeApp } from "@/lib/native/platform";
 import { Fragment, useEffect, useMemo, useState } from "react";
@@ -352,7 +353,7 @@ function TimecardsPage() {
       q = isSuperAdmin ? q.not("company_id", "is", null) : q.eq("company_id", company!.id);
       const { data, error } = await q.order("full_name");
       if (error) throw error;
-      return data ?? [];
+      return sortByLastName(data ?? [], (m) => m.full_name);
     },
   });
 

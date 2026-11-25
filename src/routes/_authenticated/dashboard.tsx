@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { compareByLastName } from "@/lib/names";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -436,18 +437,8 @@ function DashboardPage() {
       no_show: 3,
       due: 4,
     };
-    // Within each status, earliest first: the shift's start, or the clock-in
-    // for someone working off the schedule. Name only breaks a tie.
-    const startOf = (r: Row) => {
-      const s = r.due?.starts_at ?? r.firstIn;
-      return s ? new Date(s).getTime() : Infinity;
-    };
-    list.sort(
-      (a, b) =>
-        order[a.status] - order[b.status] ||
-        startOf(a) - startOf(b) ||
-        a.name.localeCompare(b.name),
-    );
+    // Within each status, alphabetical by last name.
+    list.sort((a, b) => order[a.status] - order[b.status] || compareByLastName(a.name, b.name));
     return list;
   }, [membersQ.data, punchesQ.data, shiftsTodayQ.data, dismissalsQ.data, dueToday, rulesFor, staff, now, t]);
 
@@ -516,20 +507,15 @@ function DashboardPage() {
           p.status === "working" ||
           p.status === "on_break",
       )
-      // Earliest shift first, the same as the manager's roster; anyone on the
-      // clock without a shift today goes after. A supervisor's list puts who
-      // is on the clock first, then on a break, then off.
+      // Alphabetical by last name. A supervisor's list puts who is on the
+      // clock first, then on a break, then off.
       .sort((a, b) => {
         if (scope.isSupervisor) {
           const rank = { working: 0, on_break: 1, off: 2 } as Record<string, number>;
           const r = (rank[a.status] ?? 3) - (rank[b.status] ?? 3);
           if (r) return r;
         }
-        const ta = dueToday.get(a.user_id)?.starts_at;
-        const tb = dueToday.get(b.user_id)?.starts_at;
-        const diff =
-          (ta ? new Date(ta).getTime() : Infinity) - (tb ? new Date(tb).getTime() : Infinity);
-        return (Number.isNaN(diff) ? 0 : diff) || a.full_name.localeCompare(b.full_name);
+        return compareByLastName(a.full_name, b.full_name);
       });
     // Until the admin list has landed, saying "loading" beats showing a roster
     // that is about to lose rows.
