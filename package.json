@@ -17,7 +17,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "test:timecards": "bun scripts/timecard-totals.test.ts",
-    "test": "bun scripts/timecard-totals.test.ts && bun scripts/lateness.test.ts && bun scripts/pay-rules.test.ts && bun scripts/org-structure.test.ts && bun scripts/shift-edit.test.ts && bun scripts/web-push.test.ts && bun scripts/native-push.test.ts && bun scripts/admin-export.test.ts && bun scripts/schedule-grid.test.tsx && bun scripts/names.test.ts",
+    "test": "bun scripts/timecard-totals.test.ts && bun scripts/lateness.test.ts && bun scripts/pay-rules.test.ts && bun scripts/org-structure.test.ts && bun scripts/shift-edit.test.ts && bun scripts/web-push.test.ts && bun scripts/native-push.test.ts && bun scripts/admin-export.test.ts && bun scripts/schedule-grid.test.tsx && bun scripts/names.test.ts && bun scripts/today-punches.test.ts",
     "test:shift-edit": "bun scripts/shift-edit.test.ts",
     "vapid:keys": "bun scripts/vapid-keys.ts",
     "test:push": "bun scripts/web-push.test.ts",

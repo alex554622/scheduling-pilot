@@ -9,6 +9,7 @@ import { useStaffVisibility } from "@/lib/staff-visibility";
 import { useManagedScope } from "@/lib/supervisor-scope";
 import { PAID_BREAK_MINUTES, readBreak, roundPunches } from "@/lib/timecard-totals";
 import { toDayString } from "@/lib/day-string";
+import { keepTodaysPunches } from "@/lib/today-punches";
 import { latenessByPunch } from "@/lib/lateness";
 import { breakAlertsFor, type BreakAlert, type ReminderDismissal, type ReminderKind } from "@/lib/break-reminders";
 import { Button } from "@/components/ui/button";
@@ -77,6 +78,9 @@ function fmtCountdown(ms: number) {
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
 }
 
+/** How far back to look for a shift that is still running from yesterday. */
+const OVERNIGHT_LOOKBACK_MS = 24 * 3_600_000;
+
 function startOfDay(d = new Date()) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
 function endOfDay(d = new Date()) { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; }
 
@@ -121,21 +125,27 @@ function DashboardPage() {
         .from("time_punches")
         .select("id, user_id, kind, at, break_minutes")
         .eq("company_id", company!.id)
-        .gte("at", dayStart.toISOString())
+        // From a day back, so someone still on a shift that crossed midnight
+        // stays on; `keepTodaysPunches` drops what is yesterday's work.
+        .gte("at", new Date(dayStart.getTime() - OVERNIGHT_LOOKBACK_MS).toISOString())
         .lte("at", dayEnd.toISOString())
         .order("at", { ascending: true });
       if (error) throw error;
       return (data ?? []) as Punch[];
     },
   });
+  const todaysPunches = useMemo(
+    () => keepTodaysPunches(punchesQ.data ?? [], dayStart.getTime()),
+    [punchesQ.data, dayStart],
+  );
 
   /** Is anyone still on the clock? Nothing needs counting if they all went home. */
   const hasLiveClock = useMemo(() => {
     const last = new Map<string, Punch>();
     // The punches arrive oldest first, so the last one written wins.
-    for (const p of punchesQ.data ?? []) last.set(p.user_id, p);
+    for (const p of todaysPunches) last.set(p.user_id, p);
     return [...last.values()].some((p) => p.kind !== "out");
-  }, [punchesQ.data]);
+  }, [todaysPunches]);
 
   // Once a second, not once every thirty: the break countdowns and the worked
   // clocks below are meant to run, and a roster that moves in half-minute jumps
@@ -263,7 +273,7 @@ function DashboardPage() {
 
   const rows = useMemo(() => {
     const byUser = new Map<string, Punch[]>();
-    for (const p of punchesQ.data ?? []) {
+    for (const p of todaysPunches) {
       if (!byUser.has(p.user_id)) byUser.set(p.user_id, []);
       byUser.get(p.user_id)!.push(p);
     }
@@ -440,7 +450,7 @@ function DashboardPage() {
     // Within each status, alphabetical by last name.
     list.sort((a, b) => order[a.status] - order[b.status] || compareByLastName(a.name, b.name));
     return list;
-  }, [membersQ.data, punchesQ.data, shiftsTodayQ.data, dismissalsQ.data, dueToday, rulesFor, staff, now, t]);
+  }, [membersQ.data, todaysPunches, shiftsTodayQ.data, dismissalsQ.data, dueToday, rulesFor, staff, now, t]);
 
 
   const overdueCount = rows.filter((r) => r.alerts.length > 0).length;
@@ -491,7 +501,7 @@ function DashboardPage() {
     // With coworkers hidden the database already sends only their own row;
     // filtering here as well keeps that true before it has the newer function.
     // A supervisor's own people stay on their list even when marked as ghosts.
-    const punchedToday = new Set((punchesQ.data ?? []).map((p) => p.user_id));
+    const punchedToday = new Set(todaysPunches.map((p) => p.user_id));
     const presence = (presenceQ.data ?? [])
       .filter(
         (p) =>
