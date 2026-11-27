@@ -743,16 +743,23 @@ function CompanyDashboard({ role }: { role: AppRole }) {
   // applied. An admin is either somebody you put on a schedule or they are not,
   // and that cannot depend on who is looking at it. Their own row stays —
   // nobody is hidden from themselves.
-  const members = placeInDepartments(
-    readOnlyAll
-      ? staff.visible(allMembersQ.data ?? [], (m) => m.id, "schedule")
-      : scope.narrow(
-          staff.visible(membersQ.data ?? [], (m) => m.id, "schedule"),
-          (m) => m.id,
-        ),
+  //
+  // A supervisor's own grid is everyone shown under a department they run —
+  // placed there by their own department, their position or the department
+  // they run — plus the supervisor themself, whatever their role. The database
+  // agrees on who they may schedule (`can_schedule()`).
+  const placed = placeInDepartments(
+    staff.visible((readOnlyAll ? allMembersQ.data : membersQ.data) ?? [], (m) => m.id, "schedule"),
     teamsQ.data ?? [],
     hintsQ.data,
   );
+  const members =
+    readOnlyAll || !scope.isSupervisor
+      ? placed
+      : placed.filter(
+          (m) =>
+            m.id === user?.id || scope.manages(m.id) || scope.managesDepartment(m.department_id),
+        );
   const teams = readOnlyAll
     ? (teamsQ.data ?? [])
     : (teamsQ.data ?? []).filter((d) => scope.managesDepartment(d.id));
@@ -763,7 +770,7 @@ function CompanyDashboard({ role }: { role: AppRole }) {
       (shiftsQ.data ?? []).filter((s) => !s.employee_id || memberIds.has(s.employee_id))
     : scope.isSupervisor
       ? (shiftsQ.data ?? []).filter((s) =>
-          s.employee_id ? scope.manages(s.employee_id) : scope.managesDepartment(s.department_id),
+          s.employee_id ? memberIds.has(s.employee_id) : scope.managesDepartment(s.department_id),
         )
       : (shiftsQ.data ?? []);
 
